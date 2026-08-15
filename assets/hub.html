@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flash 殿堂级神作大厅</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+        body {
+            background-color: #0b0e14;
+            color: #e6edf3;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 35px 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .header h1 {
+            font-size: 26px;
+            font-weight: 700;
+            color: #ffffff;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+        }
+        .header p {
+            font-size: 13px;
+            color: #8b949e;
+        }
+        .custom-bar {
+            width: 100%;
+            max-width: 960px;
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+        .custom-bar input {
+            flex: 1;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 10px 16px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .custom-bar input:focus {
+            border-color: #58a6ff;
+        }
+        .custom-bar button {
+            background: #238636;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 22px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .custom-bar button:hover {
+            background: #2ea043;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+            gap: 16px;
+            width: 100%;
+            max-width: 960px;
+        }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 18px;
+            text-decoration: none;
+            color: inherit;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, border-color 0.2s, background-color 0.2s;
+            cursor: pointer;
+        }
+        .card:hover {
+            transform: translateY(-3px);
+            border-color: #58a6ff;
+            background: #1c2128;
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .card-icon {
+            font-size: 26px;
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        .card-desc {
+            font-size: 12px;
+            color: #8b949e;
+            line-height: 1.5;
+            margin-bottom: 10px;
+            flex: 1;
+        }
+        .controls-hint {
+            background: #0d1117;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 11px;
+            color: #58a6ff;
+            font-family: monospace;
+            line-height: 1.4;
+        }
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+        }
+        .card-badge {
+            font-size: 11px;
+            padding: 2px 7px;
+            border-radius: 6px;
+            background: #21262d;
+            color: #3fb950;
+            border: 1px solid #30363d;
+        }
+        .card-local {
+            border-style: dashed;
+            border-color: #388bfd;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🎮 Flash Deck 殿堂级神作大厅</h1>
+        <p>全球公认 Flash 历史最高评分神作阵容 · 100% 官方原装 · 本地自动存档</p>
+    </div>
+
+    <form class="custom-bar" onsubmit="handleCustomUrl(event)">
+        <input type="text" id="url-input" placeholder="🌐 输入任意 Flash 网页地址直达 (如 https://...)" required>
+        <button type="submit">进入游戏</button>
+    </form>
+
+    <div class="grid">
+        <!-- 洛克王国 -->
+        <a class="card" href="https://17roco.qq.com">
+            <div class="card-header">
+                <div class="card-icon">👑</div>
+                <div class="card-title">洛克王国</div>
+            </div>
+            <div class="card-desc">腾讯官方魔法宠物社区，探索魔法学院与王国大陆。</div>
+            <div class="controls-hint">🎮 操作：全鼠标点击 / 键盘输入</div>
+            <div class="card-footer">
+                <div class="card-badge">腾讯官方 · 17roco.qq.com</div>
+            </div>
+        </a>
+
+        <!-- 造梦西游全系列 -->
+        <a class="card" href="https://news.4399.com/zmxy/">
+            <div class="card-header">
+                <div class="card-icon">🐒</div>
+                <div class="card-title">造梦西游全系列</div>
+            </div>
+            <div class="card-desc">4399 经典横版动作除妖神作，七魔王、十殿阎罗、大闹天庭与洪荒篇全合集！</div>
+            <div class="controls-hint">🎮 AD移动 | W跳跃 | J普通攻击 | K/L/U/I技能 | 空格无双</div>
+            <div class="card-footer">
+                <div class="card-badge">经典全系列 · news.4399.com/zmxy</div>
+            </div>
+        </a>
+
+        <!-- 王国保卫战 -->
+        <a class="card" href="action://play-swf?file=assets/games/kingdom_rush.swf&title=王国保卫战&hint=全鼠标点击建造防御塔_指挥士兵与英雄_释放陨石雨">
+            <div class="card-header">
+                <div class="card-icon">🏰</div>
+                <div class="card-title">王国保卫战 (Kingdom Rush)</div>
+            </div>
+            <div class="card-desc">铁皮工作室封神原版！全球公认最伟大的塔防艺术巅峰神作。</div>
+            <div class="controls-hint">🎮 全鼠标建造箭塔/兵营/法师塔/炮台，点击左下释放援军与陨石雨</div>
+            <div class="card-footer">
+                <div class="card-badge">本地自动存档 · 殿堂神作</div>
+            </div>
+        </a>
+
+        <!-- 最后的战役 2 -->
+        <a class="card" href="action://play-swf?file=assets/games/the_last_stand_2.swf&title=最后的战役2&hint=鼠标瞄准射击_R换弹夹_空格切换武器_白天搜寻物资幸存者">
+            <div class="card-header">
+                <div class="card-icon">🧟</div>
+                <div class="card-title">最后的战役 2 (The Last Stand 2)</div>
+            </div>
+            <div class="card-desc">丧尸求生防御巅峰神作，白天搜寻军火与幸存者，黑夜筑垒抵抗尸潮！</div>
+            <div class="controls-hint">🎮 鼠标瞄准左键射击 | R装弹 | 空格切枪 | 白天分配时间搜刮</div>
+            <div class="card-footer">
+                <div class="card-badge">本地自动存档 · 殿堂神作</div>
+            </div>
+        </a>
+
+        <!-- 狂扁小朋友 -->
+        <a class="card" href="action://play-swf?file=assets/games/dad_n_me.swf&title=狂扁小朋友&hint=方向键移动_A轻拳_S重拳投掷_A+A+S挑飞升龙">
+            <div class="card-header">
+                <div class="card-icon">🥊</div>
+                <div class="card-title">狂扁小朋友 (Dad 'n Me)</div>
+            </div>
+            <div class="card-desc">The Behemoth 动作打击感之王，魔性解压、爽快浮空连招。</div>
+            <div class="controls-hint">🎮 方向键移动 | A轻拳 | S重拳投掷 | A+A+S挑飞升龙连段</div>
+            <div class="card-footer">
+                <div class="card-badge">原装单机 · 动作天花板</div>
+            </div>
+        </a>
+
+        <!-- 神偷鲍勃 -->
+        <a class="card" href="action://play-swf?file=assets/games/bob_the_robber.swf&title=神偷鲍勃&hint=WASD或方向键移动_W开门开锁查看_空格打晕警卫">
+            <div class="card-header">
+                <div class="card-icon">🕵️</div>
+                <div class="card-title">神偷鲍勃 (Bob The Robber)</div>
+            </div>
+            <div class="card-desc">经典潜行神作！避开摄像头与警犬、开锁破密码、潜入豪宅盗宝！</div>
+            <div class="controls-hint">🎮 WASD/方向键移动 | W开锁/开门 | 空格键打晕保镖 | 躲在阴影</div>
+            <div class="card-footer">
+                <div class="card-badge">本地自动存档 · 潜行神作</div>
+            </div>
+        </a>
+
+        <!-- 战争进化史 -->
+        <a class="card" href="action://play-swf?file=assets/games/age_of_war.swf&title=战争进化史&hint=鼠标点击造兵与造炮台_升级时代与释放流星雨">
+            <div class="card-header">
+                <div class="card-icon">🛡️</div>
+                <div class="card-title">战争进化史 (Age of War)</div>
+            </div>
+            <div class="card-desc">经典战歌响起，从原始人扔石头一路打到未来高科技激光机甲！</div>
+            <div class="controls-hint">🎮 全鼠标点击上方图标：造兵 / 建炮台 / 升级时代 / 战技</div>
+            <div class="card-footer">
+                <div class="card-badge">本地自动存档 · 怀旧战歌</div>
+            </div>
+        </a>
+
+        <!-- 企鹅学飞 -->
+        <a class="card" href="action://play-swf?file=assets/games/learn_to_fly.swf&title=企鹅学飞&hint=左右方向键调整滑翔姿态_空格键点火火箭推进器">
+            <div class="card-header">
+                <div class="card-icon">🐧</div>
+                <div class="card-title">企鹅学飞 (Learn to Fly)</div>
+            </div>
+            <div class="card-desc">风靡全球的滑翔物理神作，升级滑翔翼与火箭推进器飞越极地！</div>
+            <div class="controls-hint">🎮 左右方向键控制迎风角度 | 空格键开启火箭助推器 | 购买配件</div>
+            <div class="card-footer">
+                <div class="card-badge">本地自动存档 · 物理神作</div>
+            </div>
+        </a>
+
+        <!-- 火柴人亨利：逃狱记 -->
+        <a class="card" href="action://play-swf?file=assets/games/henry_escaping_prison.swf&title=火柴人亨利:逃狱记&hint=全鼠标点击分支道具_探索各种爆笑结局">
+            <div class="card-header">
+                <div class="card-icon">🎬</div>
+                <div class="card-title">火柴人亨利：逃狱记</div>
+            </div>
+            <div class="card-desc">PuffballsUnited 恶搞神作，火箭筒、假死药、传送枪各种爆笑结局！</div>
+            <div class="controls-hint">🎮 全鼠标点击选择分支路线与道具，解锁全部成功与失败结局</div>
+            <div class="card-footer">
+                <div class="card-badge">恶搞解谜 · 爆笑神作</div>
+            </div>
+        </a>
+
+        <!-- 传送门 Flash 版 -->
+        <a class="card" href="action://play-swf?file=assets/games/portal_flash.swf&title=传送门Flash版&hint=WASD或方向键移动跳跃_鼠标瞄准左键发射传送门_Q/E双色门">
+            <div class="card-header">
+                <div class="card-icon">🌀</div>
+                <div class="card-title">传送门 Flash 版 (Portal)</div>
+            </div>
+            <div class="card-desc">被 Valve 官方收录的传世解谜神作，时空传送门与动量物理！</div>
+            <div class="controls-hint">🎮 WASD/方向键走位跳跃 | 鼠标瞄准左键开门 | Q/E切换蓝橙门</div>
+            <div class="card-footer">
+                <div class="card-badge">传世解谜 · Valve收录</div>
+            </div>
+        </a>
+
+        <!-- 滚动方块 -->
+        <a class="card" href="action://play-swf?file=assets/games/bloxorz.swf&title=滚动方块&hint=方向键翻转长方体进入方孔">
+            <div class="card-header">
+                <div class="card-icon">🎲</div>
+                <div class="card-title">滚动方块 (Bloxorz)</div>
+            </div>
+            <div class="card-desc">Miniclip 镇站之宝！33 关立体几何空间翻转，极度烧脑耐玩。</div>
+            <div class="controls-hint">🎮 方向键 (↑ ↓ ← →) 空间翻滚长方体，精准落入目标方形孔洞</div>
+            <div class="card-footer">
+                <div class="card-badge">本地自动存档 · 空间益智</div>
+            </div>
+        </a>
+
+        <!-- 奔牛节大逃亡 -->
+        <a class="card" href="action://play-swf?file=assets/games/extreme_pamplona.swf&title=奔牛节大逃亡&hint=左右方向键狂奔_空格键跳跃飞跃屋顶">
+            <div class="card-header">
+                <div class="card-icon">🐂</div>
+                <div class="card-title">奔牛节大逃亡 (Extreme Pamplona)</div>
+            </div>
+            <div class="card-desc">经典极限跑酷，被狂暴公牛在西班牙街头追逐，飞跃屋顶与障碍！</div>
+            <div class="controls-hint">🎮 左右方向键冲刺奔跑 | 空格键 (Space) 起跳/攀爬障碍物</div>
+            <div class="card-footer">
+                <div class="card-badge">极限跑酷 · 经典神作</div>
+            </div>
+        </a>
+
+        <!-- 疯狂弓箭手 -->
+        <a class="card" href="action://play-swf?file=assets/games/mad_arrow.swf&title=疯狂弓箭手&hint=全鼠标点击城墙部署神箭手与长矛卫兵">
+            <div class="card-header">
+                <div class="card-icon">🏹</div>
+                <div class="card-title">疯狂弓箭手 (Mad Arrow)</div>
+            </div>
+            <div class="card-desc">经典城墙冷兵器塔防，部署神箭手、长矛兵与投石机消灭蛮族大军！</div>
+            <div class="controls-hint">🎮 全鼠标点击左侧兵种放置在城墙与地面防御，击杀敌军收金币</div>
+            <div class="card-footer">
+                <div class="card-badge">本地自动存档 · 城防神作</div>
+            </div>
+        </a>
+
+        <!-- 大鱼吃小鱼 -->
+        <a class="card" href="action://play-swf?file=assets/games/fish_tales.swf&title=大鱼吃小鱼&hint=全鼠标控制小鱼游动捕食_躲避大鱼">
+            <div class="card-header">
+                <div class="card-icon">🐟</div>
+                <div class="card-title">大鱼吃小鱼 (Fish Tales)</div>
+            </div>
+            <div class="card-desc">经典海底吞噬进化！吃掉比自己小的鱼不断成长，躲避深海巨兽。</div>
+            <div class="controls-hint">🎮 鼠标移动引导小鱼游动，吃小鱼增加体型，触碰大鱼会丧命</div>
+            <div class="card-footer">
+                <div class="card-badge">休闲吞噬 · 经典怀旧</div>
+            </div>
+        </a>
+
+        <!-- 坏冰淇淋 3 -->
+        <a class="card" href="action://play-swf?file=assets/games/bad_ice_cream_3.swf&title=坏冰淇淋3&hint=方向键移动_空格键吐冰与破冰">
+            <div class="card-header">
+                <div class="card-icon">🍦</div>
+                <div class="card-title">坏冰淇淋 3 (Bad Ice Cream)</div>
+            </div>
+            <div class="card-desc">Nitrome 经典像素神作，破冰吐冰抢水果，关卡趣味十足。</div>
+            <div class="controls-hint">🎮 方向键移动 | 空格键 (Space) 制造冰块 / 破坏冰块</div>
+            <div class="card-footer">
+                <div class="card-badge">像素神作 · 双人/单人</div>
+            </div>
+        </a>
+
+        <!-- 互动巴迪 -->
+        <a class="card" href="action://play-swf?file=assets/games/interactive_buddy.swf&title=互动巴迪&hint=全鼠标抓拽小人_购买武器重力枪激光道具">
+            <div class="card-header">
+                <div class="card-icon">🤖</div>
+                <div class="card-title">互动巴迪 (Interactive Buddy)</div>
+            </div>
+            <div class="card-desc">经典物理减压交互小人，赚钱购买重力手套、激光、水滴与炸药！</div>
+            <div class="controls-hint">🎮 鼠标抓起小人抛掷，右侧菜单购买解锁各种物理玩具与超能力</div>
+            <div class="card-footer">
+                <div class="card-badge">本地自动存档 · 减压神作</div>
+            </div>
+        </a>
+
+        <!-- 打开本地 SWF -->
+        <div class="card card-local" onclick="window.location.href='action://open-local'">
+            <div class="card-header">
+                <div class="card-icon">📂</div>
+                <div class="card-title">运行本地 SWF</div>
+            </div>
+            <div class="card-desc">点击选择电脑本地的任意 .swf 单机游戏或动画直接满帧运行。</div>
+            <div class="controls-hint">💡 支持任意外部 SWF 离线载入</div>
+            <div class="card-footer">
+                <div class="card-badge" style="color: #388bfd;">离线支持 · 本地文件</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function handleCustomUrl(e) {
+            e.preventDefault();
+            var input = document.getElementById('url-input').value.trim();
+            if (!input) return;
+            if (!input.startsWith('http://') && !input.startsWith('https://')) {
+                input = 'https://' + input;
+            }
+            window.location.href = input;
+        }
+    </script>
+</body>
+</html>
