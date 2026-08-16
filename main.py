@@ -19,8 +19,8 @@ DISPLAY_NAMES = {
     'karryn-prison': 'Karryn\'s Prison',
     'gym-center': 'Gym Center',
     'succubus-boss': 'Succubus Boss',
-    'secret-rule': 'Secret Rule (Yarimon)',
-    'live-empire': 'Live Empire (直播帝国)',
+    'secret-rule': 'Secret Rule',
+    'live-empire': 'Live Empire',
 }
 
 DEFAULT_SVG_ICON = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">

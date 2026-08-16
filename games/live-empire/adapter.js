@@ -19,7 +19,7 @@
             window.RoomInfoItem.prototype.dataChanged = function() {
                 if (this.data) {
                     if (this.data.status === 2 && !this.data.anchor) {
-                        this.data.anchor = { id: "1", name: "主播", resid: "1", tl: 1, fans: 100, type: 1, xz: 0 };
+                        this.data.anchor = { id: "8001", name: "主播", resid: "8001", tl: 1, fans: 100, type: 1, xz: 0 };
                     }
                     if (this.data.status === 3 && !this.data.endDesc) {
                         this.data.endDesc = { name: "主播", type: 1, fs: 0, sy: 0, rq: 0, yz: 0, kc: 0, cy: 0 };
