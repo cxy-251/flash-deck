@@ -72,8 +72,6 @@ def resolve_case_insensitive_path(base_dir, rel_path):
     """URL 解码 + 忽略大小写智能查找 (彻底解决 URL 空格 %20 与 大小写 404)"""
     current = base_dir
     decoded_path = urllib.parse.unquote(rel_path)
-    parts = decoded_path.strip('/').split('/')
-    
     for part in parts:
         if not part: continue
         target = os.path.join(current, part)
@@ -83,8 +81,10 @@ def resolve_case_insensitive_path(base_dir, rel_path):
             found = False
             if os.path.isdir(current):
                 part_lower = part.lower()
+                part_no_asar = part_lower[:-5] if part_lower.endswith('.asar') else part_lower
                 for entry in os.listdir(current):
-                    if entry.lower() == part_lower:
+                    entry_lower = entry.lower()
+                    if entry_lower == part_lower or entry_lower == part_no_asar:
                         current = os.path.join(current, entry)
                         found = True
                         break
