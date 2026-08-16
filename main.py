@@ -109,8 +109,16 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
     def log_error(self, format, *args):
         try:
             msg = format % args
+            if "favicon.ico" in self.path or "fav.ico" in self.path or "code 404" in msg:
+                return
             sys.stderr.write(f"[ERROR] {msg} for path {self.path}\n")
         except Exception:
+            pass
+
+    def copyfile(self, source, outputfile):
+        try:
+            super().copyfile(source, outputfile)
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
             pass
 
     def translate_path(self, path):
@@ -313,16 +321,26 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         
         self.send_response(405)
         self.end_headers()
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        if exc_type in (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+            return
+        super().handle_error(request, client_address)
+
 def start_local_server():
     try:
-        httpd = ThreadingHTTPServer(('127.0.0.1', PORT), MultiGameRequestHandler)
+        httpd = QuietThreadingHTTPServer(('127.0.0.1', PORT), MultiGameRequestHandler)
         httpd.serve_forever()
     except OSError:
         pass
 
 threading.Thread(target=start_local_server, daemon=True).start()
 
-# Chromium 硬件加速与自动播放策略
+# Chromium 硬件加速与日志静音
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--log-level=3 --disable-logging"
+sys.argv.append("--log-level=3")
+sys.argv.append("--disable-logging")
 sys.argv.append("--enable-gpu-rasterization")
 sys.argv.append("--enable-webgl")
 sys.argv.append("--ignore-gpu-blocklist")
@@ -355,11 +373,29 @@ class CustomWebPage(QWebEnginePage):
         self.main_window = main_window
 
     def javaScriptConsoleMessage(self, level, msg, line, source):
-        if any(ign in msg for ign in [
-            "passive event listener",
-            "Synchronous XMLHttpRequest"
-        ]):
+        # 过滤无意义或超长的噪音日志（如 Base64 存档导出、用户点击事件等）
+        if len(msg) > 200 and not msg.startswith("[RPG-Deck]"):
             return
+        
+        ignored_patterns = [
+            "passive event listener",
+            "Synchronous XMLHttpRequest",
+            "PixiJS",
+            "DragonBones",
+            "Deprecated",
+            "鼠标右键",
+            "anc is anc",
+            "loadgame",
+            "Greenworks failed",
+            "video load error",
+            "The play() request was interrupted",
+            "batching_media_log",
+            "FFmpegDemuxer",
+            "pipeline_error"
+        ]
+        if any(ign in msg for ign in ignored_patterns):
+            return
+
         src_name = os.path.basename(source) if source else "inline"
         level_map = {
             QWebEnginePage.InfoMessageLevel: "INFO",
