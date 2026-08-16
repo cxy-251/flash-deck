@@ -1,0 +1,13 @@
+[project]
+name = "rpg-deck"
+version = "1.0.0"
+description = "专为 Steam Deck (SteamOS/Linux) 打造的原生多标签页 RPG Maker HTML5 游戏中心"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyqt5>=5.15.10",
+    "pyqtwebengine>=5.15.6",
+]
+
+[tool.uv]
+package = false

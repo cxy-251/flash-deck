@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+cache/
+data/
+uv.lock
+
+# Ignore all files inside the games directories
+games/*/*
+
+# But do not ignore these specific files
+!games/*/adapter.js
+!games/*/.gitkeep
