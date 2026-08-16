@@ -614,13 +614,15 @@
                             console.error('[RPG-Deck] 异步存档异常:', err);
                         });
                     };
-                    var _orig_printLoadingError = Graphics.printLoadingError;
-                    Graphics.printLoadingError = function(url) {
-                        console.error("[RPG-Deck] Graphics.printLoadingError triggered for URL: " + url);
-                        if (_orig_printLoadingError) {
-                            _orig_printLoadingError.apply(this, arguments);
-                        }
-                    };
+                    if (window.Graphics) {
+                        var _orig_printLoadingError = Graphics.printLoadingError;
+                        Graphics.printLoadingError = function(url) {
+                            console.error("[RPG-Deck] Graphics.printLoadingError triggered for URL: " + url);
+                            if (_orig_printLoadingError) {
+                                _orig_printLoadingError.apply(this, arguments);
+                            }
+                        };
+                    }
                 }
             }, 20);
         })();
