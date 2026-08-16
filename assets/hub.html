@@ -5,106 +5,87 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RPG 游戏库</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            user-select: none;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
         body {
-            background: #0d1117;
-            color: #e6edf3;
+            background: #0d1117; color: #e6edf3;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-            min-height: 100vh;
-            padding: 40px 30px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            min-height: 100vh; padding: 40px 30px; display: flex; flex-direction: column; align-items: center;
         }
-        .container {
-            width: 100%;
-            max-width: 760px;
-        }
+        .container { width: 100%; max-width: 760px; }
         .header {
-            margin-bottom: 24px;
-            border-bottom: 1px solid #21262d;
-            padding-bottom: 14px;
+            margin-bottom: 24px; border-bottom: 1px solid #21262d; padding-bottom: 14px;
+            display: flex; justify-content: space-between; align-items: center;
         }
-        .header h1 {
-            font-size: 18px;
-            font-weight: 600;
-            color: #f0f6fc;
-            letter-spacing: 0.5px;
+        .header h1 { font-size: 18px; font-weight: 600; color: #f0f6fc; letter-spacing: 0.5px; }
+        .refresh-btn {
+            background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
+            padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: all 0.15s; outline: none;
         }
-        .list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
+        .refresh-btn:hover { background: #30363d; border-color: #8b949e; color: #f0f6fc; }
+        .refresh-btn:active { transform: scale(0.96); }
+        .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
         .item {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 8px;
-            padding: 16px 22px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            text-decoration: none;
-            color: #f0f6fc;
-            font-size: 15px;
-            font-weight: 600;
-            transition: all 0.15s ease;
-            cursor: pointer;
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            padding: 12px 16px; text-decoration: none; color: #f0f6fc;
+            font-size: 14px; font-weight: 600; transition: all 0.1s ease;
+            cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
-        .item:hover {
-            background: #21262d;
-            border-color: #58a6ff;
-            color: #58a6ff;
-            transform: translateX(4px);
-        }
-        .item .arrow {
-            color: #8b949e;
-            font-size: 14px;
-            transition: color 0.15s;
-        }
-        .item:hover .arrow {
-            color: #58a6ff;
-        }
+        .item:hover { background: #21262d; border-color: #58a6ff; color: #58a6ff; }
+        .item:active { transform: scale(0.98); }
     </style>
 </head>
 <body>
-
     <div class="container">
         <div class="header">
             <h1>RPG 游戏库</h1>
+            <button class="refresh-btn" onclick="loadGames()">刷新库</button>
         </div>
-
-        <div class="list" id="game-list">
-            <!-- 仅展示已就绪的真实游戏列表 -->
-        </div>
+        <div class="list" id="game-list"></div>
     </div>
-
     <script>
-        fetch('/api/games')
-            .then(res => res.json())
-            .then(games => {
-                const list = document.getElementById('game-list');
-                list.innerHTML = '';
+        const gameInfo = {
+            'My Countryside Life': { hub: 'My Countryside Life', title: 'Daily Lives of My Countryside' },
+            'Karryn\'s Prison': { hub: 'Karryn\'s Prison', title: 'Karryn\'s Prison' },
+            'Lewd Gym': { hub: 'Lewd Gym', title: 'Lewd Gym' },
+            'Succubus Boss': { hub: 'Succubus Boss', title: 'Succubus (魅魔老板)' },
+            'Secret Rule': { hub: 'Secret Rule', title: 'ヤリステメスブター (Secret Rule)' },
+            'Live Empire': { hub: 'Live Empire', title: '直播帝国 (Live Empire)' },
+            'Cool Friend & Sister': { hub: 'Cool Friend & Sister', title: 'Cool Friend & Sister (高冷青梅与妹妹)' },
+            'Goblin Front': { hub: 'Goblin Front', title: 'Goblin Front (哥布林前线)' },
+            'NTR Hunter': { hub: 'NTR Hunter', title: 'NTR猎人：久子的秘密' },
+            'Reaching Mom': { hub: 'Reaching Mom', title: 'ママの奥にとどく (到达妈妈的深处)' },
+            'QOS Wife 2': { hub: 'QOS Wife 2', title: 'QOS♠Wife2~被黑色巨根击坠子宫而堕落的强气人妻~' },
+            'Ayako\'s Effort': { hub: 'Ayako\'s Effort', title: '綾子さんの奔走 (绫子的努力)' },
+            'Adventurer Liena': { hub: 'Adventurer Liena', title: 'NTR冒险者莉艾娜~被盯上的女孩和她稚嫩的男朋友~' },
+            'Summer Vacation': { hub: 'Summer Vacation', title: '在姊正泰镇渡过的色色暑假' },
+            'Now, She is...': { hub: 'Now, She is...', title: '『现在，她正在……～实时NTR物语～』' },
+            'Mother NTR Hunter': { hub: 'Mother NTR Hunter', title: '母NTR -猎人ー-' },
+            'Listaria': { hub: 'Listaria', title: 'Listaria (白手起家 - 里斯塔利亚)' }
+        };
 
-                games.forEach(g => {
-                    const item = document.createElement('a');
-                    item.className = 'item';
-                    item.href = `action://play-rpg?id=${encodeURIComponent(g.id)}&title=${encodeURIComponent(g.name)}`;
-                    item.innerHTML = `
-                        <span>${g.name}</span>
-                        <span class="arrow">进入 ➔</span>
-                    `;
-                    list.appendChild(item);
+        function loadGames() {
+            const list = document.getElementById('game-list');
+            list.innerHTML = '<span style="color:#8b949e;font-size:14px;grid-column:1/-1;">加载中...</span>';
+            fetch('/api/games')
+                .then(res => res.json())
+                .then(games => {
+                    list.innerHTML = '';
+                    games.forEach(g => {
+                        const info = gameInfo[g.id] || { hub: g.name, title: g.name };
+                        const item = document.createElement('a');
+                        item.className = 'item';
+                        item.href = `action://play-rpg?id=${encodeURIComponent(g.id)}&title=${encodeURIComponent(info.title)}`;
+                        item.textContent = info.hub;
+                        list.appendChild(item);
+                    });
+                })
+                .catch(err => {
+                    list.innerHTML = '<span style="color:#f85149;font-size:14px;grid-column:1/-1;">加载失败</span>';
+                    console.error('Failed to load games:', err);
                 });
-            })
-            .catch(err => {
-                console.error('Failed to load games:', err);
-            });
+        }
+        loadGames();
     </script>
 </body>
 </html>

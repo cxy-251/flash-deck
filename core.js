@@ -102,6 +102,7 @@
             window.process = {
                 platform: 'win32',
                 arch: 'x64',
+                argv: [],
                 versions: {
                     'node-webkit': '0.45.0',
                     'nw': '0.45.0',
@@ -111,7 +112,20 @@
                 env: { APPDATA: '', LOCALAPPDATA: '', USERPROFILE: '' },
                 cwd: function() { return '.'; },
                 mainModule: { filename: 'index.html' },
-                nextTick: function(fn) { setTimeout(fn, 0); }
+                nextTick: function(fn) { setTimeout(fn, 0); },
+                on: function() {},
+                exit: function() {},
+                hrtime: function(time) {
+                    var t = performance.now() / 1000;
+                    var s = Math.floor(t);
+                    var n = Math.floor((t % 1) * 1e9);
+                    if (time) {
+                        s -= time[0];
+                        n -= time[1];
+                        if (n < 0) { s--; n += 1e9; }
+                    }
+                    return [s, n];
+                }
             };
 
             // 4. Node.js 常用模块全功能模拟 (fs, path, os, greenworks)
@@ -135,7 +149,19 @@
                         }
                     }
                     var xhr = new XMLHttpRequest();
-                    xhr.open('HEAD', reqPath + '?t=' + Date.now(), false);
+                    if (reqPath.endsWith('.rpgsave') || reqPath.endsWith('.rmmzsave') || reqPath.endsWith('.rmmzsave_') || reqPath.endsWith('.save') || reqPath.endsWith('.bak')) {
+                        var gid = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
+                        var filename = reqPath;
+                        var slashIdx = reqPath.lastIndexOf('/');
+                        if (slashIdx >= 0) filename = reqPath.substring(slashIdx + 1);
+                        else {
+                            var backslashIdx = reqPath.lastIndexOf('\\\\');
+                            if (backslashIdx >= 0) filename = reqPath.substring(backslashIdx + 1);
+                        }
+                        xhr.open('HEAD', '/save/' + encodeURIComponent(gid) + '/' + encodeURIComponent(filename) + '?t=' + Date.now(), false);
+                    } else {
+                        xhr.open('HEAD', reqPath + '?t=' + Date.now(), false);
+                    }
                     try {
                         xhr.send();
                         if (xhr.status === 200) return true;
@@ -164,7 +190,7 @@
                     if (p === 'lng.txt') {
                         return 'cn';
                     }
-                    if (!p.endsWith('.rpgsave')) {
+                    if (!p.endsWith('.rpgsave') && !p.endsWith('.rmmzsave') && !p.endsWith('.rmmzsave_') && !p.endsWith('.bak')) {
                         var val = localStorage.getItem('fs_' + p);
                         if (val !== null) return val;
                     }
@@ -179,7 +205,19 @@
                         }
                     }
                     var xhr = new XMLHttpRequest();
-                    xhr.open('GET', reqPath + '?t=' + Date.now(), false);
+                    if (reqPath.endsWith('.rpgsave') || reqPath.endsWith('.rmmzsave') || reqPath.endsWith('.rmmzsave_') || reqPath.endsWith('.save') || reqPath.endsWith('.bak')) {
+                        var gid = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
+                        var filename = reqPath;
+                        var slashIdx = reqPath.lastIndexOf('/');
+                        if (slashIdx >= 0) filename = reqPath.substring(slashIdx + 1);
+                        else {
+                            var backslashIdx = reqPath.lastIndexOf('\\\\');
+                            if (backslashIdx >= 0) filename = reqPath.substring(backslashIdx + 1);
+                        }
+                        xhr.open('GET', '/save/' + encodeURIComponent(gid) + '/' + encodeURIComponent(filename) + '?t=' + Date.now(), false);
+                    } else {
+                        xhr.open('GET', reqPath + '?t=' + Date.now(), false);
+                    }
                     try {
                         xhr.send();
                         if (xhr.status === 200) return xhr.responseText;
@@ -233,8 +271,8 @@
                         var backslashIdx = p.lastIndexOf('\\\\');
                         if (backslashIdx >= 0) filename = p.substring(backslashIdx + 1);
                     }
-                    if (filename.endsWith('.rpgsave') || filename.endsWith('.save') || filename.endsWith('.rpgsave.bak')) {
-                        var gid = window.gameId || (window.location.pathname.split('/')[2]);
+                    if (filename.endsWith('.rpgsave') || filename.endsWith('.rmmzsave') || filename.endsWith('.rmmzsave_') || filename.endsWith('.save') || filename.endsWith('.rpgsave.bak') || filename.endsWith('.rmmzsave.bak')) {
+                        var gid = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
                         var xhr = new XMLHttpRequest();
                         xhr.open('POST', '/api/save/' + encodeURIComponent(gid) + '?file=' + encodeURIComponent(filename), false);
                         try { xhr.send(strData); } catch(e) {}
@@ -256,11 +294,18 @@
                         var backslashIdx = p.lastIndexOf('\\\\');
                         if (backslashIdx >= 0) filename = p.substring(backslashIdx + 1);
                     }
-                    if (filename.endsWith('.rpgsave') || filename.endsWith('.save') || filename.endsWith('.rpgsave.bak')) {
-                        var gid = window.gameId || (window.location.pathname.split('/')[2]);
+                    if (filename.endsWith('.rpgsave') || filename.endsWith('.rmmzsave') || filename.endsWith('.rmmzsave_') || filename.endsWith('.save') || filename.endsWith('.rpgsave.bak') || filename.endsWith('.rmmzsave.bak')) {
+                        var gid = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
                         var xhr = new XMLHttpRequest();
                         xhr.open('DELETE', '/api/save/' + encodeURIComponent(gid) + '?file=' + encodeURIComponent(filename), false);
                         try { xhr.send(); } catch(e) {}
+                    }
+                },
+                renameSync: function(oldPath, newPath) {
+                    var data = this.readFileSync(oldPath);
+                    if (data !== null && data !== '') {
+                        this.writeFileSync(newPath, data);
+                        this.unlinkSync(oldPath);
                     }
                 },
                 unlink: function(p, cb) {
@@ -351,7 +396,8 @@
                 isSubscribedApp: function(id) { return true; },
                 activateAchievement: function() {},
                 saveTextToFile: function(f, c, cb) { if (cb) cb(); },
-                readTextFromFile: function(f, cb) { if (cb) cb(""); }
+                readTextFromFile: function(f, cb) { if (cb) cb(""); },
+                isSteamInBigPictureMode: function() { return false; }
             };
 
             window.require = function(mod) {
@@ -534,7 +580,7 @@
 
             // 7. 动态加载各游戏专属的适配补丁 (如 Spine 修复、PIXI NPOT 修复等)
             var _patchPathParts = window.location.pathname.split('/');
-            var _patchGameId = (_patchPathParts.length >= 3 && _patchPathParts[1] === 'game') ? _patchPathParts[2] : '';
+            var _patchGameId = (_patchPathParts.length >= 3 && _patchPathParts[1] === 'game') ? decodeURIComponent(_patchPathParts[2]) : '';
             if (_patchGameId) {
                 var _xhrPatch = new XMLHttpRequest();
                 _xhrPatch.open('GET', '/api/patch/' + encodeURIComponent(_patchGameId) + '.js?t=' + Date.now(), false);
@@ -564,11 +610,11 @@
 
             // 8. 零卡顿异步 Direct FS 存档直通引擎
             var checkInterval = setInterval(function() {
-                if (window.StorageManager && window.LZString) {
+                if (window.StorageManager && window.LZString && !window.StorageManager.loadZip) {
                     clearInterval(checkInterval);
                     
                     var pathParts = window.location.pathname.split('/');
-                    var gameId = (pathParts.length >= 3 && pathParts[1] === 'game') ? pathParts[2] : '';
+                    var gameId = (pathParts.length >= 3 && pathParts[1] === 'game') ? decodeURIComponent(pathParts[2]) : '';
                     if (!gameId) return;
 
                     var localSaveCache = {};

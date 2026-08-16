@@ -15,13 +15,23 @@ PORT = 8998
 GAMES_REGISTRY = {}
 
 DISPLAY_NAMES = {
-    'countryside': 'My Countryside Life',
-    'karryn-prison': 'Karryn\'s Prison',
-    'gym-center': 'Gym Center',
-    'succubus-boss': 'Succubus Boss',
-    'secret-rule': 'Secret Rule',
-    'live-empire': 'Live Empire',
-    'cold-friend': 'Cool Friend & Sister',
+    'My Countryside Life': 'My Countryside Life',
+    'Karryn\'s Prison': 'Karryn\'s Prison',
+    'Lewd Gym': 'Lewd Gym',
+    'Succubus Boss': 'Succubus Boss',
+    'Secret Rule': 'Secret Rule',
+    'Live Empire': 'Live Empire',
+    'Cool Friend & Sister': 'Cool Friend & Sister',
+    'Goblin Front': 'Goblin Front',
+    'NTR Hunter': 'NTR Hunter',
+    'Reaching Mom': 'Reaching Mom',
+    'QOS Wife 2': 'QOS Wife 2',
+    'Ayako\'s Effort': 'Ayako\'s Effort',
+    'Adventurer Liena': 'Adventurer Liena',
+    'Summer Vacation': 'Summer Vacation',
+    'Now, She is...': 'Now, She is...',
+    'Mother NTR Hunter': 'Mother NTR Hunter',
+    'Listaria': 'Listaria',
 }
 
 DEFAULT_SVG_ICON = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
@@ -168,7 +178,7 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                 target_path = req_path
                 
                 if 'game_id' in qs and qs['game_id'][0] in GAMES_REGISTRY:
-                    game_dir = GAMES_REGISTRY[qs['game_id'][0]]['dir']
+                    game_dir = GAMES_REGISTRY[qs['game_id'][0]]['root']
                     target_path = os.path.join(game_dir, req_path)
                 
                 # Manual case-insensitive resolution for absolute paths
