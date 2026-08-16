@@ -20,6 +20,7 @@ DISPLAY_NAMES = {
     'gym-center': 'Gym Center',
     'succubus-boss': 'Succubus Boss',
     'secret-rule': 'Secret Rule (Yarimon)',
+    'live-empire': 'Live Empire (直播帝国)',
 }
 
 DEFAULT_SVG_ICON = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
@@ -210,6 +211,7 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             return
 
         if self.path.startswith('/api/games'):
+            scan_games()
             self.send_response(200)
             self.send_header('Content-type', 'application/json; charset=utf-8')
             self.end_headers()

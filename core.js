@@ -233,7 +233,7 @@
                         var backslashIdx = p.lastIndexOf('\\\\');
                         if (backslashIdx >= 0) filename = p.substring(backslashIdx + 1);
                     }
-                    if (filename.endsWith('.rpgsave')) {
+                    if (filename.endsWith('.rpgsave') || filename.endsWith('.save') || filename.endsWith('.rpgsave.bak')) {
                         var gid = window.gameId || (window.location.pathname.split('/')[2]);
                         var xhr = new XMLHttpRequest();
                         xhr.open('POST', '/api/save/' + encodeURIComponent(gid) + '?file=' + encodeURIComponent(filename), false);
@@ -256,7 +256,7 @@
                         var backslashIdx = p.lastIndexOf('\\\\');
                         if (backslashIdx >= 0) filename = p.substring(backslashIdx + 1);
                     }
-                    if (filename.endsWith('.rpgsave') || filename.endsWith('.rpgsave.bak')) {
+                    if (filename.endsWith('.rpgsave') || filename.endsWith('.save') || filename.endsWith('.rpgsave.bak')) {
                         var gid = window.gameId || (window.location.pathname.split('/')[2]);
                         var xhr = new XMLHttpRequest();
                         xhr.open('DELETE', '/api/save/' + encodeURIComponent(gid) + '?file=' + encodeURIComponent(filename), false);
@@ -350,6 +350,25 @@
                 if (mod === 'fs') return mockFs;
                 if (mod === 'path') return mockPath;
                 if (typeof mod === 'string' && mod.indexOf('greenworks') >= 0) return mockGreenworks;
+                if (mod === 'electron') {
+                    return {
+                        ipcRenderer: {
+                            send: function() {},
+                            on: function() {},
+                            sendSync: function() { return null; }
+                        },
+                        remote: {
+                            getCurrentWindow: function() {
+                                return {
+                                    setFullScreen: function() {},
+                                    isFullScreen: function() { return false; },
+                                    close: function() {},
+                                    minimize: function() {}
+                                };
+                            }
+                        }
+                    };
+                }
                 if (mod === 'os') {
                     return {
                         platform: function() { return 'win32'; },
