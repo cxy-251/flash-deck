@@ -35,4 +35,27 @@
             };
         }
     }, 10);
+
+    // 4. 拦截 ChooseStoryView.prototype.playVideo 优先加载 Linux 100% 兼容的 WebM 格式
+    var checkStoryViewInterval = setInterval(function() {
+        if (window.ChooseStoryView && window.ChooseStoryView.prototype) {
+            clearInterval(checkStoryViewInterval);
+            console.log("[RPG-Deck] Patching ChooseStoryView.prototype.playVideo for Linux WebM support...");
+            window.ChooseStoryView.prototype.playVideo = function() {
+                this.vd_mask.visible = true;
+                var vid = this.data ? this.data.id : "2001";
+                var videoPath = "/game/live-empire/dlc/v101/" + vid + ".webm";
+                this.vd = new egret.Video();
+                this.vd.x = 0;
+                this.vd.y = 0;
+                this.vd.width = window.AppCore.GameWidth;
+                this.vd.height = window.AppCore.GameHeight;
+                this.vd.fullscreen = false;
+                this.vd.once(egret.Event.COMPLETE, this.onVdLoads, this);
+                this.vd.once(egret.IOErrorEvent.IO_ERROR, this.onLoadErr, this);
+                this.vd.load(videoPath);
+                this.addChild(this.vd);
+            };
+        }
+    }, 10);
 })();
