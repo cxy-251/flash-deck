@@ -373,10 +373,11 @@ class CustomWebPage(QWebEnginePage):
         self.main_window = main_window
 
     def javaScriptConsoleMessage(self, level, msg, line, source):
-        # 过滤无意义或超长的噪音日志（如 Base64 存档导出、用户点击事件等）
-        if len(msg) > 200 and not msg.startswith("[RPG-Deck]"):
-            return
-        
+        # 仅保留关键的 RPG-Deck 框架启动信息或严重报错，彻底静音游戏自带的日常 console.log
+        if level == QWebEnginePage.InfoMessageLevel:
+            if not msg.startswith("[RPG-Deck]"):
+                return
+
         ignored_patterns = [
             "passive event listener",
             "Synchronous XMLHttpRequest",
@@ -389,6 +390,7 @@ class CustomWebPage(QWebEnginePage):
             "Greenworks failed",
             "video load error",
             "The play() request was interrupted",
+            "AudioContext was not allowed to start",
             "batching_media_log",
             "FFmpegDemuxer",
             "pipeline_error"
