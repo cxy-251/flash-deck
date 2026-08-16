@@ -336,13 +336,22 @@
             };
 
             var mockGreenworks = {
-                init: function() { return false; },
-                initAPI: function() { return false; },
+                init: function() { return true; },
+                initAPI: function() { return true; },
                 on: function() {},
-                getSteamId: function() { return { getRawSteamID: function() { return "0"; }, getAccountID: function() { return 0; } }; },
-                isSteamRunning: function() { return false; },
-                getAppId: function() { return 0; },
-                activateAchievement: function() {}
+                getSteamId: function() { return { getRawSteamID: function() { return "76561198000000000"; }, getAccountID: function() { return 10000; }, accountId: 10000, steamId: "76561198000000000", getPersonaName: function() { return "Player"; }, getNickName: function() { return "Player"; } }; },
+                getCurrentGameLanguage: function() { return "schinese"; },
+                isCloudEnabled: function() { return false; },
+                isCloudEnabledForUser: function() { return false; },
+                getAchievementNames: function() { return []; },
+                isSteamRunning: function() { return true; },
+                getAppId: function() { return 1429560; },
+                isDLCInstalled: function(id) { return true; },
+                installDLC: function(id) { return true; },
+                isSubscribedApp: function(id) { return true; },
+                activateAchievement: function() {},
+                saveTextToFile: function(f, c, cb) { if (cb) cb(); },
+                readTextFromFile: function(f, cb) { if (cb) cb(""); }
             };
 
             window.require = function(mod) {
