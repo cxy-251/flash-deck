@@ -1,4 +1,8 @@
         (function() {
+            if (!window.location.pathname.startsWith('/game/')) {
+                return;
+            }
+
             // 1. 全局 Buffer 对象模拟 (支持 Base64 与多编码转换)
             window.Buffer = {
                 isBuffer: function(obj) { return obj instanceof ArrayBuffer || obj instanceof Uint8Array; },
@@ -133,24 +137,41 @@
                 existsSync: function(p) {
                     if (typeof p !== 'string') return false;
                     if (p.indexOf('config.rpgsave') >= 0 || p === 'lng.txt') return true;
-                    if (p.endsWith('.txt') && localStorage.getItem('fs_' + p) !== null) return true;
-                    // Send synchronous HEAD request to check if file exists
-                    // p might be absolute from the game directory or relative.
-                    // The simplest is to just use 'p' directly if it's relative.
-                    // If it contains the full path, we can strip it.
                     var reqPath = p;
-                    var gameRootStr = '/games/';
-                    var idx = p.indexOf(gameRootStr);
+                    var gid = window.gameId || '';
+                    if (!gid && typeof window !== 'undefined' && window.location) {
+                        var pathParts = window.location.pathname.split('/');
+                        if (pathParts.length >= 3 && pathParts[1] === 'game') {
+                            gid = pathParts[2];
+                        }
+                    }
+                    var gameRootStr1 = '/games/';
+                    var gameRootStr2 = '/game/' + gid + '/';
+                    var gameRootStr3 = '/game/' + gid;
+                    
+                    var idx = p.indexOf(gameRootStr1);
                     if (idx >= 0) {
-                        var parts = p.substring(idx + gameRootStr.length).split('/');
+                        var parts = p.substring(idx + gameRootStr1.length).split('/');
                         if (parts.length > 1) {
                             parts.shift(); // remove gameId
                             reqPath = parts.join('/');
                         }
+                    } else if (p.startsWith(gameRootStr2)) {
+                        reqPath = p.substring(gameRootStr2.length);
+                    } else if (p === gameRootStr3) {
+                        reqPath = '';
+                    }
+
+                    while (reqPath.startsWith('/')) {
+                        reqPath = reqPath.substring(1);
+                    }
+
+                    if (reqPath.indexOf('locales') >= 0 && reqPath.indexOf('.json') === -1) {
+                        return true;
                     }
                     var xhr = new XMLHttpRequest();
                     if (reqPath.endsWith('.rpgsave') || reqPath.endsWith('.rmmzsave') || reqPath.endsWith('.rmmzsave_') || reqPath.endsWith('.save') || reqPath.endsWith('.bak')) {
-                        var gid = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
+                        var gid2 = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
                         var filename = reqPath;
                         var slashIdx = reqPath.lastIndexOf('/');
                         if (slashIdx >= 0) filename = reqPath.substring(slashIdx + 1);
@@ -158,13 +179,14 @@
                             var backslashIdx = reqPath.lastIndexOf('\\\\');
                             if (backslashIdx >= 0) filename = reqPath.substring(backslashIdx + 1);
                         }
-                        xhr.open('HEAD', '/save/' + encodeURIComponent(gid) + '/' + encodeURIComponent(filename) + '?t=' + Date.now(), false);
+                        xhr.open('HEAD', '/save/' + encodeURIComponent(gid2) + '/' + encodeURIComponent(filename) + '?t=' + Date.now(), false);
                     } else {
                         xhr.open('HEAD', reqPath + '?t=' + Date.now(), false);
                     }
                     try {
                         xhr.send();
-                        if (xhr.status === 200) return true;
+                        var res = (xhr.status === 200);
+                        if (res) return true;
                     } catch(e) {}
                     
                     // Fallback to encrypted extensions
@@ -195,18 +217,37 @@
                         if (val !== null) return val;
                     }
                     var reqPath = p;
-                    var gameRootStr = '/games/';
-                    var idx = p.indexOf(gameRootStr);
-                    if (idx >= 0) {
-                        var parts = p.substring(idx + gameRootStr.length).split('/');
-                        if (parts.length > 1) {
-                            parts.shift();
-                            reqPath = parts.join('/');
+                    var gid = window.gameId || '';
+                    if (!gid && typeof window !== 'undefined' && window.location) {
+                        var pathParts = window.location.pathname.split('/');
+                        if (pathParts.length >= 3 && pathParts[1] === 'game') {
+                            gid = pathParts[2];
                         }
                     }
+                    var gameRootStr1 = '/games/';
+                    var gameRootStr2 = '/game/' + gid + '/';
+                    var gameRootStr3 = '/game/' + gid;
+                    
+                    var idx = p.indexOf(gameRootStr1);
+                    if (idx >= 0) {
+                        var parts = p.substring(idx + gameRootStr1.length).split('/');
+                        if (parts.length > 1) {
+                            parts.shift(); // remove gameId
+                            reqPath = parts.join('/');
+                        }
+                    } else if (p.startsWith(gameRootStr2)) {
+                        reqPath = p.substring(gameRootStr2.length);
+                    } else if (p === gameRootStr3) {
+                        reqPath = '';
+                    }
+
+                    while (reqPath.startsWith('/')) {
+                        reqPath = reqPath.substring(1);
+                    }
+
                     var xhr = new XMLHttpRequest();
                     if (reqPath.endsWith('.rpgsave') || reqPath.endsWith('.rmmzsave') || reqPath.endsWith('.rmmzsave_') || reqPath.endsWith('.save') || reqPath.endsWith('.bak')) {
-                        var gid = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
+                        var gid2 = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
                         var filename = reqPath;
                         var slashIdx = reqPath.lastIndexOf('/');
                         if (slashIdx >= 0) filename = reqPath.substring(slashIdx + 1);
@@ -214,7 +255,7 @@
                             var backslashIdx = reqPath.lastIndexOf('\\\\');
                             if (backslashIdx >= 0) filename = reqPath.substring(backslashIdx + 1);
                         }
-                        xhr.open('GET', '/save/' + encodeURIComponent(gid) + '/' + encodeURIComponent(filename) + '?t=' + Date.now(), false);
+                        xhr.open('GET', '/save/' + encodeURIComponent(gid2) + '/' + encodeURIComponent(filename) + '?t=' + Date.now(), false);
                     } else {
                         xhr.open('GET', reqPath + '?t=' + Date.now(), false);
                     }
@@ -260,7 +301,17 @@
                         emit: function() {}
                     };
                 },
-                readFile: function(p, opt, cb) { var callback = cb || opt; if (typeof callback === 'function') callback(null, ''); },
+                readFile: function(p, enc, cb) {
+                    var callback = typeof enc === 'function' ? enc : cb;
+                    var res = this.readFileSync(p, typeof enc === 'string' ? enc : 'utf8');
+                    setTimeout(function() {
+                        if (res !== null && res !== '') {
+                            if (typeof callback === 'function') callback(null, res);
+                        } else {
+                            if (typeof callback === 'function') callback(new Error("File not found"));
+                        }
+                    }, 0);
+                },
                 writeFileSync: function(p, data) {
                     var strData = (typeof data === 'string') ? data : String(data);
                     localStorage.setItem('fs_' + p, strData);
@@ -274,19 +325,16 @@
                     if (filename.endsWith('.rpgsave') || filename.endsWith('.rmmzsave') || filename.endsWith('.rmmzsave_') || filename.endsWith('.save') || filename.endsWith('.rpgsave.bak') || filename.endsWith('.rmmzsave.bak')) {
                         var gid = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
                         var xhr = new XMLHttpRequest();
-                        xhr.open('POST', '/api/save/' + encodeURIComponent(gid) + '?file=' + encodeURIComponent(filename), false);
-                        try { xhr.send(strData); } catch(e) {}
+                        try {
+                            xhr.open('POST', '/api/save/' + encodeURIComponent(gid) + '?file=' + encodeURIComponent(filename), false);
+                            xhr.send(strData);
+                        } catch(e) {}
                     }
                 },
                 writeFile: function(p, data, opt, cb) {
-                    this.writeFileSync(p, data);
-                    var callback = cb || opt;
-                    if (typeof callback === 'function') callback(null);
-                },
-                appendFile: function(p, data, opt, cb) { var callback = cb || opt; if (typeof callback === 'function') callback(null); },
-                appendFileSync: function(p, data) {},
-                unlinkSync: function(p) {
-                    localStorage.removeItem('fs_' + p);
+                    var callback = typeof opt === 'function' ? opt : cb;
+                    var strData = (typeof data === 'string') ? data : String(data);
+                    localStorage.setItem('fs_' + p, strData);
                     var filename = p;
                     var slashIdx = p.lastIndexOf('/');
                     if (slashIdx >= 0) filename = p.substring(slashIdx + 1);
@@ -297,10 +345,18 @@
                     if (filename.endsWith('.rpgsave') || filename.endsWith('.rmmzsave') || filename.endsWith('.rmmzsave_') || filename.endsWith('.save') || filename.endsWith('.rpgsave.bak') || filename.endsWith('.rmmzsave.bak')) {
                         var gid = window.gameId || (decodeURIComponent(window.location.pathname.split('/')[2]));
                         var xhr = new XMLHttpRequest();
-                        xhr.open('DELETE', '/api/save/' + encodeURIComponent(gid) + '?file=' + encodeURIComponent(filename), false);
-                        try { xhr.send(); } catch(e) {}
+                        xhr.open('POST', '/api/save/' + encodeURIComponent(gid) + '?file=' + encodeURIComponent(filename), true);
+                        xhr.onload = function() { if (typeof callback === 'function') callback(null); };
+                        xhr.onerror = function() { if (typeof callback === 'function') callback(null); };
+                        try { xhr.send(strData); } catch(e) { if (typeof callback === 'function') callback(null); }
+                    } else {
+                        setTimeout(function() {
+                            if (typeof callback === 'function') callback(null);
+                        }, 0);
                     }
                 },
+                appendFile: function(p, data, opt, cb) { var callback = cb || opt; if (typeof callback === 'function') callback(null); },
+                appendFileSync: function(p, data) {},
                 renameSync: function(oldPath, newPath) {
                     var data = this.readFileSync(oldPath);
                     if (data !== null && data !== '') {
@@ -309,15 +365,17 @@
                     }
                 },
                 unlink: function(p, cb) {
-                    try { this.unlinkSync(p); } catch(e) {}
+                    this.unlinkSync(p);
                     if (typeof cb === 'function') cb(null);
                 },
                 mkdirSync: function(p) {},
                 mkdir: function(p, cb) { if (typeof cb === 'function') cb(null); },
                 statSync: function(p) {
+                    var isDir = (p && (p.endsWith('/') || p.indexOf('.') === -1));
+                    if (p && p.indexOf('locales') >= 0 && p.indexOf('.json') === -1) isDir = true;
                     return {
-                        isFile: function() { return true; },
-                        isDirectory: function() { return false; },
+                        isFile: function() { return !isDir; },
+                        isDirectory: function() { return isDir; },
                         mtime: new Date(),
                         size: 0
                     };
@@ -331,6 +389,24 @@
                         if (pathParts.length >= 3 && pathParts[1] === 'game') {
                             gid = pathParts[2];
                         }
+                        var gameRootStr1 = '/games/';
+                        var gameRootStr2 = '/game/' + gid + '/';
+                        var gameRootStr3 = '/game/' + gid;
+                        var idx = p.indexOf(gameRootStr1);
+                        if (idx >= 0) {
+                            var parts = p.substring(idx + gameRootStr1.length).split('/');
+                            if (parts.length > 1) {
+                                parts.shift();
+                                reqPath = parts.join('/');
+                            }
+                        } else if (p.startsWith(gameRootStr2)) {
+                            reqPath = p.substring(gameRootStr2.length);
+                        } else if (p === gameRootStr3) {
+                            reqPath = '';
+                        }
+                    }
+                    while (reqPath.startsWith('/')) {
+                        reqPath = reqPath.substring(1);
                     }
                     var xhr = new XMLHttpRequest();
                     var apiUrl = '/api/readdir?path=' + encodeURIComponent(reqPath);
@@ -344,12 +420,45 @@
                     } catch(e) {}
                     return [];
                 },
-                readdir: function(p, cb) { if (typeof cb === 'function') cb(null, []); },
-                statSync: function(p) {
-                    return { isDirectory: function() { return false; }, isFile: function() { return true; }, size: 0 };
-                },
-                stat: function(p, cb) {
-                    if (typeof cb === 'function') cb(null, { isDirectory: function() { return false; }, isFile: function() { return true; }, size: 0 });
+                readdir: function(p, cb) {
+                    var reqPath = p;
+                    var gid = '';
+                    if (typeof p === 'string') {
+                        var pathParts = window.location.pathname.split('/');
+                        if (pathParts.length >= 3 && pathParts[1] === 'game') {
+                            gid = pathParts[2];
+                        }
+                        var gameRootStr1 = '/games/';
+                        var gameRootStr2 = '/game/' + gid + '/';
+                        var gameRootStr3 = '/game/' + gid;
+                        var idx = p.indexOf(gameRootStr1);
+                        if (idx >= 0) {
+                            var parts = p.substring(idx + gameRootStr1.length).split('/');
+                            if (parts.length > 1) {
+                                parts.shift();
+                                reqPath = parts.join('/');
+                            }
+                        } else if (p.startsWith(gameRootStr2)) {
+                            reqPath = p.substring(gameRootStr2.length);
+                        } else if (p === gameRootStr3) {
+                            reqPath = '';
+                        }
+                    }
+                    var xhr = new XMLHttpRequest();
+                    var apiUrl = '/api/readdir?path=' + encodeURIComponent(reqPath);
+                    if (gid) apiUrl += '&game_id=' + encodeURIComponent(gid);
+                    xhr.open('GET', apiUrl, true);
+                    xhr.onload = function() {
+                        if (xhr.status === 200) {
+                            if (typeof cb === 'function') cb(null, JSON.parse(xhr.responseText));
+                        } else {
+                            if (typeof cb === 'function') cb(new Error("Not found"));
+                        }
+                    };
+                    xhr.onerror = function() {
+                        if (typeof cb === 'function') cb(new Error("Network Error"));
+                    };
+                    try { xhr.send(); } catch(e) { if (typeof cb === 'function') cb(e); }
                 },
                 unlinkSync: function(p) { localStorage.removeItem('fs_' + p); },
                 unlink: function(p, cb) { localStorage.removeItem('fs_' + p); if (typeof cb === 'function') cb(null); },
@@ -362,14 +471,51 @@
             };
 
             var mockPath = {
-                join: function() { return Array.prototype.slice.call(arguments).join('/'); },
-                resolve: function() { return Array.prototype.slice.call(arguments).join('/'); },
-                normalize: function(p) { return p; },
+                join: function() { return this.normalize(Array.prototype.slice.call(arguments).join('/')); },
+                resolve: function() { return this.normalize(Array.prototype.slice.call(arguments).join('/')); },
+                normalize: function(p) {
+                    if (!p) return '.';
+                    var isAbs = p.startsWith('/');
+                    var parts = p.split('/');
+                    var res = [];
+                    for (var i = 0; i < parts.length; i++) {
+                        var part = parts[i];
+                        if (part === '' || part === '.') continue;
+                        if (part === '..') {
+                            if (res.length > 0 && res[res.length - 1] !== '..') res.pop();
+                            else if (!isAbs) res.push('..');
+                        } else {
+                            res.push(part);
+                        }
+                    }
+                    var finalStr = res.join('/');
+                    if (isAbs) finalStr = '/' + finalStr;
+                    if (p.endsWith('/') && finalStr !== '/') finalStr += '/';
+                    return finalStr || '.';
+                },
                 isAbsolute: function(p) { return p && (p.startsWith('/') || p.indexOf(':') === 1); },
                 relative: function(from, to) { return to; },
-                dirname: function(p) { return p.substring(0, p.lastIndexOf('/')) || '.'; },
-                basename: function(p) { return p.substring(p.lastIndexOf('/') + 1); },
-                extname: function(p) { return p.substring(p.lastIndexOf('.')); },
+                dirname: function(p) {
+                    var n = this.normalize(p);
+                    if (n === '/') return '/';
+                    if (n.endsWith('/')) n = n.substring(0, n.length - 1);
+                    var idx = n.lastIndexOf('/');
+                    if (idx === -1) return '.';
+                    if (idx === 0) return '/';
+                    return n.substring(0, idx);
+                },
+                basename: function(p) {
+                    var n = this.normalize(p);
+                    if (n === '/') return '';
+                    if (n.endsWith('/')) n = n.substring(0, n.length - 1);
+                    return n.substring(n.lastIndexOf('/') + 1);
+                },
+                extname: function(p) {
+                    var base = this.basename(p);
+                    var idx = base.lastIndexOf('.');
+                    if (idx <= 0) return '';
+                    return base.substring(idx);
+                },
                 parse: function(p) {
                     var ext = this.extname(p);
                     var base = this.basename(p);
@@ -590,7 +736,7 @@
                         try {
                             eval(_xhrPatch.responseText);
                         } catch(e) {
-                            console.error('[RPG-Deck] 专属补丁执行失败 (' + _patchGameId + '):', e);
+                            console.error('[RPGWeb-Deck] 专属补丁执行失败 (' + _patchGameId + '):', e);
                         }
                     }
                 } catch(e) {}
@@ -598,12 +744,19 @@
                 // Add global XHR interceptor to bypass aggressive browser caching for local game assets
                 var _orig_xhr_open = XMLHttpRequest.prototype.open;
                 XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
-                    if (typeof url === 'string' && (url.indexOf('.rpgmvp') !== -1 || url.indexOf('.png') !== -1 || url.indexOf('.rpgmvo') !== -1 || url.indexOf('.m4a') !== -1)) {
-                        if (url.indexOf('?t=') === -1) {
-                            url += (url.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now();
+                    var args = Array.prototype.slice.call(arguments);
+                    if (typeof url === 'string') {
+                        if (url.indexOf('.rpgmvp') !== -1 || url.indexOf('.png') !== -1 || url.indexOf('.rpgmvo') !== -1 || url.indexOf('.m4a') !== -1 || url.indexOf('.json') !== -1) {
+                            if (url.indexOf('?t=') === -1) {
+                                url += (url.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now();
+                            }
                         }
+                        if (url.startsWith('data/')) {
+                            url = window.location.pathname.replace('/index.html', '/') + url;
+                        }
+                        args[1] = url;
                     }
-                    return _orig_xhr_open.apply(this, arguments);
+                    return _orig_xhr_open.apply(this, args);
                 };
 
             }
@@ -651,7 +804,7 @@
                                 return LZString.decompressFromBase64(xhr.responseText);
                             }
                         } catch(e) {
-                            console.error('[RPG-Deck] 读档异常:', e);
+                            console.error('[RPGWeb-Deck] 读档异常:', e);
                         }
                         return null;
                     };
@@ -666,13 +819,13 @@
                             headers: { 'Content-Type': 'text/plain' },
                             body: compressed
                         }).catch(function(err) {
-                            console.error('[RPG-Deck] 异步存档异常:', err);
+                            console.error('[RPGWeb-Deck] 异步存档异常:', err);
                         });
                     };
                     if (window.Graphics) {
                         var _orig_printLoadingError = Graphics.printLoadingError;
                         Graphics.printLoadingError = function(url) {
-                            console.error("[RPG-Deck] Graphics.printLoadingError triggered for URL: " + url);
+                            console.error("[RPGWeb-Deck] Graphics.printLoadingError triggered for URL: " + url);
                             if (_orig_printLoadingError) {
                                 _orig_printLoadingError.apply(this, arguments);
                             }

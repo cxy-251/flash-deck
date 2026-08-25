@@ -1,7 +1,7 @@
 [project]
-name = "rpg-deck"
-version = "1.0.0"
-description = "专为 Steam Deck (SteamOS/Linux) 打造的原生多标签页 RPG Maker HTML5 游戏中心"
+name = "omni-deck"
+version = "2.0.0"
+description = "Omni Deck — 专为 Steam Deck (SteamOS/Linux) 打造的五大引擎多世代全能游戏控制中心"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

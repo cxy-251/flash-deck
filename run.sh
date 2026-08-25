@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:$PATH"
 
-echo "[*] 正在启动 RPG Deck 独立游戏中心 (Native Linux on SteamOS)..."
+echo "[*] 正在启动 Omni Deck 全能独立游戏中心 (Native Linux on SteamOS)..."
 
 # 1. 优先使用 uv
 if command -v uv >/dev/null 2>&1; then

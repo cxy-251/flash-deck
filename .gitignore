@@ -1,12 +1,20 @@
-.venv/
-__pycache__/
-cache/
-data/
+/.venv/
+/__pycache__/
+/cache/
+/data/
 uv.lock
 
-# Ignore all files inside the games directories
-games/*/*
+# Large game assets ignored
+rpg_games/*/*
+renpy_games/*/*
+retro_games/*/*
+slg_games/*/*
 
-# But do not ignore these specific files
-!games/*/adapter.js
-!games/*/.gitkeep
+# Preserve folder structure and adapters
+!rpg_games/*/.gitkeep
+!renpy_games/*/.gitkeep
+!retro_games/*/.gitkeep
+!slg_games/*/.gitkeep
+
+!rpg_games/*/adapter.js
+!slg_games/*/adapter.js

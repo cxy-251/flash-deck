@@ -3,97 +3,715 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RPG 游戏库</title>
+    <title>Omni Deck — 全能游戏控制中心</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background: #0d1117; color: #e6edf3;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-            min-height: 100vh; padding: 40px 30px; display: flex; flex-direction: column; align-items: center;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 24px;
+            user-select: none;
+            overflow-x: hidden;
         }
-        .container { width: 100%; max-width: 1100px; }
-        .header {
-            margin-bottom: 24px; border-bottom: 1px solid #21262d; padding-bottom: 14px;
+        .container { max-width: 1300px; margin: 0 auto; }
+
+        /* 顶部导航栏 */
+        .top-navbar {
             display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid #21262d;
+            flex-wrap: wrap; gap: 12px;
         }
-        .header h1 { font-size: 18px; font-weight: 600; color: #f0f6fc; letter-spacing: 0.5px; }
+        .nav-title {
+            font-size: 20px; font-weight: 700; color: #f0f6fc;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .badge-total {
+            background: #21262d; border: 1px solid #30363d; color: #8b949e;
+            font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 12px;
+        }
+        .back-btn {
+            background: #21262d; border: 1px solid #30363d; color: #58a6ff;
+            padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: all 0.15s; outline: none; display: flex; align-items: center; gap: 6px;
+        }
+        .back-btn:hover { background: #30363d; border-color: #58a6ff; color: #ffffff; }
+        .back-btn:active { transform: scale(0.96); }
+
         .refresh-btn {
             background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
-            padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
-            cursor: pointer; transition: all 0.15s; outline: none;
+            padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: all 0.15s; outline: none; display: flex; align-items: center; gap: 4px;
         }
-        .refresh-btn:hover { background: #30363d; border-color: #8b949e; color: #f0f6fc; }
+        .refresh-btn:hover { background: #30363d; border-color: #58a6ff; color: #f0f6fc; }
         .refresh-btn:active { transform: scale(0.96); }
-        .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-        .item {
-            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
-            padding: 12px 16px; text-decoration: none; color: #f0f6fc;
-            font-size: 14px; font-weight: 600; transition: all 0.1s ease;
-            cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+
+        .search-input {
+            background: #161b22; border: 1px solid #30363d; color: #f0f6fc;
+            padding: 7px 14px; border-radius: 6px; font-size: 13px; outline: none; width: 220px;
+            transition: all 0.2s;
         }
-        .item:hover { background: #21262d; border-color: #58a6ff; color: #58a6ff; }
-        .item:active { transform: scale(0.98); }
+        .search-input:focus { border-color: #58a6ff; width: 280px; }
+
+        /* 一级页面: 分类大厅卡片 */
+        #portal-view { display: block; animation: fadeIn 0.15s ease; }
+        .portal-hero {
+            background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+            border: 1px solid #30363d; border-radius: 12px; padding: 22px 24px; margin-bottom: 20px;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;
+        }
+        .portal-hero h2 { font-size: 17px; font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
+        .portal-hero p { font-size: 13px; color: #8b949e; }
+        
+        .category-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px;
+        }
+        .cat-card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 22px 20px;
+            cursor: pointer; transition: all 0.2s ease; position: relative; overflow: hidden;
+            display: flex; flex-direction: column; justify-content: space-between; min-height: 160px;
+        }
+        .cat-card:hover {
+            transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+        }
+        .cat-card:active { transform: scale(0.98); }
+        .cat-card.fav-card:hover { border-color: #f1e05a; }
+        .cat-card.rpg-card:hover { border-color: #58a6ff; }
+        .cat-card.renpy-card:hover { border-color: #bc8cff; }
+        .cat-card.retro-card:hover { border-color: #e3b341; }
+        .cat-card.slg-card:hover { border-color: #3fb950; }
+        .cat-card.flash-card:hover { border-color: #ff9b26; }
+        
+        .cat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .cat-title { font-size: 17px; font-weight: 700; color: #f0f6fc; display: flex; align-items: center; gap: 8px; }
+        .cat-count {
+            font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 10px;
+        }
+        .fav-count { background: rgba(241, 224, 90, 0.15); color: #f1e05a; border: 1px solid rgba(241, 224, 90, 0.3); }
+        .rpg-count { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.3); }
+        .renpy-count { background: rgba(188, 140, 255, 0.15); color: #bc8cff; border: 1px solid rgba(188, 140, 255, 0.3); }
+        .retro-count { background: rgba(210, 153, 34, 0.15); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.3); }
+        .slg-count { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.3); }
+        .flash-count { background: rgba(255, 155, 38, 0.15); color: #ff9b26; border: 1px solid rgba(255, 155, 38, 0.3); }
+
+        .cat-desc { font-size: 13px; color: #8b949e; line-height: 1.5; margin-bottom: 16px; }
+        .cat-action {
+            font-size: 13px; font-weight: 600; color: #58a6ff; display: flex; align-items: center; gap: 4px;
+        }
+        .fav-card .cat-action { color: #f1e05a; }
+        .renpy-card .cat-action { color: #bc8cff; }
+        .retro-card .cat-action { color: #e3b341; }
+        .slg-card .cat-action { color: #3fb950; }
+        .flash-card .cat-action { color: #ff9b26; }
+        
+        .all-games-btn {
+            width: 100%; background: #161b22; border: 1px dashed #30363d; border-radius: 10px;
+            padding: 14px 18px; color: #c9d1d9; font-size: 14px; font-weight: 600; cursor: pointer;
+            text-align: center; transition: all 0.15s;
+        }
+        .all-games-btn:hover { background: #21262d; border-color: #58a6ff; color: #58a6ff; }
+
+        /* 二级页面: 游戏列表网格 */
+        #list-view { display: none; animation: fadeIn 0.15s ease; }
+        .list-controls {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;
+        }
+        .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .tab-btn {
+            background: #161b22; border: 1px solid #30363d; color: #8b949e;
+            padding: 5px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: all 0.15s; outline: none; display: flex; align-items: center; gap: 4px;
+        }
+        .tab-btn:hover { color: #c9d1d9; border-color: #8b949e; }
+        .tab-btn.active { background: #21262d; color: #58a6ff; border-color: #58a6ff; }
+        .game-grid { 
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        .game-card {
+            flex: 0 1 auto;
+            max-width: 100%;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 9px 14px;
+            text-decoration: none;
+            color: #f0f6fc;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.15s ease;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            white-space: nowrap;
+        }
+        .game-card:hover {
+            background: #21262d;
+            border-color: #58a6ff;
+            color: #58a6ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+        }
+        .game-card:active { transform: scale(0.98); }
+        
+        .game-title-box { 
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+        .game-title { 
+            white-space: nowrap;
+            color: #f0f6fc;
+            font-size: 13px;
+        }
+
+        /* 收藏星星按钮 */
+        .fav-star-btn {
+            background: none; border: none; font-size: 15px; color: #484f58;
+            cursor: pointer; padding: 0 2px; border-radius: 4px; transition: all 0.15s; outline: none;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .fav-star-btn:hover { transform: scale(1.25); color: #f1e05a; }
+        .fav-star-btn.is-fav {
+            color: #f1e05a; text-shadow: 0 0 8px rgba(241, 224, 90, 0.5);
+        }
+
+        .engine-badge {
+            font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
+            letter-spacing: 0.5px; flex-shrink: 0;
+        }
+        .badge-rpg { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.3); }
+        .badge-renpy { background: rgba(188, 140, 255, 0.15); color: #bc8cff; border: 1px solid rgba(188, 140, 255, 0.3); }
+        .badge-retro { background: rgba(210, 153, 34, 0.15); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.3); }
+        .badge-slg { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.3); }
+        .badge-flash { background: rgba(255, 155, 38, 0.15); color: #ff9b26; border: 1px solid rgba(255, 155, 38, 0.3); }
+
+        /* 同系列大卡片包裹容器 */
+        .series-container {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            width: 100%;
+        }
+        .series-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 16px 20px;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+        .series-card:hover {
+            border-color: #58a6ff;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        .series-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #21262d;
+        }
+        .series-title-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .series-icon {
+            font-size: 18px;
+        }
+        .series-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #f0f6fc;
+        }
+        .series-count-badge {
+            font-size: 11.5px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 10px;
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+        }
+        .series-game-flow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(3px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>RPG 游戏库</h1>
-            <button class="refresh-btn" onclick="loadGames()">刷新库</button>
+        <!-- 顶部主导航 -->
+        <div class="top-navbar">
+            <div class="nav-title" id="nav-title-box">
+                <span>🎮 Omni Deck Console</span>
+                <span class="badge-total" id="total-badge">0 款游戏</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <input type="text" id="global-search" class="search-input" placeholder="🔍 搜索游戏或编号 (如 001)..." oninput="onSearchInput(this.value)">
+                <button class="back-btn" id="nav-back-btn" style="display:none;" onclick="showPortalView()">⬅ 返回专区</button>
+                <button class="refresh-btn" onclick="loadGames()">🔄 刷新</button>
+            </div>
         </div>
-        <div class="list" id="game-list"></div>
+
+        <!-- 一级页面: 分类专区大厅 -->
+        <div id="portal-view">
+            <div class="portal-hero">
+                <div>
+                    <h2>欢迎使用 Omni Deck 全能游戏控制中心</h2>
+                    <p>已接入 RPG Maker、Ren'Py 视觉小说、复古街机掌机、SLG 模拟策略 与 Flash 殿堂神作 五大引擎，即点即玩。</p>
+                </div>
+            </div>
+
+            <div class="category-grid">
+                <!-- 喜欢 / 收藏列表卡片 -->
+                <div class="cat-card fav-card" onclick="openCategory('fav')">
+                    <div class="cat-header">
+                        <div class="cat-title">⭐ 收藏与喜欢</div>
+                        <span class="cat-count fav-count" id="fav-count-badge">0 Favorites</span>
+                    </div>
+                    <div class="cat-desc">
+                        随时置顶收藏你最爱玩的神作 · 点击任意游戏卡片上的 ⭐ 即可快速加入或移除
+                    </div>
+                    <div class="cat-action">查看精选 ➔</div>
+                </div>
+
+                <!-- RPG Maker 专区 -->
+                <div class="cat-card rpg-card" onclick="openCategory('rpg')">
+                    <div class="cat-header">
+                        <div class="cat-title">🗡️ RPG Maker 专区</div>
+                        <span class="cat-count rpg-count" id="rpg-count-badge">0 Games</span>
+                    </div>
+                    <div class="cat-desc">
+                        RPG Maker MV / MZ 原生 WebGL 硬件加速引擎 · 物理硬盘存档直通 · 纯净免安装
+                    </div>
+                    <div class="cat-action">进入专区 ➔</div>
+                </div>
+
+                <!-- Ren'Py 专区 -->
+                <div class="cat-card renpy-card" onclick="openCategory('renpy')">
+                    <div class="cat-header">
+                        <div class="cat-title">📖 视觉小说专区</div>
+                        <span class="cat-count renpy-count" id="renpy-count-badge">0 Games</span>
+                    </div>
+                    <div class="cat-desc">
+                        Ren'Py Visual Novels · Linux 原生 SDK 极速调度直通 · 免 Wine 满帧运行
+                    </div>
+                    <div class="cat-action">进入专区 ➔</div>
+                </div>
+
+                <!-- 复古街机与掌机卡带专区 -->
+                <div class="cat-card retro-card" onclick="openCategory('retro')">
+                    <div class="cat-header">
+                        <div class="cat-title">🕹️ 街机与掌机卡带</div>
+                        <span class="cat-count retro-count" id="retro-count-badge">0 Games</span>
+                    </div>
+                    <div class="cat-desc">
+                        GBA · NES · 街机 (FBNeo) · SFC · MD · WebAssembly 硬件沙盒
+                    </div>
+                    <div class="cat-action">进入专区 ➔</div>
+                </div>
+
+                <!-- SLG 模拟策略与互动养成专区 -->
+                <div class="cat-card slg-card" onclick="openCategory('slg')">
+                    <div class="cat-header">
+                        <div class="cat-title">♟️ SLG 策略与互动</div>
+                        <span class="cat-count slg-count" id="slg-count-badge">0 Games</span>
+                    </div>
+                    <div class="cat-desc">
+                        SLG 模拟策略 · 动态互动 · 角色养成 · ACGGW 精选专区
+                    </div>
+                    <div class="cat-action">进入专区 ➔</div>
+                </div>
+
+                <!-- Flash 殿堂级神作专区 -->
+                <div class="cat-card flash-card" onclick="openCategory('flash')">
+                    <div class="cat-header">
+                        <div class="cat-title">⚡ Flash 殿堂神作</div>
+                        <span class="cat-count flash-count" id="flash-count-badge">0 Games</span>
+                    </div>
+                    <div class="cat-desc">
+                        王国保卫战 · 狂扁小朋友 · 战争进化史 · 坏冰淇淋 · Pepper Flash 原生硬件加速
+                    </div>
+                    <div class="cat-action">进入专区 ➔</div>
+                </div>
+            </div>
+
+            <button class="all-games-btn" id="all-games-btn-text" onclick="openCategory('all')">
+                🗂️ 查看全量游戏列表 ➔
+            </button>
+        </div>
+
+        <!-- 二级页面: 游戏网格列表 -->
+        <div id="list-view">
+            <div class="list-controls">
+                <div class="filter-tabs">
+                    <button class="tab-btn active" data-tab="all" onclick="switchTab('all', this)">全部</button>
+                    <button class="tab-btn" data-tab="fav" onclick="switchTab('fav', this)">⭐ 我的喜欢</button>
+                    <button class="tab-btn" data-tab="rpg" onclick="switchTab('rpg', this)">🗡️ RPG Maker</button>
+                    <button class="tab-btn" data-tab="renpy" onclick="switchTab('renpy', this)">📖 视觉小说</button>
+                    <button class="tab-btn" data-tab="retro" onclick="switchTab('retro', this)">🕹️ 街机与卡带</button>
+                    <button class="tab-btn" data-tab="slg" onclick="switchTab('slg', this)">♟️ SLG 策略</button>
+                    <button class="tab-btn" data-tab="flash" onclick="switchTab('flash', this)">⚡ Flash 殿堂</button>
+                </div>
+                <div style="font-size:13px;color:#8b949e;" id="filter-stats">共 0 款游戏</div>
+            </div>
+
+            <div class="game-grid" id="game-grid"></div>
+        </div>
     </div>
+
     <script>
-        const gameInfo = {
-            'My Countryside Life': { hub: 'My Countryside Life', title: 'Daily Lives of My Countryside' },
-            'Karryn\'s Prison': { hub: 'Karryn\'s Prison', title: 'Karryn\'s Prison' },
-            'Lewd Gym': { hub: 'Lewd Gym', title: 'Lewd Gym' },
-            'Succubus Boss': { hub: 'Succubus Boss', title: 'Succubus (魅魔老板)' },
-            'Secret Rule': { hub: 'Secret Rule', title: 'ヤリステメスブター (Secret Rule)' },
-            'Live Empire': { hub: 'Live Empire', title: '直播帝国 (Live Empire)' },
-            'Cool Friend & Sister': { hub: 'Cool Friend & Sister', title: 'Cool Friend & Sister (高冷青梅与妹妹)' },
-            'Goblin Front': { hub: 'Goblin Front', title: 'Goblin Front (哥布林前线)' },
-            'NTR Hunter': { hub: 'NTR Hunter', title: 'NTR猎人：久子的秘密' },
-            'Reaching Mom': { hub: 'Reaching Mom', title: 'ママの奥にとどく (到达妈妈的深处)' },
-            'QOS Wife 2': { hub: 'QOS Wife 2', title: 'QOS♠Wife2~被黑色巨根击坠子宫而堕落的强气人妻~' },
-            'Ayako\'s Effort': { hub: 'Ayako\'s Effort', title: '綾子さんの奔走 (绫子的努力)' },
-            'Adventurer Liena': { hub: 'Adventurer Liena', title: 'NTR冒险者莉艾娜~被盯上的女孩和她稚嫩的男朋友~' },
-            'Summer Vacation': { hub: 'Summer Vacation', title: '在姊正泰镇渡过的色色暑假' },
-            'Now, She is...': { hub: 'Now, She is...', title: '『现在，她正在……～实时NTR物语～』' },
-            'Mother NTR Hunter': { hub: 'Mother NTR Hunter', title: '母NTR -猎人ー-' },
-            'Listaria': { hub: 'Listaria', title: 'Listaria (白手起家 - 里斯塔利亚)' },
-            'Pleasant Adultery Village': { hub: 'Pleasant Adultery Village', title: '愉快通姦之村 (Pleasant Adultery Village)' },
-            'My Secret Summer Vacation 2': { hub: 'My Secret Summer Vacation 2', title: '我秘密的暑假时光2 v1.01 (My Secret Summer Vacation 2)' },
-            'Daily Love Life with Mother': { hub: 'Daily Love Life with Mother', title: '母との日常！らぶらいふ (Daily Love Life with Mother)' },
-            'Unholy Maiden': { hub: 'Unholy Maiden', title: 'Unholy maiden Ver.1.0.6 (Unholy Maiden)' },
-            'Isekai Kabukicho': { hub: 'Isekai Kabukicho', title: '异世界出身的我在歌舞伎町打黑工 Dlsite 1.04 (Isekai Kabukicho)' },
-            'Slutty Witches': { hub: 'Slutty Witches', title: 'yin荡的女巫们 (Slutty Witches)' },
-            'QOS MILF': { hub: 'QOS MILF', title: 'QOS MILF' },
-            'Careless Sister': { hub: 'Careless Sister', title: '疏忽大意的妹妹-虽然是一家人 但是也会毫无防备的勃起吧 (Careless Sister)' },
-            'Shoot NPC': { hub: 'Shoot NPC', title: '射爆NPC (Shoot NPC)' }
-        };
+        let allGames = [];
+        let currentTab = 'all';
+        let currentSearchQuery = '';
+
+        // 收藏夹管理 (永久存储于 localStorage)
+        function getFavorites() {
+            try {
+                return JSON.parse(localStorage.getItem('rpgweb_favorites') || '[]');
+            } catch(e) {
+                return [];
+            }
+        }
+
+        function saveFavorites(favs) {
+            localStorage.setItem('rpgweb_favorites', JSON.stringify(favs));
+            updateFavBadges();
+        }
+
+        function toggleFavorite(e, gameId) {
+            e.preventDefault();
+            e.stopPropagation();
+            let favs = getFavorites();
+            if (favs.includes(gameId)) {
+                favs = favs.filter(id => id !== gameId);
+            } else {
+                favs.push(gameId);
+            }
+            saveFavorites(favs);
+            applyFilter();
+        }
+
+        function updateFavBadges() {
+            const favs = getFavorites();
+            const badge = document.getElementById('fav-count-badge');
+            if (badge) badge.textContent = favs.length + ' Favorites';
+        }
+
+        function showPortalView() {
+            document.getElementById('portal-view').style.display = 'block';
+            document.getElementById('list-view').style.display = 'none';
+            document.getElementById('nav-back-btn').style.display = 'none';
+            document.getElementById('global-search').value = '';
+            currentSearchQuery = '';
+            currentTab = 'all';
+        }
+
+        function openCategory(cat) {
+            document.getElementById('portal-view').style.display = 'none';
+            document.getElementById('list-view').style.display = 'block';
+            document.getElementById('nav-back-btn').style.display = 'flex';
+            currentTab = cat;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === cat);
+            });
+            applyFilter();
+        }
+
+        function switchTab(tab, el) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            if (el) el.classList.add('active');
+            applyFilter();
+        }
+
+        function onSearchInput(val) {
+            currentSearchQuery = (val || '').trim().toLowerCase();
+            if (currentSearchQuery && document.getElementById('portal-view').style.display !== 'none') {
+                openCategory('all');
+            } else {
+                applyFilter();
+            }
+        }
+
+        function applyFilter() {
+            const favs = getFavorites();
+            const filtered = allGames.filter(g => {
+                let matchesTab = false;
+                if (currentTab === 'all') matchesTab = true;
+                else if (currentTab === 'fav') matchesTab = favs.includes(g.id);
+                else matchesTab = (g.type === currentTab);
+
+                const name = g.name || g.id || '';
+                const matchesQuery = !currentSearchQuery || g.id.toLowerCase().includes(currentSearchQuery) || name.toLowerCase().includes(currentSearchQuery);
+                return matchesTab && matchesQuery;
+            });
+            renderGames(filtered);
+        }
+
+        const RETRO_FRANCHISES = [
+            {
+                key: 'kov',
+                name: '三国战纪与街机清版名作 (Knights of Valour & Arcade Classics)',
+                icon: '🐉',
+                match: g => /valour|oriental legend|warriors of fate|三国|西游/i.test(g.id) || /kov|orlegend|wof/i.test(g.rom_file || '')
+            },
+            {
+                key: 'kof',
+                name: '拳皇全系列 (The King of Fighters)',
+                icon: '🥊',
+                match: g => /fighters|kof|热斗/i.test(g.id) || /kof/i.test(g.rom_file || '')
+            },
+            {
+                key: 'mslug',
+                name: '合金弹头全系列 (Metal Slug)',
+                icon: '🪖',
+                match: g => /metal slug|mslug/i.test(g.id) || /mslug/i.test(g.rom_file || '')
+            },
+            {
+                key: 'pokemon',
+                name: '宝可梦全世代与外传 (Pokemon)',
+                icon: '🐾',
+                match: g => /pokemon|宝可梦|口袋妖怪/i.test(g.id)
+            },
+            {
+                key: 'zelda',
+                name: '塞尔达传说系列 (The Legend of Zelda)',
+                icon: '🗡️',
+                match: g => /zelda|塞尔达/i.test(g.id)
+            },
+            {
+                key: 'mario',
+                name: '超级马里奥与瓦里奥系列 (Super Mario & Wario)',
+                icon: '🍄',
+                match: g => /mario|wario|yoshi|princess peach|马里奥|瓦里奥|耀西|碧姬/i.test(g.id)
+            },
+            {
+                key: 'ff',
+                name: '最终幻想系列 (Final Fantasy)',
+                icon: '🔮',
+                match: g => /final fantasy|最终幻想/i.test(g.id)
+            },
+            {
+                key: 'contra',
+                name: '魂斗罗全系列 (Contra)',
+                icon: '🔫',
+                match: g => /contra|operation c|魂斗罗/i.test(g.id)
+            },
+            {
+                key: 'other_retro',
+                name: '其他复古经典名作 (Other Retro Classics)',
+                icon: '🕹️',
+                match: g => g.type === 'retro'
+            }
+        ];
+
+        function createGameCardElement(g, favs) {
+            const item = document.createElement('a');
+            item.className = 'game-card';
+            
+            let actionProto = 'action://play-rpg';
+            let badgeText = 'RPG';
+            let badgeClass = 'badge-rpg';
+
+            if (g.type === 'renpy') {
+                actionProto = 'action://play-renpy';
+                badgeText = "Ren'Py";
+                badgeClass = 'badge-renpy';
+            } else if (g.type === 'retro') {
+                actionProto = 'action://play-retro';
+                badgeText = (g.system || 'Retro').toUpperCase();
+                badgeClass = 'badge-retro';
+            } else if (g.type === 'slg') {
+                actionProto = 'action://play-slg';
+                badgeText = 'SLG';
+                badgeClass = 'badge-slg';
+            } else if (g.type === 'flash') {
+                actionProto = 'action://play-flash';
+                badgeText = 'Flash';
+                badgeClass = 'badge-flash';
+            }
+
+            item.href = actionProto + '?id=' + encodeURIComponent(g.id) + '&title=' + encodeURIComponent(g.name || g.id);
+
+            const isFav = favs.includes(g.id);
+            const starBtn = document.createElement('button');
+            starBtn.className = 'fav-star-btn' + (isFav ? ' is-fav' : '');
+            starBtn.title = isFav ? '取消收藏' : '加入喜欢';
+            starBtn.innerHTML = isFav ? '★' : '☆';
+            starBtn.onclick = (e) => toggleFavorite(e, g.id);
+
+            const titleBox = document.createElement('div');
+            titleBox.className = 'game-title-box';
+
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'game-title';
+            titleSpan.textContent = g.id;
+
+            titleBox.appendChild(starBtn);
+            titleBox.appendChild(titleSpan);
+
+            const badgeSpan = document.createElement('span');
+            badgeSpan.className = 'engine-badge ' + badgeClass;
+            badgeSpan.textContent = badgeText;
+
+            item.appendChild(titleBox);
+            item.appendChild(badgeSpan);
+            return item;
+        }
+
+        function createSeriesCardElement(icon, title, count, gameCards) {
+            const card = document.createElement('div');
+            card.className = 'series-card';
+
+            const header = document.createElement('div');
+            header.className = 'series-header';
+
+            const titleBox = document.createElement('div');
+            titleBox.className = 'series-title-box';
+
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'series-icon';
+            iconSpan.textContent = icon;
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'series-title';
+            nameSpan.textContent = title;
+
+            titleBox.appendChild(iconSpan);
+            titleBox.appendChild(nameSpan);
+
+            const countSpan = document.createElement('span');
+            countSpan.className = 'series-count-badge';
+            countSpan.textContent = count + ' 款游戏';
+
+            header.appendChild(titleBox);
+            header.appendChild(countSpan);
+
+            const flow = document.createElement('div');
+            flow.className = 'series-game-flow';
+            gameCards.forEach(c => flow.appendChild(c));
+
+            card.appendChild(header);
+            card.appendChild(flow);
+            return card;
+        }
+
+        function renderGames(games) {
+            const grid = document.getElementById('game-grid');
+            grid.innerHTML = '';
+            const favs = getFavorites();
+            document.getElementById('filter-stats').textContent = '匹配到 ' + games.length + ' 款游戏';
+
+            if (games.length === 0) {
+                const emptyTip = currentTab === 'fav' 
+                    ? '⭐ 暂无收藏游戏，点击任意游戏卡片左侧的 ★ 即可加入喜欢列表！'
+                    : '未找到匹配的游戏';
+                grid.innerHTML = '<span style="color:#8b949e;font-size:14px;grid-column:1/-1;text-align:center;padding:50px 0;">' + emptyTip + '</span>';
+                return;
+            }
+
+            const isRetroView = (currentTab === 'retro');
+            const isAllView = (currentTab === 'all');
+            const isFavView = (currentTab === 'fav');
+
+            // 如果处于街机专区或全量视图，使用系列大卡片包裹排布
+            if (isRetroView || isAllView || isFavView) {
+                const seriesContainer = document.createElement('div');
+                seriesContainer.className = 'series-container';
+
+                // 1. 如果有 RPG Maker 游戏
+                const rpgGames = games.filter(g => g.type === 'rpg');
+                if (rpgGames.length > 0 && (isAllView || currentTab === 'rpg' || isFavView)) {
+                    const cards = rpgGames.map(g => createGameCardElement(g, favs));
+                    seriesContainer.appendChild(createSeriesCardElement('🗡️', 'RPG Maker 经典独立大系', rpgGames.length, cards));
+                }
+
+                // 2. 如果有 Ren'Py 游戏
+                const renpyGames = games.filter(g => g.type === 'renpy');
+                if (renpyGames.length > 0 && (isAllView || currentTab === 'renpy' || isFavView)) {
+                    const cards = renpyGames.map(g => createGameCardElement(g, favs));
+                    seriesContainer.appendChild(createSeriesCardElement('📖', "Ren'Py 视觉小说专区", renpyGames.length, cards));
+                }
+
+                // 3. 复古街机与掌机系列分组
+                const retroGames = games.filter(g => g.type === 'retro');
+                if (retroGames.length > 0 && (isAllView || currentTab === 'retro' || isFavView)) {
+                    const assignedSet = new Set();
+                    RETRO_FRANCHISES.forEach(f => {
+                        const matching = retroGames.filter(g => !assignedSet.has(g.id) && f.match(g));
+                        if (matching.length > 0) {
+                            matching.forEach(g => assignedSet.add(g.id));
+                            const cards = matching.map(g => createGameCardElement(g, favs));
+                            seriesContainer.appendChild(createSeriesCardElement(f.icon, f.name, matching.length, cards));
+                        }
+                    });
+                }
+
+                // 4. 如果有 SLG 游戏
+                const slgGames = games.filter(g => g.type === 'slg');
+                if (slgGames.length > 0 && (isAllView || currentTab === 'slg' || isFavView)) {
+                    const cards = slgGames.map(g => createGameCardElement(g, favs));
+                    seriesContainer.appendChild(createSeriesCardElement('♟️', 'SLG 模拟策略与互动养成专区 (ACGGW)', slgGames.length, cards));
+                }
+
+                // 5. 如果有 Flash 游戏
+                const flashGames = games.filter(g => g.type === 'flash');
+                if (flashGames.length > 0 && (isAllView || currentTab === 'flash' || isFavView)) {
+                    const cards = flashGames.map(g => createGameCardElement(g, favs));
+                    seriesContainer.appendChild(createSeriesCardElement('⚡', 'Flash 殿堂级神作全家桶 (Pepper Flash Native)', flashGames.length, cards));
+                }
+
+                grid.appendChild(seriesContainer);
+            } else {
+                // 单一专区常规平铺流
+                games.forEach(g => {
+                    grid.appendChild(createGameCardElement(g, favs));
+                });
+            }
+        }
 
         function loadGames() {
-            const list = document.getElementById('game-list');
-            list.innerHTML = '<span style="color:#8b949e;font-size:14px;grid-column:1/-1;">加载中...</span>';
             fetch('/api/games')
                 .then(res => res.json())
                 .then(games => {
-                    list.innerHTML = '';
-                    games.forEach(g => {
-                        const info = gameInfo[g.id] || { hub: g.name, title: g.name };
-                        const item = document.createElement('a');
-                        item.className = 'item';
-                        item.href = `action://play-rpg?id=${encodeURIComponent(g.id)}&title=${encodeURIComponent(info.title)}`;
-                        item.textContent = info.hub;
-                        list.appendChild(item);
-                    });
+                    allGames = games;
+                    const rpgCount = games.filter(g => g.type === 'rpg').length;
+                    const renpyCount = games.filter(g => g.type === 'renpy').length;
+                    const retroCount = games.filter(g => g.type === 'retro').length;
+                    const slgCount = games.filter(g => g.type === 'slg').length;
+                    const flashCount = games.filter(g => g.type === 'flash').length;
+                    
+                    document.getElementById('total-badge').textContent = games.length + ' 款游戏';
+                    document.getElementById('rpg-count-badge').textContent = rpgCount + ' Games';
+                    document.getElementById('renpy-count-badge').textContent = renpyCount + ' Games';
+                    document.getElementById('retro-count-badge').textContent = retroCount + ' Games';
+                    document.getElementById('slg-count-badge').textContent = slgCount + ' Games';
+                    document.getElementById('flash-count-badge').textContent = flashCount + ' Games';
+                    document.getElementById('all-games-btn-text').textContent = '🗂️ 查看全量游戏列表 (All ' + games.length + ' Games) ➔';
+                    
+                    updateFavBadges();
+                    applyFilter();
                 })
                 .catch(err => {
-                    list.innerHTML = '<span style="color:#f85149;font-size:14px;grid-column:1/-1;">加载失败</span>';
                     console.error('Failed to load games:', err);
                 });
         }
+
         loadGames();
     </script>
 </body>

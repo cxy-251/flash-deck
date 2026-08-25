@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flash Player</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            width: 100%; height: 100%; background: #080a0f; overflow: hidden;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        #flash-container {
+            width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+        }
+        embed, object {
+            width: 100%; height: 100%; max-width: 1060px; max-height: 700px; outline: none;
+            border-radius: 4px; box-shadow: 0 0 40px rgba(0,0,0,0.8);
+        }
+        #hint-bar {
+            position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+            background: rgba(22, 27, 34, 0.85); backdrop-filter: blur(8px);
+            border: 1px solid rgba(48, 54, 61, 0.6); border-radius: 20px;
+            padding: 6px 16px; color: #58a6ff; font-size: 13px; font-weight: 500;
+            display: flex; align-items: center; gap: 8px; z-index: 100;
+            pointer-events: none; transition: opacity 0.5s;
+        }
+    </style>
+</head>
+<body>
+    <div id="flash-container"></div>
+    <div id="hint-bar" style="display:none;"></div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const gameId = params.get('id') || '';
+        const swfFile = params.get('file') || '';
+        const hint = params.get('hint') || '';
+
+        if (hint) {
+            const bar = document.getElementById('hint-bar');
+            bar.textContent = hint;
+            bar.style.display = 'flex';
+            setTimeout(() => { bar.style.opacity = '0'; }, 8000);
+        }
+
+        const swfUrl = '/flash_swf/' + encodeURIComponent(gameId) + '/' + encodeURIComponent(swfFile);
+        const container = document.getElementById('flash-container');
+        const embed = document.createElement('embed');
+        embed.src = swfUrl;
+        embed.type = 'application/x-shockwave-flash';
+        embed.setAttribute('quality', 'high');
+        embed.setAttribute('wmode', 'direct');
+        embed.setAttribute('allowscriptaccess', 'always');
+        container.appendChild(embed);
+    </script>
+</body>
+</html>
