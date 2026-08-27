@@ -6,7 +6,9 @@ cd "$SCRIPT_DIR"
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:$PATH"
 
-echo "[*] 正在启动 Omni Deck 全能独立游戏中心 (Native Linux on SteamOS)..."
+export QTWEBENGINE_CHROMIUM_FLAGS="--enable-features=WebAssemblyThreads,SharedArrayBuffer --enable-webgl --ignore-gpu-blocklist --enable-gpu-rasterization"
+
+echo "[*] 正在启动 Omni Deck (Native Linux on SteamOS)..."
 
 # 1. 优先使用 uv
 if command -v uv >/dev/null 2>&1; then
@@ -29,5 +31,5 @@ fi
 
 # 4. 兜底
 python3 -m venv "$SCRIPT_DIR/.venv"
-"$SCRIPT_DIR/.venv/bin/pip" install PyQt5 PyQtWebEngine
+"$SCRIPT_DIR/.venv/bin/pip" install PyQt6 PyQt6-WebEngine
 exec "$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/main.py" "$@"

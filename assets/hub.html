@@ -4,22 +4,45 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Omni Deck — 全能游戏控制中心</title>
+    <script>
+        (function() {
+            var params = new URLSearchParams(window.location.search);
+            var cat = params.get('category');
+            if (cat && cat !== 'portal') {
+                var style = document.createElement('style');
+                style.id = 'cat-init-style';
+                style.textContent = '#portal-view { display: none !important; } #list-view { display: block !important; } #list-controls { display: flex !important; } #nav-back-btn { display: flex !important; }';
+                document.head.appendChild(style);
+            }
+        })();
+    </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             background-color: #0d1117;
             color: #c9d1d9;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            padding: 24px;
+            padding: 0 24px 24px 24px;
             user-select: none;
             overflow-x: hidden;
         }
         .container { max-width: 1300px; margin: 0 auto; }
 
+        /* 顶部吸顶区域 (主导航 + 二级页面控制栏) */
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            background-color: #0d1117;
+            padding-top: 18px;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #21262d;
+        }
+
         /* 顶部导航栏 */
         .top-navbar {
             display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid #21262d;
             flex-wrap: wrap; gap: 12px;
         }
         .nav-title {
@@ -45,6 +68,14 @@
         }
         .refresh-btn:hover { background: #30363d; border-color: #58a6ff; color: #f0f6fc; }
         .refresh-btn:active { transform: scale(0.96); }
+        .refresh-btn.spinning {
+            animation: spin 0.6s linear infinite;
+            pointer-events: none;
+            opacity: 0.75;
+        }
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
+        }
 
         .search-input {
             background: #161b22; border: 1px solid #30363d; color: #f0f6fc;
@@ -111,10 +142,12 @@
         }
         .all-games-btn:hover { background: #21262d; border-color: #58a6ff; color: #58a6ff; }
 
-        /* 二级页面: 游戏列表网格 */
+        /* 二级页面: 控制栏（分类标签 + 统计） */
         #list-view { display: none; animation: fadeIn 0.15s ease; }
         .list-controls {
-            display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;
+            display: flex; justify-content: space-between; align-items: center;
+            margin-top: 12px; padding-top: 12px; border-top: 1px solid #21262d;
+            flex-wrap: wrap; gap: 10px;
         }
         .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
         .tab-btn {
@@ -186,9 +219,55 @@
         }
         .badge-rpg { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.3); }
         .badge-renpy { background: rgba(188, 140, 255, 0.15); color: #bc8cff; border: 1px solid rgba(188, 140, 255, 0.3); }
+        .badge-unity { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.3); }
+        .badge-godot { background: rgba(88, 166, 255, 0.15); color: #58a6ff; border: 1px solid rgba(88, 166, 255, 0.3); }
+        .badge-unreal { background: rgba(210, 153, 34, 0.15); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.3); }
+        .badge-wine { background: rgba(248, 81, 73, 0.15); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.3); }
+        .badge-app { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.3); }
+        .badge-standalone { background: rgba(240, 136, 62, 0.15); color: #f0883e; border: 1px solid rgba(240, 136, 62, 0.3); }
         .badge-retro { background: rgba(210, 153, 34, 0.15); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.3); }
         .badge-slg { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.3); }
         .badge-flash { background: rgba(255, 155, 38, 0.15); color: #ff9b26; border: 1px solid rgba(255, 155, 38, 0.3); }
+        .badge-unsupported { background: rgba(110, 118, 129, 0.15) !important; color: #8b949e !important; border: 1px solid rgba(110, 118, 129, 0.35) !important; }
+
+        .sub-tab-btn {
+            background: #161b22;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .sub-tab-btn:hover {
+            color: #f0f6fc;
+            border-color: #58a6ff;
+        }
+        .sub-tab-btn.active {
+            background: #21262d;
+            border-color: #58a6ff;
+            color: #58a6ff;
+        }
+
+        .game-card.disabled {
+            opacity: 0.42;
+            background: #0d1117;
+            border-color: #21262d;
+            cursor: not-allowed;
+            filter: grayscale(0.85);
+        }
+        .game-card.disabled:hover {
+            background: #0d1117;
+            border-color: #30363d;
+            color: #8b949e;
+            transform: none;
+            box-shadow: none;
+        }
+        .game-card.disabled .game-title {
+            color: #8b949e;
+        }
 
         /* 同系列大卡片包裹容器 */
         .series-container {
@@ -251,19 +330,55 @@
             to { opacity: 1; transform: translateY(0); }
         }
     </style>
+    <script>
+        (function() {
+            var urlParams = new URLSearchParams(window.location.search);
+            var initCat = urlParams.get('category');
+            if (initCat && initCat !== 'portal') {
+                document.write('<style id="cat-init-style">#portal-view { display: none !important; } #list-view { display: block !important; } #list-controls { display: flex !important; } #nav-back-btn { display: flex !important; }</style>');
+            }
+        })();
+    </script>
 </head>
 <body>
     <div class="container">
-        <!-- 顶部主导航 -->
-        <div class="top-navbar">
-            <div class="nav-title" id="nav-title-box">
-                <span>🎮 Omni Deck Console</span>
-                <span class="badge-total" id="total-badge">0 款游戏</span>
+        <!-- 顶部吸顶区域 (主导航 + 二级页面控制栏) -->
+        <div class="sticky-header">
+            <div class="top-navbar">
+                <div class="nav-title" id="nav-title-box">
+                    <span>🎮 Omni Deck</span>
+                    <span class="badge-total" id="total-badge">0 款游戏</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <input type="text" id="global-search" class="search-input" placeholder="🔍 全局搜索游戏或编号 (如 001)..." oninput="onSearchInput(this.value)">
+                    <button class="back-btn" id="nav-back-btn" style="display:none;" onclick="showPortalView()">🏠 返回大厅</button>
+                    <button class="refresh-btn" onclick="loadGames(true)">🔄 刷新</button>
+                </div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px;">
-                <input type="text" id="global-search" class="search-input" placeholder="🔍 搜索游戏或编号 (如 001)..." oninput="onSearchInput(this.value)">
-                <button class="back-btn" id="nav-back-btn" style="display:none;" onclick="showPortalView()">⬅ 返回专区</button>
-                <button class="refresh-btn" onclick="loadGames()">🔄 刷新</button>
+
+            <!-- 二级页面控制栏 (分类标签 + 统计) -->
+            <div class="list-controls" id="list-controls" style="display:none;flex-direction:column;gap:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                    <div class="filter-tabs">
+                        <button class="tab-btn" data-tab="fav" onclick="switchTab('fav', this)">⭐ 我的喜欢</button>
+                        <button class="tab-btn active" data-tab="rpg" onclick="switchTab('rpg', this)">🗡️ RPG Maker</button>
+                        <button class="tab-btn" data-tab="standalone" onclick="switchTab('standalone', this)">🚀 独立游戏</button>
+                        <button class="tab-btn" data-tab="retro" onclick="switchTab('retro', this)">🕹️ 街机与卡带</button>
+                        <button class="tab-btn" data-tab="slg" onclick="switchTab('slg', this)">♟️ SLG 策略</button>
+                        <button class="tab-btn" data-tab="flash" onclick="switchTab('flash', this)">⚡ Flash 殿堂</button>
+                    </div>
+                    <div style="font-size:13px;color:#8b949e;" id="filter-stats">共 0 款游戏</div>
+                </div>
+                <div class="sub-filter-bar" id="standalone-sub-filters" style="display:none;margin-top:6px;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <span style="font-size:12px;color:#8b949e;margin-right:2px;">引擎/专区:</span>
+                    <button class="sub-tab-btn" data-sub="steam" onclick="switchStandaloneSubTab('steam', this)">🎮 Steam 精选</button>
+                    <button class="sub-tab-btn" data-sub="unity" onclick="switchStandaloneSubTab('unity', this)">🟢 Unity</button>
+                    <button class="sub-tab-btn" data-sub="renpy" onclick="switchStandaloneSubTab('renpy', this)">📖 Ren'Py</button>
+                    <button class="sub-tab-btn" data-sub="godot" onclick="switchStandaloneSubTab('godot', this)">🔵 Godot</button>
+                    <button class="sub-tab-btn" data-sub="unreal" onclick="switchStandaloneSubTab('unreal', this)">🟡 Unreal</button>
+                    <button class="sub-tab-btn" data-sub="wine" onclick="switchStandaloneSubTab('wine', this)">🖥️ PC / Wine</button>
+                    <button class="sub-tab-btn" data-sub="app" onclick="switchStandaloneSubTab('app', this)">🪟 Windows 软件</button>
+                </div>
             </div>
         </div>
 
@@ -271,8 +386,8 @@
         <div id="portal-view">
             <div class="portal-hero">
                 <div>
-                    <h2>欢迎使用 Omni Deck 全能游戏控制中心</h2>
-                    <p>已接入 RPG Maker、Ren'Py 视觉小说、复古街机掌机、SLG 模拟策略 与 Flash 殿堂神作 五大引擎，即点即玩。</p>
+                    <h2>欢迎使用 Omni Deck</h2>
+                    <p>已接入 RPG Maker、PC 独立游戏 (Unity / Ren'Py / Godot / Unreal / Wine)、复古街机掌机、SLG 策略 与 Flash 经典神作，即点即玩。</p>
                 </div>
             </div>
 
@@ -301,14 +416,14 @@
                     <div class="cat-action">进入专区 ➔</div>
                 </div>
 
-                <!-- Ren'Py 专区 -->
-                <div class="cat-card renpy-card" onclick="openCategory('renpy')">
+                <!-- 🚀 独立游戏专区 (Ren'Py / Unity / Godot / Unreal / Wine) -->
+                <div class="cat-card standalone-card" onclick="openCategory('standalone')">
                     <div class="cat-header">
-                        <div class="cat-title">📖 视觉小说专区</div>
-                        <span class="cat-count renpy-count" id="renpy-count-badge">0 Games</span>
+                        <div class="cat-title">🚀 独立游戏专区</div>
+                        <span class="cat-count standalone-count" id="standalone-count-badge">0 Games</span>
                     </div>
                     <div class="cat-desc">
-                        Ren'Py Visual Novels · Linux 原生 SDK 极速调度直通 · 免 Wine 满帧运行
+                        Unity · Ren'Py · Godot · Unreal 虚幻 · PC 原生独立大作 · SD 卡直通秒开
                     </div>
                     <div class="cat-action">进入专区 ➔</div>
                 </div>
@@ -349,34 +464,18 @@
                     <div class="cat-action">进入专区 ➔</div>
                 </div>
             </div>
-
-            <button class="all-games-btn" id="all-games-btn-text" onclick="openCategory('all')">
-                🗂️ 查看全量游戏列表 ➔
-            </button>
         </div>
 
         <!-- 二级页面: 游戏网格列表 -->
         <div id="list-view">
-            <div class="list-controls">
-                <div class="filter-tabs">
-                    <button class="tab-btn active" data-tab="all" onclick="switchTab('all', this)">全部</button>
-                    <button class="tab-btn" data-tab="fav" onclick="switchTab('fav', this)">⭐ 我的喜欢</button>
-                    <button class="tab-btn" data-tab="rpg" onclick="switchTab('rpg', this)">🗡️ RPG Maker</button>
-                    <button class="tab-btn" data-tab="renpy" onclick="switchTab('renpy', this)">📖 视觉小说</button>
-                    <button class="tab-btn" data-tab="retro" onclick="switchTab('retro', this)">🕹️ 街机与卡带</button>
-                    <button class="tab-btn" data-tab="slg" onclick="switchTab('slg', this)">♟️ SLG 策略</button>
-                    <button class="tab-btn" data-tab="flash" onclick="switchTab('flash', this)">⚡ Flash 殿堂</button>
-                </div>
-                <div style="font-size:13px;color:#8b949e;" id="filter-stats">共 0 款游戏</div>
-            </div>
-
             <div class="game-grid" id="game-grid"></div>
         </div>
     </div>
 
     <script>
         let allGames = [];
-        let currentTab = 'all';
+        let currentTab = 'rpg';
+        let currentStandaloneSubTab = null;
         let currentSearchQuery = '';
 
         // 收藏夹管理 (永久存储于 localStorage)
@@ -413,22 +512,44 @@
         }
 
         function showPortalView() {
+            var initStyle = document.getElementById('cat-init-style');
+            if (initStyle) initStyle.remove();
             document.getElementById('portal-view').style.display = 'block';
             document.getElementById('list-view').style.display = 'none';
+            document.getElementById('list-controls').style.display = 'none';
             document.getElementById('nav-back-btn').style.display = 'none';
             document.getElementById('global-search').value = '';
             currentSearchQuery = '';
-            currentTab = 'all';
+            currentTab = 'rpg';
+            currentStandaloneSubTab = null;
+            document.querySelectorAll('#standalone-sub-filters .sub-tab-btn').forEach(btn => btn.classList.remove('active'));
+            if (window.history && window.history.replaceState) {
+                window.history.replaceState(null, '', window.location.pathname);
+            }
+            window.scrollTo({ top: 0, behavior: 'instant' });
         }
 
         function openCategory(cat) {
             document.getElementById('portal-view').style.display = 'none';
             document.getElementById('list-view').style.display = 'block';
+            document.getElementById('list-controls').style.display = 'flex';
             document.getElementById('nav-back-btn').style.display = 'flex';
             currentTab = cat;
             document.querySelectorAll('.tab-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.tab === cat);
             });
+            applyFilter();
+        }
+
+        function switchStandaloneSubTab(sub, el) {
+            if (currentStandaloneSubTab === sub) {
+                currentStandaloneSubTab = null;
+                if (el) el.classList.remove('active');
+            } else {
+                currentStandaloneSubTab = sub;
+                document.querySelectorAll('#standalone-sub-filters .sub-tab-btn').forEach(btn => btn.classList.remove('active'));
+                if (el) el.classList.add('active');
+            }
             applyFilter();
         }
 
@@ -442,7 +563,7 @@
         function onSearchInput(val) {
             currentSearchQuery = (val || '').trim().toLowerCase();
             if (currentSearchQuery && document.getElementById('portal-view').style.display !== 'none') {
-                openCategory('all');
+                openCategory('rpg');
             } else {
                 applyFilter();
             }
@@ -450,15 +571,28 @@
 
         function applyFilter() {
             const favs = getFavorites();
-            const filtered = allGames.filter(g => {
-                let matchesTab = false;
-                if (currentTab === 'all') matchesTab = true;
-                else if (currentTab === 'fav') matchesTab = favs.includes(g.id);
-                else matchesTab = (g.type === currentTab);
+            const standaloneFilterEl = document.getElementById('standalone-sub-filters');
+            if (standaloneFilterEl) {
+                standaloneFilterEl.style.display = (!currentSearchQuery && currentTab === 'standalone') ? 'flex' : 'none';
+            }
 
+            const filtered = allGames.filter(g => {
                 const name = g.name || g.id || '';
                 const matchesQuery = !currentSearchQuery || g.id.toLowerCase().includes(currentSearchQuery) || name.toLowerCase().includes(currentSearchQuery);
-                return matchesTab && matchesQuery;
+
+                // 全局搜索：只要有搜索词，始终在所有游戏（全库）中跨类别搜索
+                if (currentSearchQuery) {
+                    return matchesQuery;
+                }
+
+                // 无搜索词时，按当前选中的专区与子标签过滤
+                if (currentTab === 'fav') return favs.includes(g.id);
+                if (currentTab === 'standalone') {
+                    if (g.type !== 'standalone') return false;
+                    if (currentStandaloneSubTab) return g.engine === currentStandaloneSubTab;
+                    return true;
+                }
+                return g.type === currentTab;
             });
             renderGames(filtered);
         }
@@ -528,10 +662,28 @@
             let badgeText = 'RPG';
             let badgeClass = 'badge-rpg';
 
-            if (g.type === 'renpy') {
-                actionProto = 'action://play-renpy';
-                badgeText = "Ren'Py";
-                badgeClass = 'badge-renpy';
+            if (g.type === 'standalone') {
+                actionProto = 'action://play-standalone';
+                const eng = (g.engine || 'PC').toLowerCase();
+                if (eng === 'renpy') {
+                    badgeText = "Ren'Py";
+                    badgeClass = 'badge-renpy';
+                } else if (eng === 'unity') {
+                    badgeText = 'Unity';
+                    badgeClass = 'badge-unity';
+                } else if (eng === 'godot') {
+                    badgeText = 'Godot';
+                    badgeClass = 'badge-godot';
+                } else if (eng === 'unreal') {
+                    badgeText = 'Unreal';
+                    badgeClass = 'badge-unreal';
+                } else if (eng === 'app') {
+                    badgeText = 'Windows 软件';
+                    badgeClass = 'badge-app';
+                } else {
+                    badgeText = 'PC / Wine';
+                    badgeClass = 'badge-wine';
+                }
             } else if (g.type === 'retro') {
                 actionProto = 'action://play-retro';
                 badgeText = (g.system || 'Retro').toUpperCase();
@@ -571,6 +723,9 @@
 
             item.appendChild(titleBox);
             item.appendChild(badgeSpan);
+            item.addEventListener('click', () => {
+                sessionStorage.setItem('hub_scroll_' + currentTab, String(window.scrollY));
+            });
             return item;
         }
 
@@ -588,19 +743,19 @@
             iconSpan.className = 'series-icon';
             iconSpan.textContent = icon;
 
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'series-title';
-            nameSpan.textContent = title;
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'series-title';
+            titleSpan.textContent = title;
 
             titleBox.appendChild(iconSpan);
-            titleBox.appendChild(nameSpan);
+            titleBox.appendChild(titleSpan);
 
-            const countSpan = document.createElement('span');
-            countSpan.className = 'series-count-badge';
-            countSpan.textContent = count + ' 款游戏';
+            const countBadge = document.createElement('span');
+            countBadge.className = 'series-count-badge';
+            countBadge.textContent = count + ' 款游戏';
 
             header.appendChild(titleBox);
-            header.appendChild(countSpan);
+            header.appendChild(countBadge);
 
             const flow = document.createElement('div');
             flow.className = 'series-game-flow';
@@ -614,101 +769,120 @@
         function renderGames(games) {
             const grid = document.getElementById('game-grid');
             grid.innerHTML = '';
-            const favs = getFavorites();
-            document.getElementById('filter-stats').textContent = '匹配到 ' + games.length + ' 款游戏';
+            
+            const stats = document.getElementById('filter-stats');
+            if (stats) stats.textContent = '共 ' + games.length + ' 款游戏';
 
             if (games.length === 0) {
                 const emptyTip = currentTab === 'fav' 
                     ? '⭐ 暂无收藏游戏，点击任意游戏卡片左侧的 ★ 即可加入喜欢列表！'
-                    : '未找到匹配的游戏';
-                grid.innerHTML = '<span style="color:#8b949e;font-size:14px;grid-column:1/-1;text-align:center;padding:50px 0;">' + emptyTip + '</span>';
+                    : '未检索到相关游戏';
+                const empty = document.createElement('div');
+                empty.className = 'empty-state';
+                empty.innerHTML = `
+                    <div style="font-size:36px;margin-bottom:12px;">🔍</div>
+                    <div style="font-size:16px;color:#c9d1d9;margin-bottom:6px;">${emptyTip}</div>
+                    <div style="font-size:13px;">请尝试更换搜索关键词或切换上方专区标签</div>
+                `;
+                grid.appendChild(empty);
                 return;
             }
 
-            const isRetroView = (currentTab === 'retro');
-            const isAllView = (currentTab === 'all');
-            const isFavView = (currentTab === 'fav');
+            const favs = getFavorites();
+            const isRetroView = (currentTab === 'retro' && !currentSearchQuery);
 
-            // 如果处于街机专区或全量视图，使用系列大卡片包裹排布
-            if (isRetroView || isAllView || isFavView) {
+            if (isRetroView) {
                 const seriesContainer = document.createElement('div');
                 seriesContainer.className = 'series-container';
 
-                // 1. 如果有 RPG Maker 游戏
-                const rpgGames = games.filter(g => g.type === 'rpg');
-                if (rpgGames.length > 0 && (isAllView || currentTab === 'rpg' || isFavView)) {
-                    const cards = rpgGames.map(g => createGameCardElement(g, favs));
-                    seriesContainer.appendChild(createSeriesCardElement('🗡️', 'RPG Maker 经典独立大系', rpgGames.length, cards));
-                }
-
-                // 2. 如果有 Ren'Py 游戏
-                const renpyGames = games.filter(g => g.type === 'renpy');
-                if (renpyGames.length > 0 && (isAllView || currentTab === 'renpy' || isFavView)) {
-                    const cards = renpyGames.map(g => createGameCardElement(g, favs));
-                    seriesContainer.appendChild(createSeriesCardElement('📖', "Ren'Py 视觉小说专区", renpyGames.length, cards));
-                }
-
-                // 3. 复古街机与掌机系列分组
-                const retroGames = games.filter(g => g.type === 'retro');
-                if (retroGames.length > 0 && (isAllView || currentTab === 'retro' || isFavView)) {
-                    const assignedSet = new Set();
-                    RETRO_FRANCHISES.forEach(f => {
-                        const matching = retroGames.filter(g => !assignedSet.has(g.id) && f.match(g));
-                        if (matching.length > 0) {
-                            matching.forEach(g => assignedSet.add(g.id));
-                            const cards = matching.map(g => createGameCardElement(g, favs));
-                            seriesContainer.appendChild(createSeriesCardElement(f.icon, f.name, matching.length, cards));
-                        }
-                    });
-                }
-
-                // 4. 如果有 SLG 游戏
-                const slgGames = games.filter(g => g.type === 'slg');
-                if (slgGames.length > 0 && (isAllView || currentTab === 'slg' || isFavView)) {
-                    const cards = slgGames.map(g => createGameCardElement(g, favs));
-                    seriesContainer.appendChild(createSeriesCardElement('♟️', 'SLG 模拟策略与互动养成专区 (ACGGW)', slgGames.length, cards));
-                }
-
-                // 5. 如果有 Flash 游戏
-                const flashGames = games.filter(g => g.type === 'flash');
-                if (flashGames.length > 0 && (isAllView || currentTab === 'flash' || isFavView)) {
-                    const cards = flashGames.map(g => createGameCardElement(g, favs));
-                    seriesContainer.appendChild(createSeriesCardElement('⚡', 'Flash 殿堂级神作全家桶 (Pepper Flash Native)', flashGames.length, cards));
-                }
+                const assignedSet = new Set();
+                RETRO_FRANCHISES.forEach(f => {
+                    const matching = games.filter(g => !assignedSet.has(g.id) && f.match(g));
+                    if (matching.length > 0) {
+                        matching.forEach(g => assignedSet.add(g.id));
+                        const cards = matching.map(g => createGameCardElement(g, favs));
+                        seriesContainer.appendChild(createSeriesCardElement(f.icon, f.name, matching.length, cards));
+                    }
+                });
 
                 grid.appendChild(seriesContainer);
             } else {
-                // 单一专区常规平铺流
+                // 各专区平铺流 (RPG / 独立大作 / SLG / Flash / 喜欢)
                 games.forEach(g => {
                     grid.appendChild(createGameCardElement(g, favs));
                 });
             }
+
+            const savedScroll = sessionStorage.getItem('hub_scroll_' + currentTab);
+            if (savedScroll) {
+                const sTop = parseInt(savedScroll, 10);
+                document.documentElement.scrollTop = sTop;
+                document.body.scrollTop = sTop;
+                window.scrollTo(0, sTop);
+            }
         }
 
-        function loadGames() {
-            fetch('/api/games')
+        function populateGames(games, isManualRefresh = false) {
+            allGames = games;
+            const rpgCount = games.filter(g => g.type === 'rpg').length;
+            const standaloneCount = games.filter(g => g.type === 'standalone').length;
+            const retroCount = games.filter(g => g.type === 'retro').length;
+            const slgCount = games.filter(g => g.type === 'slg').length;
+            const flashCount = games.filter(g => g.type === 'flash').length;
+            
+            document.getElementById('total-badge').textContent = games.length + ' 款游戏';
+            document.getElementById('rpg-count-badge').textContent = rpgCount + ' Games';
+            const standaloneBadge = document.getElementById('standalone-count-badge');
+            if (standaloneBadge) standaloneBadge.textContent = standaloneCount + ' Games';
+            document.getElementById('retro-count-badge').textContent = retroCount + ' Games';
+            document.getElementById('slg-count-badge').textContent = slgCount + ' Games';
+            document.getElementById('flash-count-badge').textContent = flashCount + ' Games';
+            
+            updateFavBadges();
+            
+            if (!isManualRefresh) {
+                const urlParams = new URLSearchParams(window.location.search);
+                const initCat = urlParams.get('category');
+                if (initCat && initCat !== 'portal') {
+                    document.getElementById('portal-view').style.display = 'none';
+                    document.getElementById('list-view').style.display = 'block';
+                    document.getElementById('list-controls').style.display = 'flex';
+                    document.getElementById('nav-back-btn').style.display = 'flex';
+                    currentTab = initCat;
+                    document.querySelectorAll('.tab-btn').forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.tab === initCat);
+                    });
+                }
+            }
+            applyFilter();
+        }
+
+        // 优先从缓存中同步完成秒级渲染，避免网络请求延迟导致的视觉闪烁
+        try {
+            const cached = sessionStorage.getItem('omni_games_cache');
+            if (cached) {
+                populateGames(JSON.parse(cached));
+            }
+        } catch(e) {}
+
+        function loadGames(isManualRefresh = false) {
+            const btn = document.querySelector('.refresh-btn');
+            if (btn && isManualRefresh) {
+                btn.classList.add('spinning');
+            }
+
+            fetch('/api/games?t=' + Date.now(), { cache: 'no-store' })
                 .then(res => res.json())
                 .then(games => {
-                    allGames = games;
-                    const rpgCount = games.filter(g => g.type === 'rpg').length;
-                    const renpyCount = games.filter(g => g.type === 'renpy').length;
-                    const retroCount = games.filter(g => g.type === 'retro').length;
-                    const slgCount = games.filter(g => g.type === 'slg').length;
-                    const flashCount = games.filter(g => g.type === 'flash').length;
-                    
-                    document.getElementById('total-badge').textContent = games.length + ' 款游戏';
-                    document.getElementById('rpg-count-badge').textContent = rpgCount + ' Games';
-                    document.getElementById('renpy-count-badge').textContent = renpyCount + ' Games';
-                    document.getElementById('retro-count-badge').textContent = retroCount + ' Games';
-                    document.getElementById('slg-count-badge').textContent = slgCount + ' Games';
-                    document.getElementById('flash-count-badge').textContent = flashCount + ' Games';
-                    document.getElementById('all-games-btn-text').textContent = '🗂️ 查看全量游戏列表 (All ' + games.length + ' Games) ➔';
-                    
-                    updateFavBadges();
-                    applyFilter();
+                    sessionStorage.setItem('omni_games_cache', JSON.stringify(games));
+                    populateGames(games, isManualRefresh);
+                    if (btn && isManualRefresh) {
+                        setTimeout(() => btn.classList.remove('spinning'), 350);
+                    }
                 })
                 .catch(err => {
                     console.error('Failed to load games:', err);
+                    if (btn && isManualRefresh) btn.classList.remove('spinning');
                 });
         }
 

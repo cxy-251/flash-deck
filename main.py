@@ -1,12 +1,42 @@
 import os
 import sys
+import shutil
 import platform
 import threading
 import subprocess
 import json
 import functools
 import urllib.parse
+import atexit
+import signal
+import ctypes
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+ACTIVE_CHILD_PROCESSES = []
+RUNNING_GAME_IDS = set()  # 当前正在运行的游戏 ID 集合，防止重复启动同一游戏
+
+def set_pdeathsig():
+    """在 Linux 下设置子进程随父进程一同销毁 (Parent Death Signal)"""
+    try:
+        libc = ctypes.CDLL('libc.so.6')
+        libc.prctl(1, signal.SIGKILL) # PR_SET_PDEATHSIG = 1
+    except Exception:
+        pass
+
+def kill_all_child_processes():
+    """彻底终止并清理 Omni Deck 打开的所有子进程和进程组"""
+    for proc in list(ACTIVE_CHILD_PROCESSES):
+        try:
+            if proc.poll() is None:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    proc.kill()
+        except Exception:
+            pass
+    ACTIVE_CHILD_PROCESSES.clear()
+
+atexit.register(kill_all_child_processes)
 
 # 1. 彻底清除外部代理环境变量，强制直连
 for env_var in [
@@ -25,7 +55,27 @@ for env_var in [
 os.environ["no_proxy"] = "*"
 os.environ["NO_PROXY"] = "*"
 
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+    "--enable-features=WebAssemblyThreads,SharedArrayBuffer "
+    "--enable-webgl "
+    "--ignore-gpu-blocklist "
+    "--enable-gpu-rasterization"
+)
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+HOME_DIR = os.path.expanduser("~")
+
+# ==========================================
+# 全局路径配置 (Global Path Configuration)
+# 支持通过环境变量直接覆盖，彻底解耦硬编码路径
+# ==========================================
+SD_CARD_ROOT = os.environ.get("OMNI_SD_ROOT", "/run/media/deck/FUCKDECK")
+GAMES_BASE_DIR = os.environ.get("OMNI_GAMES_DIR", os.path.join(HOME_DIR, "Games"))
+RENPY_SDK_PATH = os.environ.get("RENPY_SDK_PATH", os.path.join(HOME_DIR, "Applications", "renpy-8.5.3-sdk", "renpy.sh"))
+SC2_DIR = os.environ.get("SC2_DIR", os.path.join(GAMES_BASE_DIR, "StarCraft II"))
+STEAM_COMPAT_DATA_DIR = os.path.join(HOME_DIR, ".local", "share", "Steam", "steamapps", "compatdata")
+WEIYUN_STEAM_PATH = os.path.join(STEAM_COMPAT_DATA_DIR, "3498387003", "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Programs", "WeiyunApp")
+
 FLASH_GAMES_DIR = os.path.join(SCRIPT_DIR, "flash_games")
 PLUGINS_DIR = os.path.join(FLASH_GAMES_DIR, "plugins")
 ASSETS_DIR = os.path.join(SCRIPT_DIR, "assets")
@@ -33,9 +83,8 @@ RPG_GAMES_DIR = os.path.join(SCRIPT_DIR, "rpg_games")
 RENPY_GAMES_DIR = os.path.join(SCRIPT_DIR, "renpy_games")
 RETRO_GAMES_DIR = os.path.join(SCRIPT_DIR, "retro_games")
 SLG_GAMES_DIR = os.path.join(SCRIPT_DIR, "slg_games")
-EMULATORJS_DIR = os.path.join(SCRIPT_DIR, "emulatorjs")
+EMULATORJS_DIR = os.path.join(RETRO_GAMES_DIR, "emulatorjs")
 GAMES_DIR = RPG_GAMES_DIR
-RENPY_SDK_PATH = "/home/deck/Applications/renpy-8.5.3-sdk/renpy.sh"
 HUB_HTML_PATH = os.path.join(ASSETS_DIR, "hub.html")
 PLAYER_RETRO_HTML = os.path.join(ASSETS_DIR, "player_retro.html")
 PLAYER_FLASH_HTML = os.path.join(ASSETS_DIR, "player_flash.html")
@@ -171,13 +220,96 @@ DISPLAY_NAMES = {
     '095 - Mother Alicia Crest': '095 - Mother Alicia Crest',
     '096 - Daily Greetings Wife': '096 - Daily Greetings Wife',
     '097 - The Witch and the Two Apprentices': '097 - The Witch and the Two Apprentices',
+    '098 - Dragon Conqueror': '098 - Dragon Conqueror',
     "001 - Mom's Best Friend": "001 - Mom's Best Friend",
     '002 - After the Fire': '002 - After the Fire',
     '003 - Love Strikes Thrice': '003 - Love Strikes Thrice',
     '004 - Obsessed Lucy': '004 - Obsessed Lucy',
-    '005 - Cradle': '005 - Cradle',
+    '005 - Cradle Beyond the Veil': '005 - Cradle: Beyond the Veil',
     '006 - Hokages Adopted Son': "006 - Hokage's Adopted Son",
+    '007 - sMother': '007 - sMother',
+    '008 - Succu-Mama': '008 - SUCCU-MAMA',
+    '009 - Bright Lord': '009 - Bright Lord (光明领主)',
     '001 - Cowgirl Maid Milk Cafe': '001 - Cowgirl Maid Milk Cafe',
+    '002 - Summer Sisters': '002 - Summer Sisters',
+
+    # === Standalone Unity Games ===
+    '001 - Kaiju Princess Detective': '001 - Kaiju Princess & Detective Servant',
+    '002 - Kurea Struggle': '002 - Kurea Struggle',
+    '003 - Harem Fantasy': '003 - Harem Fantasy',
+    '004 - Stranger Maidens': '004 - Stranger Maidens',
+    '005 - Summer at Smile Cafe': '005 - Summer at Smile Café',
+    '006 - Yakuza Rogue EX': '006 - Yakuza Rogue EX',
+    '007 - Female Sex Service': '007 - Female Sex Service',
+    '008 - Peeping Dorm Manager': '008 - Peeping Dorm Manager',
+    '009 - Workplace Fantasy': '009 - Workplace Fantasy',
+    '010 - NTRaholic': '010 - NTRaholic',
+    '011 - Lifeguard Holic': '011 - Lifeguard Holic',
+    '012 - Love Confessions Adventure': '012 - Love Confessions Adventure',
+    '013 - Lucky Teacher': '013 - Lucky Teacher',
+    '014 - Mansion Days': '014 - Mansion Days: Roommates',
+    '015 - Swarm Bunker Lust Defense': '015 - Swarm Bunker: Lust Defense',
+    '016 - Tavern Inn Halberd': '016 - Tavern, Inn & the Halberd',
+    '017 - Sex Secrets Used Tech': '017 - Sex, Secrets & Used Tech',
+    '018 - Hypnosis Corruption After': '018 - Hypnosis of Corruption After Story',
+    '019 - Chona': '019 - Chona',
+    '020 - Taiwan MRT': '020 - Taiwan MRT',
+    '021 - Spirit Valley': '021 - Spirit Valley',
+    '022 - The Censor DX Edition': '022 - 审查员 DX版 (The Censor DX)',
+    '023 - Circlemate': '023 - 社团伴侣 (Circlemate)',
+    '024 - Hotel Tales': '024 - 旅社物语 (Hotel Tales)',
+    "025 - Lovers' Fun": "025 - 连任 (Lovers' Fun)",
+    "026 - Mirai's Midnight Training": "026 - 未来的午夜特训 (Mirai's Midnight Training)",
+
+    # === Standalone Steam 精选独立神作 ===
+    '001 - Game Dev Story': '001 - 游戏开发物语 (Game Dev Story)',
+    '002 - Thronefall': '002 - 王权陨落 (Thronefall)',
+    '003 - Sandustry': '003 - 沙尘工业 (Sandustry)',
+    '004 - Berry Bury Berry': '004 - 浆果埋葬 (Berry Bury Berry)',
+    '005 - RimWorld': '005 - 环世界 (RimWorld)',
+    '006 - Vampire Survivors': '006 - 吸血鬼幸存者 (Vampire Survivors)',
+    '007 - Dead Cells': '007 - 死亡细胞 (Dead Cells)',
+    '008 - Dave the Diver': '008 - 潜水员戴夫 (Dave the Diver)',
+    '009 - Dyson Sphere Program': '009 - 戴森球计划 (Dyson Sphere Program)',
+    '010 - Descenders': '010 - 速降王者 (Descenders)',
+    '011 - Factorio': '011 - 异星工厂 (Factorio)',
+    '012 - Oxygen Not Included': '012 - 缺氧 (Oxygen Not Included)',
+    '013 - Don\'t Starve': '013 - 饥荒单机版 (Don\'t Starve)',
+    '014 - Don\'t Starve Together': '014 - 饥荒联机版 (Don\'t Starve Together)',
+
+    # === Standalone Godot Games ===
+    '001 - Pawn Pleasure': '001 - Pawn Pleasure',
+    '002 - NTR Phone': '002 - NTR Phone',
+    '003 - 30 Days of Work': '003 - 职场的30天 (30 Days of Work)',
+
+    # === Standalone Unreal Games ===
+    '001 - Loser Isekai': '001 - Loser Got Isekai\'d',
+    '002 - Under the Witch Gothic': '002 - Under the Witch: Gothic',
+
+    # === Standalone Wine / PC Games ===
+    '001 - Train 45': '001 - Train 45',
+    '002 - Beppin Mama': '002 - Beppin Mama',
+    '003 - Goblin Nest': '003 - Goblin Nest',
+    '004 - Hitozuma Netori Kaihou': '004 - Hitozuma Netori Kaihou',
+    '005 - Dungeon Erotic Master': '005 - Dungeon of Erotic Master Plus',
+    '006 - Bokusion': '006 - Bokusion',
+    '007 - Descended to My Home': '007 - Descended to My Home',
+    '008 - Please Oyako': '008 - Please (Oyako)',
+    '009 - DokiDoki Massage': '009 - DokiDoki Massage',
+    '010 - Why No Meat': '010 - Why No Meat',
+    '011 - Scarlet Knight': '011 - Scarlet Knight',
+    '012 - Mamaboku': '012 - Mamaboku',
+    '013 - Mom Stolen in Space': '013 - Mom Stolen in Space',
+    '014 - SPITE': '014 - SPITE',
+    '015 - Kahogo Mama Volleyball': '015 - Kahogo na Mama Volleyball',
+    '016 - Fiendish Quest': '016 - Fiendish Quest',
+    '017 - Femtazio': '017 - Warrior of Femtazio',
+    '018 - Xiaofan': '018 - Xiaofan',
+    '019 - Depraved Scenario': '019 - 背德情境 (Depraved Scenario)',
+
+    # === Windows 软件与独立应用 ===
+    'StarCraft II': '星际争霸 2 (StarCraft II 离线版)',
+    'Weiyun': '腾讯微云 (Tencent Weiyun)',
 }
 
 DEFAULT_SVG_ICON = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
@@ -217,31 +349,179 @@ def register_rpg_folder(folder_path, custom_id=None):
             'icon': icon_path if os.path.exists(icon_path) else None,
         }
 
-def register_renpy_folder(folder_path, custom_id=None):
+def find_best_executable(folder_path, subcategory):
+    """递归智能查找最优先的主执行文件（自动识别中文字幕版、便携版、Linux 原生与内嵌子目录）"""
+    candidates = []
+
+    # 如果是专用 app
+    if subcategory == 'app':
+        for root, dirs, files in os.walk(folder_path):
+            depth = os.path.relpath(root, folder_path).count(os.sep)
+            if depth > 2: continue
+            for f in files:
+                fl = f.lower()
+                full_p = os.path.join(root, f)
+                if 'battle.net launcher.exe' in fl: return full_p
+                if 'battle.net.exe' in fl: return full_p
+                if 'weiyunapp.exe' in fl: return full_p
+                if fl.endswith('.exe') and not 'uninstall' in fl:
+                    candidates.append((50 - depth * 10, full_p))
+        if candidates:
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            return candidates[0][1]
+
+    # Ren'Py 优先寻找 .sh 或 .py
+    if subcategory == 'renpy':
+        for root, dirs, files in os.walk(folder_path):
+            depth = os.path.relpath(root, folder_path).count(os.sep)
+            if depth > 2: continue
+            for f in files:
+                fl = f.lower()
+                full_p = os.path.join(root, f)
+                if fl.endswith('.sh'): candidates.append((100 - depth * 10, full_p))
+                elif fl.endswith('.py') and fl != 'game.py': candidates.append((80 - depth * 10, full_p))
+                elif fl.endswith('.exe'): candidates.append((50 - depth * 10, full_p))
+        if candidates:
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            return candidates[0][1]
+
+    # 通用独立游戏 (Unity, Godot, Unreal, Wine)
+    for root, dirs, files in os.walk(folder_path):
+        depth = os.path.relpath(root, folder_path).count(os.sep)
+        if depth > 3: continue
+
+        for f in files:
+            fl = f.lower()
+            full_p = os.path.join(root, f)
+
+            is_valid_exec = fl.endswith(('.exe', '.x86_64', '.x86', '.sh')) or (
+                os.access(full_p, os.X_OK) and '.' not in f and not os.path.isdir(full_p)
+            )
+            if not is_valid_exec:
+                continue
+
+            if any(bad in fl for bad in ['crashhandler', 'crashpad', 'reipatcher', 'setup', 'uninstall', 'ueprereqsetup', 'config', 'エンジン設定', 'vcredist', 'dxredist', 'redist', 'directx', 'elevate']):
+                continue
+
+            score = 100 - depth * 15
+
+            if fl.endswith('.x86_64') or fl.endswith('.x86') or fl.endswith('.sh') or ('.' not in f and os.access(full_p, os.X_OK)):
+                score += 60
+            if '_cn' in fl or 'chs' in fl or 'chinese' in fl or '中文' in fl:
+                score += 50
+            if 'portable' in fl:
+                score += 40
+            if fl.endswith('.exe'):
+                score += 10
+            if 'loader' in fl:
+                score -= 30
+            if '_gl.exe' in fl:
+                score -= 20
+            if fl in ['oxygennotincluded', 'dontstarve', 'dontstarve_steam_x64.exe', 'dspgame.exe', 'deadcells.exe', 'factorio.exe', 'davethediver.exe', 'descenders.exe', 'rimworldwin64.exe', 'vampiresurvivors.exe', 'thronefall.exe', 'sandustry.exe']:
+                score += 100
+
+            candidates.append((score, full_p))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
+
+def register_standalone_folder(folder_path, subcategory, custom_id=None):
     if not os.path.isdir(folder_path):
         return
 
-    game_sub = os.path.join(folder_path, 'game')
-    if os.path.isdir(game_sub):
-        base_name = os.path.basename(folder_path.rstrip('/'))
-        game_id = custom_id or base_name
-        name = DISPLAY_NAMES.get(game_id, DISPLAY_NAMES.get(base_name, base_name))
-        
-        icon_candidates = [
-            os.path.join(game_sub, 'gui', 'window_icon.png'),
-            os.path.join(game_sub, 'icon.png'),
-            os.path.join(folder_path, 'icon.png')
-        ]
-        icon_path = next((ic for ic in icon_candidates if os.path.exists(ic)), None)
+    base_name = os.path.basename(folder_path.rstrip('/'))
+    game_id = custom_id or base_name
+    name = DISPLAY_NAMES.get(game_id, DISPLAY_NAMES.get(base_name, base_name))
 
-        GAMES_REGISTRY[game_id] = {
-            'id': game_id,
-            'name': name,
-            'type': 'renpy',
-            'root': folder_path,
-            'save_dir': os.path.join(game_sub, 'saves'),
-            'icon': icon_path,
-        }
+    icon_candidates = [
+        os.path.join(folder_path, 'icon.png'),
+        os.path.join(folder_path, 'cover.png'),
+        os.path.join(folder_path, 'cover.jpg'),
+        os.path.join(folder_path, 'icon', 'icon.png'),
+        os.path.join(folder_path, 'game', 'gui', 'window_icon.png'),
+    ]
+    icon_path = next((ic for ic in icon_candidates if os.path.exists(ic)), None)
+
+    exe_path = find_best_executable(folder_path, subcategory)
+
+    GAMES_REGISTRY[game_id] = {
+        'id': game_id,
+        'name': name,
+        'type': 'standalone',
+        'engine': subcategory,
+        'root': folder_path,
+        'exe_path': exe_path,
+        'icon': icon_path,
+    }
+
+# 映射常见大型软件/游戏的专用 compatdata ID，确保注册表、证书与 AppData 100% 完整
+APPID_PFX_MAP = {
+    'Battle.net': '2415561907',
+    'StarCraft II': '2415561907',
+    'Weiyun': '3498387003',
+}
+
+def get_wine_or_proton_runner(exe_path, pfx_path=None, game_id=None):
+    if sys.platform == 'win32':
+        return [exe_path], os.environ.copy()
+
+    # 1. 优先检测系统全局 wine
+    if shutil.which('wine'):
+        return ['wine', exe_path], os.environ.copy()
+
+    # 2. 在 SteamOS / Steam Deck 环境下自动检测 Valve 官方 Proton 运行时
+    # 若指定了特定的 Steam Prefix，优先使用专属环境（保证战网、微云等大型软件的原生完整注册表与 AppData）
+    chosen_pfx = pfx_path
+    if not chosen_pfx and game_id and game_id in APPID_PFX_MAP:
+        steam_pfx = os.path.expanduser(f'~/.local/share/Steam/steamapps/compatdata/{APPID_PFX_MAP[game_id]}')
+        if os.path.exists(steam_pfx):
+            chosen_pfx = steam_pfx
+
+    default_pfx = chosen_pfx or os.path.expanduser('~/.local/share/omni_deck_pfx')
+    steam_common = os.path.expanduser('~/.local/share/Steam/steamapps/common')
+    proton_candidates = [
+        os.path.join(steam_common, 'Proton - Experimental', 'proton'),
+        os.path.join(steam_common, 'Proton 11.0', 'proton'),
+        os.path.join(steam_common, 'Proton 10.0', 'proton'),
+        os.path.join(steam_common, 'Proton 9.0 (Beta)', 'proton'),
+        os.path.join(steam_common, 'Proton 8.0', 'proton'),
+        os.path.join(steam_common, 'Proton 7.0', 'proton'),
+        os.path.join(steam_common, 'Proton 5.13', 'proton'),
+    ]
+    for p in proton_candidates:
+        if os.path.exists(p):
+            env = os.environ.copy()
+            env['STEAM_COMPAT_CLIENT_INSTALL_PATH'] = os.path.expanduser('~/.local/share/Steam')
+            env['STEAM_COMPAT_DATA_PATH'] = default_pfx
+            os.makedirs(default_pfx, exist_ok=True)
+
+            cmd = [p, 'run', exe_path]
+            # 为 Electron 类应用（如微云等）附加 Chromium 渲染修复参数，避免 GPU 沙盒导致黑屏
+            if game_id == 'Weiyun' or 'weiyun' in exe_path.lower():
+                cmd.extend(['--no-sandbox', '--disable-gpu-sandbox'])
+
+            # UE5 专项修复：关闭异常重抛限制与崩溃上报，避免 FATAL: exception not rethrown
+            is_ue5 = (
+                game_id and 'unreal' in (game_id + exe_path).lower()
+            ) or any(
+                kw in exe_path for kw in ['Shipping', 'Win64', 'UTW_', 'LoserIsekai', 'UE5', 'Unreal']
+            )
+            if is_ue5:
+                env['PROTON_NO_ESYNC'] = '0'
+                env['PROTON_NO_FSYNC'] = '0'
+                env['WINE_LARGE_ADDRESS_AWARE'] = '1'
+                env['DXVK_ASYNC'] = '1'
+                env['DXVK_STATE_CACHE'] = '1'
+                env['__GL_SHADER_DISK_CACHE'] = '1'
+                env['__GL_SHADER_DISK_CACHE_SKIP_CLEANUP'] = '1'
+                env['UE_DISABLE_CRASH_REPORTER'] = '1'
+                env['UE_NO_CRASH_REPORT'] = '1'
+
+            return cmd, env
+
+    return None, None
 
 def register_retro_folder(folder_path, custom_id=None):
     if not os.path.isdir(folder_path):
@@ -271,15 +551,23 @@ def register_retro_folder(folder_path, custom_id=None):
         '.bin': 'segaMD'
     }
     rom_file = None
-    system_core = 'gba'
-    # Check by priority
     dir_files = os.listdir(folder_path)
-    for ext_target, core_target in rom_extensions.items():
-        matched = [f for f in dir_files if f.lower().endswith(ext_target)]
-        if matched:
-            rom_file = matched[0]
-            system_core = core_target
-            break
+    # 针对 PS1 专区特别优化: 优先加载完整包含音频轨的 .zip / .chd / .pbp / .iso 镜像包
+    if '(ps1)' in game_id.lower() or '(psx)' in game_id.lower():
+        ps1_candidates = ['.zip', '.chd', '.pbp', '.iso', '.cue']
+        for ext in ps1_candidates:
+            matched = [f for f in dir_files if f.lower().endswith(ext)]
+            if matched:
+                rom_file = matched[0]
+                system_core = 'psx'
+                break
+    else:
+        for ext_target, core_target in rom_extensions.items():
+            matched = [f for f in dir_files if f.lower().endswith(ext_target)]
+            if matched:
+                rom_file = matched[0]
+                system_core = core_target
+                break
 
     if rom_file:
         icon_candidates = [
@@ -421,15 +709,47 @@ def scan_games():
             sub = os.path.join(rpg_dir, item)
             register_rpg_folder(sub, custom_id=item)
 
-    # 2. 扫描 Ren'Py 视觉小说目录 (renpy_games/)
-    if os.path.exists(RENPY_GAMES_DIR):
-        for item in sorted(os.listdir(RENPY_GAMES_DIR)):
-            sub = os.path.join(RENPY_GAMES_DIR, item)
-            register_renpy_folder(sub, custom_id=item)
+    # 2. 扫描 独立游戏专区 (Steam 精选, Ren'Py, Unity, Godot, Unreal, Wine, Windows 软件应用)
+    standalone_categories = ['steam', 'renpy', 'unity', 'godot', 'unreal', 'wine', 'app']
+    for cat in standalone_categories:
+        scan_paths = [
+            os.path.join(SD_CARD_ROOT, "standalone_games", f"{cat}_games"),
+            os.path.join(SD_CARD_ROOT, f"{cat}_games"),
+            os.path.join(SCRIPT_DIR, "standalone_games", f"{cat}_games"),
+            os.path.join(SCRIPT_DIR, f"{cat}_games"),
+            os.path.join(GAMES_BASE_DIR, "standalone_games", f"{cat}_games"),
+            os.path.join(GAMES_BASE_DIR, f"{cat}_games")
+        ]
+        for sp in scan_paths:
+            if os.path.isdir(sp):
+                for item in sorted(os.listdir(sp)):
+                    if item.startswith("."): continue
+                    sub = os.path.join(sp, item)
+                    register_standalone_folder(sub, subcategory=cat, custom_id=item)
+
+    # 扫描 Windows 软件与独立应用 (支持 GAMES_BASE_DIR 或 Steam 原装容器路径)
+    if os.path.exists(GAMES_BASE_DIR):
+        for item in sorted(os.listdir(GAMES_BASE_DIR)):
+            if item in ['omni-deck', 'StarCraft II', 'Battle.net', 'rpg_games', 'standalone_games']: continue
+            sub = os.path.join(GAMES_BASE_DIR, item)
+            if os.path.isdir(sub):
+                register_standalone_folder(sub, subcategory='app', custom_id=item)
+
+    # 注册 星际争霸 2 离线内核 (直接调用 Support64/SC2Switcher_x64.exe 绕过战网)
+    sc2_switcher = os.path.join(SC2_DIR, "Support64", "SC2Switcher_x64.exe")
+    if os.path.exists(sc2_switcher):
+        register_standalone_folder(SC2_DIR, subcategory='app', custom_id='StarCraft II')
+        if 'StarCraft II' in GAMES_REGISTRY:
+            GAMES_REGISTRY['StarCraft II']['exe_path'] = sc2_switcher
+
+    if 'Weiyun' not in GAMES_REGISTRY and os.path.exists(WEIYUN_STEAM_PATH):
+        register_standalone_folder(WEIYUN_STEAM_PATH, subcategory='app', custom_id='Weiyun')
 
     # 3. 扫描 街机与复古卡带目录 (retro_games/)
     if os.path.exists(RETRO_GAMES_DIR):
         for item in sorted(os.listdir(RETRO_GAMES_DIR)):
+            if item in ["emulatorjs", "plugins"] or item.startswith("."):
+                continue
             sub = os.path.join(RETRO_GAMES_DIR, item)
             register_retro_folder(sub, custom_id=item)
 
@@ -449,8 +769,47 @@ def scan_games():
 
 scan_games()
 
-def resolve_case_insensitive_path(base_dir, rel_path):
-    """URL 解码 + 忽略大小写智能查找 (彻底解决 URL 空格 %20 与 大小写 404)"""
+REVERSE_LOCALE_CACHE = {}
+
+def get_reverse_locale(base_dir):
+    if base_dir in REVERSE_LOCALE_CACHE:
+        return REVERSE_LOCALE_CACHE[base_dir]
+    rev = {}
+    locales_dir = os.path.join(base_dir, 'locales')
+    if os.path.isdir(locales_dir):
+        try:
+            for root, dirs, files in os.walk(locales_dir):
+                for f in files:
+                    if f.endswith('.json'):
+                        fp = os.path.join(root, f)
+                        try:
+                            with open(fp, 'r', encoding='utf-8') as jf:
+                                data = json.load(jf)
+                                if isinstance(data, dict):
+                                    for k, v in data.items():
+                                        if isinstance(v, str) and isinstance(k, str) and len(v) < 100:
+                                            rev[v.strip().lower()] = k.strip()
+                        except:
+                            pass
+        except:
+            pass
+    REVERSE_LOCALE_CACHE[base_dir] = rev
+    return rev
+
+KNOWN_LOCALES = {'tw', 'ch', 'zh', 'zh-cn', 'zh-tw', 'en', 'ja', 'jp', 'es', 'ru', 'kr', 'fr', 'de'}
+
+def try_strip_locale(rel_path: str):
+    parts = rel_path.strip('/').split('/')
+    new_parts = []
+    removed = False
+    for i, p in enumerate(parts):
+        if not removed and p.lower() in KNOWN_LOCALES and i > 0 and i < len(parts) - 1:
+            removed = True
+            continue
+        new_parts.append(p)
+    return '/'.join(new_parts) if removed else None
+
+def _resolve_case_insensitive_path_inner(base_dir, rel_path):
     current = base_dir
     decoded_path = urllib.parse.unquote(rel_path)
     parts = decoded_path.strip('/').split('/')
@@ -464,27 +823,129 @@ def resolve_case_insensitive_path(base_dir, rel_path):
             if os.path.isdir(current):
                 part_lower = part.lower()
                 part_no_asar = part_lower[:-5] if part_lower.endswith('.asar') else part_lower
-                for entry in os.listdir(current):
+                
+                candidates = [part_lower, part_no_asar]
+                if part_lower.endswith('.png'):
+                    candidates.extend([part_lower[:-4] + '.rpgmvp', part_lower + '_'])
+                elif part_lower.endswith('.rpgmvp'):
+                    candidates.extend([part_lower[:-7] + '.png', part_lower[:-7] + '.png_'])
+                elif part_lower.endswith('.ogg'):
+                    candidates.extend([part_lower[:-4] + '.rpgmvo', part_lower + '_'])
+                elif part_lower.endswith('.rpgmvo'):
+                    candidates.extend([part_lower[:-7] + '.ogg', part_lower[:-7] + '.ogg_'])
+                elif part_lower.endswith('.m4a'):
+                    candidates.extend([part_lower[:-4] + '.rpgmvm', part_lower + '_'])
+                elif part_lower.endswith('.rpgmvm'):
+                    candidates.extend([part_lower[:-7] + '.m4a', part_lower[:-7] + '.m4a_'])
+                elif part_lower.endswith('.mp4'):
+                    candidates.append(part_lower + '_')
+
+                if part_lower.startswith('flag_'):
+                    candidates.extend(['locale_' + part_lower[5:], 'locale_' + part_lower[5:] + '_'])
+                elif part_lower.startswith('locale_'):
+                    candidates.extend(['flag_' + part_lower[7:], 'flag_' + part_lower[7:] + '_'])
+
+                entries = os.listdir(current)
+                for entry in entries:
                     entry_lower = entry.lower()
-                    if entry_lower == part_lower or entry_lower == part_no_asar:
+                    if entry_lower in candidates:
                         current = os.path.join(current, entry)
                         found = True
                         break
+
+                if not found and base_dir:
+                    rev_dict = get_reverse_locale(base_dir)
+                    stem, ext = os.path.splitext(part)
+                    stem_lower = stem.strip().lower()
+                    if stem_lower in rev_dict:
+                        orig_key = rev_dict[stem_lower]
+                        cand_names = [orig_key.lower() + ext.lower(), orig_key.lower()]
+                        for entry in entries:
+                            entry_lower = entry.lower()
+                            if entry_lower in cand_names or entry_lower.startswith(orig_key.lower()):
+                                current = os.path.join(current, entry)
+                                found = True
+                                break
+
             if not found:
                 return os.path.join(current, part)
     return current
 
+def resolve_case_insensitive_path(base_dir, rel_path):
+    """URL 解码 + 忽略大小写智能查找 + 资源扩展名智能回退 + 翻译资源反向映射 + 语言子目录自适应回退"""
+    res = _resolve_case_insensitive_path_inner(base_dir, rel_path)
+    if os.path.exists(res):
+        return res
+    stripped = try_strip_locale(rel_path)
+    if stripped:
+        fallback_res = _resolve_case_insensitive_path_inner(base_dir, stripped)
+        if os.path.exists(fallback_res):
+            return fallback_res
+    return res
+
+def log_omni(level: str, msg: str, tag: str = None):
+    """
+    统一的 Omni-Deck 项目分级日志系统:
+    - 带有 [Omni-Deck] 项目全局标签
+    - 支持可选的子标签 [tag]（如具体的游戏ID、组件名）
+    - 明确的日志等级 [INFO] / [WARN] / [ERROR] / [DEBUG]
+    - 带终端 ANSI 颜色区分，清晰易读
+    """
+    prefix = "[Omni-Deck]"
+    if tag:
+        prefix += f"[{tag}]"
+    prefix += f"[{level}]"
+
+    if level == "ERROR":
+        color_code = "\033[91m"  # 红色
+    elif level == "WARN":
+        color_code = "\033[93m"  # 黄色
+    elif level == "INFO":
+        color_code = "\033[92m"  # 绿色
+    elif level == "DEBUG":
+        color_code = "\033[94m"  # 蓝色
+    else:
+        color_code = "\033[97m"
+    reset_code = "\033[0m"
+
+    sys.stderr.write(f"{color_code}{prefix} {msg}{reset_code}\n")
+    sys.stderr.flush()
+
+def extract_game_id_from_path(path: str) -> str:
+    try:
+        clean = path.split('?')[0]
+        unq = urllib.parse.unquote(urllib.parse.unquote(clean))
+        if unq.startswith('/game/'):
+            parts = unq.split('/')
+            if len(parts) >= 3:
+                return parts[2]
+        if unq.startswith('/save/'):
+            parts = unq.split('/')
+            if len(parts) >= 3:
+                return parts[2]
+        if '?game_id=' in path or '&game_id=' in path:
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
+            if 'game_id' in qs:
+                return qs['game_id'][0]
+    except Exception:
+        pass
+    return None
+
 class MultiGameRequestHandler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
-        # 彻底静音所有正常 2xx / 3xx 与空探测 404 日志
+        # 彻底静音所有正常 2xx / 3xx 与游戏常规探测 HEAD / 404 日志
         try:
             req = str(args[0]) if len(args) >= 1 else ""
             code = str(args[1]) if len(args) >= 2 else ""
             if code.startswith(('2', '3')):
                 return
-            if code == '404' and ('HEAD /save/' in req or '.rpgsave' in req or 'favicon.ico' in req):
+            if code == '404' and ('HEAD ' in req or '/save/' in req or '.rpgsave' in req or 'favicon.ico' in req or '/api/patch/' in req):
                 return
-            sys.stderr.write(f"[WARNING] HTTP {code} on {req}\n")
+            tag = extract_game_id_from_path(req) or "Server"
+            if code.startswith('5'):
+                log_omni("ERROR", f"HTTP {code} on {req}", tag=tag)
+            else:
+                log_omni("WARN", f"HTTP {code} on {req}", tag=tag)
         except Exception:
             pass
 
@@ -493,7 +954,8 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             msg = format % args
             if "favicon.ico" in self.path or "fav.ico" in self.path or "code 404" in msg:
                 return
-            sys.stderr.write(f"[ERROR] {msg} for path {self.path}\n")
+            tag = extract_game_id_from_path(self.path) or "Server"
+            log_omni("ERROR", f"{msg} (path: {self.path})", tag=tag)
         except Exception:
             pass
 
@@ -505,7 +967,7 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
 
     def translate_path(self, path):
         clean_path = path.split('?')[0].split('#')[0]
-        unquoted = urllib.parse.unquote(clean_path)
+        unquoted = urllib.parse.unquote(urllib.parse.unquote(clean_path))
 
         if unquoted in ['/', '/hub.html']:
             return HUB_HTML_PATH
@@ -521,10 +983,15 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             return resolve_case_insensitive_path(EMULATORJS_DIR, rel)
 
         if unquoted.startswith('/retro_rom/'):
-            game_id = unquoted[len('/retro_rom/'):]
+            subparts = [p for p in unquoted[len('/retro_rom/'):].split('/') if p]
+            game_id = subparts[0] if subparts else ''
+            req_file = subparts[1] if len(subparts) > 1 else None
             if game_id in GAMES_REGISTRY:
                 gdata = GAMES_REGISTRY[game_id]
-                return os.path.join(gdata['root'], gdata['rom_file'])
+                return os.path.join(gdata['root'], req_file or gdata['rom_file'])
+            for gid, gdata in GAMES_REGISTRY.items():
+                if gid.lower() == game_id.lower():
+                    return os.path.join(gdata['root'], req_file or gdata['rom_file'])
 
         if unquoted.startswith('/game/'):
             parts = unquoted.split('/')
@@ -533,6 +1000,10 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                 if game_id in GAMES_REGISTRY:
                     rel_path = '/'.join(parts[3:])
                     return resolve_case_insensitive_path(GAMES_REGISTRY[game_id]['root'], rel_path)
+                for gid, gdata in GAMES_REGISTRY.items():
+                    if gid.lower() == game_id.lower():
+                        rel_path = '/'.join(parts[3:])
+                        return resolve_case_insensitive_path(gdata['root'], rel_path)
 
         return super().translate_path(path)
 
@@ -568,66 +1039,95 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         if self.path.startswith('/api/readdir?'):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             if 'path' in qs:
-                req_path = urllib.parse.unquote(qs['path'][0]).lstrip('/')
+                req_path = urllib.parse.unquote(urllib.parse.unquote(qs['path'][0])).lstrip('/')
                 target_path = req_path
                 
-                if 'game_id' in qs and qs['game_id'][0] in GAMES_REGISTRY:
-                    game_dir = GAMES_REGISTRY[qs['game_id'][0]]['root']
-                    target_path = os.path.join(game_dir, req_path)
+                game_id = None
+                if 'game_id' in qs:
+                    raw_gid = urllib.parse.unquote(urllib.parse.unquote(qs['game_id'][0]))
+                    if raw_gid in GAMES_REGISTRY:
+                        game_id = raw_gid
+                    else:
+                        for gid_candidate in GAMES_REGISTRY:
+                            if gid_candidate.lower() == raw_gid.lower():
+                                game_id = gid_candidate
+                                break
                 
-                # Manual case-insensitive resolution for absolute paths
-                if not os.path.exists(target_path):
-                    parts = target_path.strip('/').split('/')
-                    current_path = '/'
-                    for part in parts:
-                        if not part: continue
-                        if os.path.exists(os.path.join(current_path, part)):
-                            current_path = os.path.join(current_path, part)
-                        else:
-                            try:
-                                dir_contents = os.listdir(current_path)
-                                lower_part = part.lower()
-                                matched = False
-                                for item in dir_contents:
-                                    if item.lower() == lower_part:
-                                        current_path = os.path.join(current_path, item)
-                                        matched = True
-                                        break
-                                if not matched:
-                                    current_path = os.path.join(current_path, part)
-                            except:
+                if game_id and game_id in GAMES_REGISTRY:
+                    game_dir = GAMES_REGISTRY[game_id]['root']
+                    target_path = resolve_case_insensitive_path(game_dir, req_path)
+                elif not os.path.isabs(target_path):
+                    target_path = resolve_case_insensitive_path(SCRIPT_DIR, target_path)
+                else:
+                    if not os.path.exists(target_path):
+                        parts = target_path.strip('/').split('/')
+                        current_path = '/'
+                        for part in parts:
+                            if not part: continue
+                            if os.path.exists(os.path.join(current_path, part)):
                                 current_path = os.path.join(current_path, part)
-                    target_path = current_path
+                            else:
+                                try:
+                                    dir_contents = os.listdir(current_path)
+                                    lower_part = part.lower()
+                                    matched = False
+                                    for item in dir_contents:
+                                        if item.lower() == lower_part:
+                                            current_path = os.path.join(current_path, item)
+                                            matched = True
+                                            break
+                                    if not matched:
+                                        current_path = os.path.join(current_path, part)
+                                except:
+                                    current_path = os.path.join(current_path, part)
+                        target_path = current_path
 
-                if os.path.isdir(target_path):
+                if target_path and os.path.isdir(target_path):
                     files = os.listdir(target_path)
                     self.send_response(200)
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps(files).encode('utf-8'))
                     return
-            self.send_response(404)
+                else:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(b'[]')
+                    return
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
+            self.wfile.write(b'[]')
             return
         if self.path.startswith('/api/patch/'):
             game_id = urllib.parse.unquote(self.path.split('/')[3].split('?')[0])
             if game_id.endswith('.js'): game_id = game_id[:-3]
-            patch_path = os.path.join(GAMES_DIR, game_id, "adapter.js")
-            if os.path.exists(patch_path):
+            patch_path = None
+            if game_id in GAMES_REGISTRY:
+                patch_path = os.path.join(GAMES_REGISTRY[game_id]['root'], "adapter.js")
+            else:
+                patch_path = os.path.join(RPG_GAMES_DIR, game_id, "adapter.js")
+            if patch_path and os.path.exists(patch_path):
                 self.send_response(200)
                 self.send_header('Content-type', 'application/javascript')
                 self.end_headers()
                 with open(patch_path, 'rb') as f:
                     self.wfile.write(f.read())
             else:
-                self.send_response(404)
+                self.send_response(200)
+                self.send_header('Content-type', 'application/javascript')
                 self.end_headers()
+                self.wfile.write(b'// default adapter\n')
             return
 
         if self.path.startswith('/api/games'):
             scan_games()
             self.send_response(200)
             self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             games_list = list(GAMES_REGISTRY.values())
             self.wfile.write(json.dumps(games_list, ensure_ascii=False).encode('utf-8'))
@@ -805,25 +1305,47 @@ def start_local_server():
 
 threading.Thread(target=start_local_server, daemon=True).start()
 
-from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal
-from PyQt5.QtNetwork import QNetworkProxy
-from PyQt5.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QShortcut,
-)
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWebEngineWidgets import (
-    QWebEngineView,
-    QWebEngineSettings,
-    QWebEngineProfile,
-    QWebEnginePage,
-    QWebEngineScript,
-)
+try:
+    from PyQt6.QtCore import QUrl, Qt, QTimer, pyqtSignal
+    from PyQt6.QtNetwork import QNetworkProxy
+    from PyQt6.QtWidgets import (
+        QApplication,
+        QMainWindow,
+        QWidget,
+        QVBoxLayout,
+        QHBoxLayout,
+        QPushButton,
+    )
+    from PyQt6.QtGui import QKeySequence, QShortcut
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    from PyQt6.QtWebEngineCore import (
+        QWebEngineSettings,
+        QWebEngineProfile,
+        QWebEnginePage,
+        QWebEngineScript,
+    )
+    QT6 = True
+except ImportError:
+    from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal
+    from PyQt5.QtNetwork import QNetworkProxy
+    from PyQt5.QtWidgets import (
+        QApplication,
+        QMainWindow,
+        QWidget,
+        QVBoxLayout,
+        QHBoxLayout,
+        QPushButton,
+        QShortcut,
+    )
+    from PyQt5.QtGui import QKeySequence
+    from PyQt5.QtWebEngineWidgets import (
+        QWebEngineView,
+        QWebEngineSettings,
+        QWebEngineProfile,
+        QWebEnginePage,
+        QWebEngineScript,
+    )
+    QT6 = False
 
 class CustomWebPage(QWebEnginePage):
     def __init__(self, profile, main_window, parent=None):
@@ -832,9 +1354,12 @@ class CustomWebPage(QWebEnginePage):
         self.featurePermissionRequested.connect(self.on_feature_permission_requested)
 
     def on_feature_permission_requested(self, securityOrigin, feature):
-        self.setFeaturePermission(
-            securityOrigin, feature, QWebEnginePage.PermissionGrantedByUser
+        perm = (
+            QWebEnginePage.PermissionPolicy.PermissionGrantedByUser
+            if QT6
+            else QWebEnginePage.PermissionGrantedByUser
         )
+        self.setFeaturePermission(securityOrigin, feature, perm)
 
     def createWindow(self, window_type):
         """网页弹窗或 target='_blank' 链接时，自动在主视口中加载"""
@@ -850,9 +1375,14 @@ class CustomWebPage(QWebEnginePage):
         return proxy_page
 
     def javaScriptConsoleMessage(self, level, msg, line, source):
-        # 仅保留关键的 RPGWeb-Deck 框架启动信息或严重报错，彻底静音游戏自带的日常 console.log
-        if level == QWebEnginePage.InfoMessageLevel:
-            if not msg.startswith("[RPGWeb-Deck]"):
+        # 仅保留关键的 Omni-Deck / RPGWeb-Deck 框架启动信息或警告报错，彻底静音游戏自带的日常噪音 log
+        info_level = (
+            QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel
+            if QT6
+            else QWebEnginePage.InfoMessageLevel
+        )
+        if level == info_level:
+            if not msg.startswith("[Omni-Deck]") and not msg.startswith("[RPGWeb-Deck]"):
                 return
 
         ignored_patterns = [
@@ -880,16 +1410,43 @@ class CustomWebPage(QWebEnginePage):
             return
 
         src_name = os.path.basename(source) if source else "inline"
-        level_map = {
-            QWebEnginePage.InfoMessageLevel: "INFO",
-            QWebEnginePage.WarningMessageLevel: "WARN",
-            QWebEnginePage.ErrorMessageLevel: "ERROR"
-        }
+        if QT6:
+            level_map = {
+                QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel: "INFO",
+                QWebEnginePage.JavaScriptConsoleMessageLevel.WarningMessageLevel: "WARN",
+                QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel: "ERROR",
+            }
+        else:
+            level_map = {
+                QWebEnginePage.InfoMessageLevel: "INFO",
+                QWebEnginePage.WarningMessageLevel: "WARN",
+                QWebEnginePage.ErrorMessageLevel: "ERROR",
+            }
         level_str = level_map.get(level, "LOG")
-        sys.stderr.write(f"[JS-{level_str}] {msg} (Line {line} in {src_name})\n")
+        active_game = getattr(self.main_window, 'current_game_id', None) or "Hub"
+        log_omni(level_str, f"{msg} (Line {line} in {src_name})", tag=active_game)
+
+    def javaScriptAlert(self, securityOrigin, msg):
+        active_game = getattr(self.main_window, 'current_game_id', None) or "Emulator"
+        log_omni("WARN", f"[JS-Alert] {msg}", tag=active_game)
+
+    def javaScriptConfirm(self, securityOrigin, msg):
+        active_game = getattr(self.main_window, 'current_game_id', None) or "Emulator"
+        log_omni("WARN", f"[JS-Confirm] {msg}", tag=active_game)
+        return True
+
+    def javaScriptPrompt(self, securityOrigin, msg, defaultVal):
+        return (True, defaultVal)
 
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
         url_str = url.toString()
+        if "hub.html" in url_str:
+            self.main_window.is_in_game = False
+            self.main_window.current_game_id = None
+            self.main_window.overlay.hide()
+            self.main_window.btn_pure.hide()
+            self.main_window.setWindowTitle("Omni Deck")
+
         if url_str.startswith("action://play-"):
             parsed = urllib.parse.urlparse(url_str)
             params = urllib.parse.parse_qs(parsed.query)
@@ -907,16 +1464,20 @@ class RpgDeckMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Omni Deck 全能游戏中心")
+        self.setWindowTitle("Omni Deck")
         self.resize(1280, 800)
         self.setMinimumSize(960, 600)
         self.setStyleSheet("background-color: #000000;")
 
-        QNetworkProxy.setApplicationProxy(QNetworkProxy(QNetworkProxy.NoProxy))
+        proxy_type = (
+            QNetworkProxy.ProxyType.NoProxy if QT6 else QNetworkProxy.NoProxy
+        )
+        QNetworkProxy.setApplicationProxy(QNetworkProxy(proxy_type))
 
         self.is_in_game = False
         self.is_muted = False
         self.current_game_id = None
+        self.current_game_type = 'all'
 
         self.renpy_finished.connect(self.on_renpy_exit)
         self.setup_webengine()
@@ -932,17 +1493,36 @@ class RpgDeckMainWindow(QMainWindow):
             "(KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36"
         )
         self.profile.setPersistentStoragePath(os.path.join(SCRIPT_DIR, "data", "storage"))
-        self.profile.setPersistentCookiesPolicy(QWebEngineProfile.ForcePersistentCookies)
+        cookie_policy = (
+            QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+            if QT6
+            else QWebEngineProfile.ForcePersistentCookies
+        )
+        self.profile.setPersistentCookiesPolicy(cookie_policy)
 
         p_settings = self.profile.settings()
-        p_settings.setAttribute(QWebEngineSettings.PluginsEnabled, True)
-        p_settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        p_settings.setAttribute(QWebEngineSettings.LocalStorageEnabled, True)
-        p_settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        p_settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
-        p_settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
-        p_settings.setAttribute(QWebEngineSettings.WebGLEnabled, True)
-        p_settings.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
+        if QT6:
+            Attr = QWebEngineSettings.WebAttribute
+            for attr_name in [
+                'JavascriptEnabled',
+                'LocalStorageEnabled',
+                'LocalContentCanAccessRemoteUrls',
+                'LocalContentCanAccessFileUrls',
+                'AllowRunningInsecureContent',
+                'WebGLEnabled',
+                'Accelerated2dCanvasEnabled',
+            ]:
+                if hasattr(Attr, attr_name):
+                    p_settings.setAttribute(getattr(Attr, attr_name), True)
+        else:
+            p_settings.setAttribute(QWebEngineSettings.PluginsEnabled, True)
+            p_settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+            p_settings.setAttribute(QWebEngineSettings.LocalStorageEnabled, True)
+            p_settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+            p_settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+            p_settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
+            p_settings.setAttribute(QWebEngineSettings.WebGLEnabled, True)
+            p_settings.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
 
         # 核心 Polyfill: 精准单次 Hook、全模块 NW/Node 模拟、Spine 原生立绘引擎、首帧居中缩放自适应
         core_js_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core.js")
@@ -952,8 +1532,18 @@ class RpgDeckMainWindow(QMainWindow):
         script = QWebEngineScript()
         script.setName("rpg_deck_runtime")
         script.setSourceCode(core_runtime_js)
-        script.setInjectionPoint(QWebEngineScript.DocumentCreation)
-        script.setWorldId(QWebEngineScript.MainWorld)
+        injection_point = (
+            QWebEngineScript.InjectionPoint.DocumentCreation
+            if QT6
+            else QWebEngineScript.DocumentCreation
+        )
+        world_id = (
+            QWebEngineScript.ScriptWorldId.MainWorld
+            if QT6
+            else QWebEngineScript.MainWorld
+        )
+        script.setInjectionPoint(injection_point)
+        script.setWorldId(world_id)
         self.profile.scripts().insert(script)
 
     def setup_ui(self):
@@ -969,25 +1559,39 @@ class RpgDeckMainWindow(QMainWindow):
         self.webview.setPage(self.page)
 
         settings = self.webview.settings()
-        settings.setAttribute(QWebEngineSettings.PluginsEnabled, True)
-        settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        settings.setAttribute(QWebEngineSettings.LocalStorageEnabled, True)
-        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
-        settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
-        settings.setAttribute(QWebEngineSettings.WebGLEnabled, True)
-        settings.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
+        if QT6:
+            Attr = QWebEngineSettings.WebAttribute
+            for attr_name in [
+                'JavascriptEnabled',
+                'LocalStorageEnabled',
+                'LocalContentCanAccessRemoteUrls',
+                'LocalContentCanAccessFileUrls',
+                'AllowRunningInsecureContent',
+                'WebGLEnabled',
+                'Accelerated2dCanvasEnabled',
+            ]:
+                if hasattr(Attr, attr_name):
+                    settings.setAttribute(getattr(Attr, attr_name), True)
+        else:
+            settings.setAttribute(QWebEngineSettings.PluginsEnabled, True)
+            settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+            settings.setAttribute(QWebEngineSettings.LocalStorageEnabled, True)
+            settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+            settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
+            settings.setAttribute(QWebEngineSettings.WebGLEnabled, True)
+            settings.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
 
         self.layout.addWidget(self.webview)
 
         # 悬浮控制胶囊
-        self.overlay = QWidget(self.central_widget)
+        self.overlay = QWidget(self.webview)
         self.overlay_layout = QHBoxLayout(self.overlay)
         self.overlay_layout.setContentsMargins(6, 4, 6, 4)
         self.overlay_layout.setSpacing(6)
 
-        self.btn_home = QPushButton("🏠 大厅", self.overlay)
-        self.btn_home.clicked.connect(self.load_hub)
+        self.btn_back_category = QPushButton("⬅ 返回专区", self.overlay)
+        self.btn_back_category.clicked.connect(self.load_category)
 
         self.btn_pure = QPushButton("🎮 纯净全屏", self.overlay)
         self.btn_pure.clicked.connect(self.toggle_roco_pure_mode)
@@ -999,7 +1603,7 @@ class RpgDeckMainWindow(QMainWindow):
         self.btn_mute = QPushButton("🔊 声音", self.overlay)
         self.btn_mute.clicked.connect(self.toggle_mute)
 
-        for btn in [self.btn_home, self.btn_pure, self.btn_fullscreen, self.btn_mute]:
+        for btn in [self.btn_back_category, self.btn_pure, self.btn_fullscreen, self.btn_mute]:
             self.overlay_layout.addWidget(btn)
 
         self.overlay.setStyleSheet("""
@@ -1095,28 +1699,57 @@ class RpgDeckMainWindow(QMainWindow):
         if self.isFullScreen():
             self.showNormal()
         elif self.is_in_game:
-            self.load_hub()
+            self.load_category()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.overlay.move(self.width() - self.overlay.width() - 16, 16)
 
     def load_hub(self):
+        prev_game = getattr(self, 'current_game_id', None)
+        if prev_game:
+            sys.stderr.write("\n" + "=" * 70 + "\n")
+            log_omni("INFO", f"⬅ 退出游戏 [{prev_game}]，返回大厅", tag="Lifecycle")
+            sys.stderr.write("=" * 70 + "\n")
         self.is_in_game = False
         self.current_game_id = None
         self.overlay.hide()
         self.btn_pure.hide()
-        self.setWindowTitle("Omni Deck 全能游戏中心")
+        self.setWindowTitle("Omni Deck")
+        self.webview.stop()
         self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/hub.html"))
+        self.webview.setFocus()
+
+    def load_category(self):
+        cat = getattr(self, 'current_game_type', 'rpg')
+        prev_game = getattr(self, 'current_game_id', None)
+        if prev_game:
+            sys.stderr.write("\n" + "=" * 70 + "\n")
+            log_omni("INFO", f"⬅ 退出游戏 [{prev_game}]，返回 [{cat}] 专区", tag="Lifecycle")
+            sys.stderr.write("=" * 70 + "\n")
+        self.is_in_game = False
+        self.current_game_id = None
+        self.overlay.hide()
+        self.btn_pure.hide()
+        self.setWindowTitle("Omni Deck")
+        self.webview.stop()
+        self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/hub.html?category={cat}"))
         self.webview.setFocus()
 
     def launch_game(self, game_id: str, title: str):
         if game_id not in GAMES_REGISTRY:
+            log_omni("ERROR", f"未找到游戏注册信息: {game_id}", tag="Launcher")
             return
 
         game_data = GAMES_REGISTRY[game_id]
-        if game_data.get('type') == 'renpy':
-            self.launch_renpy_game(game_id, title)
+        self.current_game_type = game_data.get('type', 'rpg')
+        self.current_game_id = game_id
+
+        sys.stderr.write("\n" + "=" * 70 + "\n")
+        log_omni("INFO", f"🎮 启动游戏: [{game_id}] (Type: {self.current_game_type})", tag="Lifecycle")
+        sys.stderr.write("=" * 70 + "\n")
+        if game_data.get('type') in ['standalone', 'renpy']:
+            self.launch_standalone_game(game_id, title)
             return
 
         if game_data.get('type') == 'retro':
@@ -1226,45 +1859,84 @@ class RpgDeckMainWindow(QMainWindow):
         self.overlay.show()
         self.overlay.raise_()
 
-    def launch_renpy_game(self, game_id: str, title: str):
-        game_data = GAMES_REGISTRY[game_id]
-        root = game_data['root']
-
-        # 智能启动决策: 优先使用系统配置的现代全局 Ren'Py SDK (支持 64位 OpenGL 硬件加速与手柄原生映射)
-        cmd = None
-        if os.path.exists(RENPY_SDK_PATH):
-            cmd = [RENPY_SDK_PATH, root]
-        else:
-            sh_files = [f for f in os.listdir(root) if f.endswith('.sh') and f != 'renpy.sh']
-            if sh_files:
-                target_sh = os.path.join(root, sh_files[0])
-                try: os.chmod(target_sh, 0o755)
-                except: pass
-                cmd = [target_sh]
-
-        if not cmd:
-            sys.stderr.write(f"[ERROR] 未找到可用的 Ren'Py 运行时 ({game_id})\n")
+    def launch_standalone_game(self, game_id: str, title: str):
+        # 防止同一游戏重复启动（单实例保护）
+        if game_id in RUNNING_GAME_IDS:
+            log_omni("WARN", f"游戏 [{title}] 已经在运行中，忽略重复启动请求", tag="Launcher")
             return
 
-        # 启动 Ren'Py 原生进程，大厅最小化让出前台，游戏退出后自动恢复
-        self.showMinimized()
+        game_data = GAMES_REGISTRY.get(game_id)
+        if not game_data:
+            return
+        root = game_data['root']
+        engine = game_data.get('engine', 'wine')
+        exe_path = game_data.get('exe_path')
+
+        cmd = None
+        run_env = os.environ.copy()
+
+        if engine == 'renpy':
+            if os.path.exists(RENPY_SDK_PATH):
+                cmd = [RENPY_SDK_PATH, root]
+            elif exe_path and os.path.exists(exe_path):
+                if exe_path.endswith('.sh') or exe_path.endswith('.py'):
+                    try: os.chmod(exe_path, 0o755)
+                    except: pass
+                    cmd = [exe_path]
+                elif exe_path.endswith('.exe'):
+                    cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
+        else:
+            if exe_path and os.path.exists(exe_path):
+                if exe_path.endswith('.exe'):
+                    cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
+                else:
+                    try: os.chmod(exe_path, 0o755)
+                    except: pass
+                    cmd = [exe_path]
+
+        if not cmd:
+            log_omni("ERROR", f"未找到可用的独立游戏/软件运行时 (Wine/Proton 未就绪) ({game_id})", tag="Launcher")
+            return
+
+        # 确保工作目录准确指向实际可执行文件所在的子目录 (解决内嵌子目录游戏找不到资源与 Pak 文件的严重问题)
+        # 星际争霸 2 必须以游戏根目录作为工作目录，否则无法正确定位根目录的 Maps 与 Mods
+        if game_id and game_id.startswith('StarCraft II'):
+            run_cwd = root
+        else:
+            run_cwd = os.path.dirname(exe_path) if (exe_path and os.path.exists(exe_path)) else root
+
+        # 注入多语言环境 (修复 RPG Maker VX Ace / 吉里吉里 / 经典日文与中文单机游戏乱码与崩溃)
+        run_env['LANG'] = 'zh_CN.UTF-8'
+        run_env['LC_ALL'] = 'zh_CN.UTF-8'
+        run_env['WINEDEBUG'] = '-all'
+
+        RUNNING_GAME_IDS.add(game_id)
 
         def runner():
             try:
-                proc = subprocess.Popen(cmd, cwd=root)
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=run_cwd,
+                    env=run_env,
+                    preexec_fn=set_pdeathsig,
+                    start_new_session=True
+                )
+                ACTIVE_CHILD_PROCESSES.append(proc)
                 proc.wait()
             except Exception as e:
-                sys.stderr.write(f"[ERROR] Ren'Py 运行异常 ({game_id}): {e}\n")
+                log_omni("ERROR", f"独立游戏运行异常 ({game_id}): {e}", tag="Launcher")
             finally:
+                if 'proc' in locals() and proc in ACTIVE_CHILD_PROCESSES:
+                    ACTIVE_CHILD_PROCESSES.remove(proc)
+                RUNNING_GAME_IDS.discard(game_id)
                 self.renpy_finished.emit()
 
         threading.Thread(target=runner, daemon=True).start()
 
     def on_renpy_exit(self):
-        self.showNormal()
         self.raise_()
         self.activateWindow()
-        self.load_hub()
+        self.load_category()
 
     def toggle_fullscreen(self):
         if self.isFullScreen():
@@ -1279,11 +1951,15 @@ class RpgDeckMainWindow(QMainWindow):
         self.webview.page().setAudioMuted(self.is_muted)
         self.btn_mute.setText("🔇 静音" if self.is_muted else "🔊 声音")
 
+    def closeEvent(self, event):
+        kill_all_child_processes()
+        super().closeEvent(event)
+
 def main():
     app = QApplication(sys.argv)
     window = RpgDeckMainWindow()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(getattr(app, 'exec', getattr(app, 'exec_', None))())
 
 if __name__ == "__main__":
     main()

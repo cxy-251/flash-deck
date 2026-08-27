@@ -1,84 +1,80 @@
-# 🤖 Flash Deck — AI Agent & Developer Guidelines (`AGENTS.md`)
+# 🤖 Omni Deck — AI Agent & Developer Guidelines (`AGENTS.md`)
 
-> **本文档为所有接手本项目的 AI 编码助手（Gemini, Antigravity, Claude Code, Cursor, Copilot 等）与开发者提供全景架构、核心规则与开发规范。**
+> **本文档为所有接手本项目的 AI 编码助手（Antigravity, Gemini, Claude, Cursor 等）与开发者提供全景架构、核心铁律与开发规范。**
+
+---
+
+## 🚨 核心铁律 (Mandatory Rules)
+
+### 1. 文件删除铁律 (Deletion Policy)
+* 在代表用户删除任何文件或目录时，**必须且只能使用 `gio trash <path>`** 将其移动到回收站；
+* **严禁使用 `rm`、`rm -rf` 或 `rm -f` 进行永久删除**；
+* 任何清理操作必须确保可在回收站中找回。
+
+### 2. Git 提交与推送铁律 (Git Operations Policy)
+* **严禁主动执行 `git add` 和 `git push`**；
+* 只有在用户明确下达 `add` 或 `push` 指令时方可执行提交与推送操作；
+* 绝对不得覆盖远程仓库的既有提交历史。
 
 ---
 
 ## 📌 项目定位与核心愿景 (Project Mission)
 
-**Flash Deck** 是一个专为 **Steam Deck (SteamOS/Linux x86_64)** 与 **Windows 10/11 (PC x64)** 打造的原生多标签页 Flash 独立微端与殿堂级单机/页游游戏中心。
+**Omni Deck** 是一个专为 **Steam Deck (SteamOS/Linux x86_64)** 与 **PC Linux** 打造的五大引擎多世代全能独立游戏控制中心。
 
-### 关键目标：
-1. **100% 原生硬件加速与满帧渲染**：内置已解除时间锁限制的 Linux 原生 `libpepflashplayer.so` 与 Windows 64位 `pepflashplayer64.dll`，无需 Wine / Proton 兼容层，直接调用底层 GPU 渲染。
-2. **多标签页极速多开 (Multi-Tab)**：支持在单个应用窗口内同时多开多个独立游戏标签页。
-3. **彻底告别垃圾广告壳**：内置 14 款官方原装 Flash 封神单机游戏（0 广告、0 网页壳），支持本地自动持久化存档（Flash SharedObject）。
-4. **极简依赖与零配置冷启动**：由 `uv` 统一管理依赖（仅 `PyQt5` + `PyQtWebEngine`），新用户克隆后运行 `./run.sh` 即可自动准备环境并开箱即玩。
+### 🌟 五大底层引擎矩阵：
+1. 🗡️ **RPG Maker 专区 (`rpg_games/`)**：原生 WebGL 硬件加速，内置 `core.js` 全套 NW.js/Node 模拟与 Direct FS 物理存档直通；
+2. 📖 **Ren'Py 专区 (`renpy_games/`)**：全局 Ren'Py SDK 调度直通，原生支持 64位 OpenGL 硬件加速与手柄映射；
+3. 🕹️ **Retro 复古掌机街机专区 (`retro_games/`)**：EmulatorJS 纯原生 WebAssembly 极速底座（GBA/NDS/Arcade/NES/SFC/MD）；
+4. ♟️ **SLG 模拟策略与养成专区 (`slg_games/`)**：现代 2D/3D WebGL 互动模拟引擎；
+5. ⚡ **Flash 殿堂级神作专区 (`flash_games/`)**：内置解除时间炸弹的原生 Pepper Flash 硬件加速微端，直通 14 款官方原装单机神作及《洛克王国》/《造梦西游》。
 
 ---
 
 ## 📂 项目全景文件结构 (Repository Map)
 
 ```text
-flash-deck/
+omni-deck/
 ├── AGENTS.md                 # [本文件] AI 助手与核心架构规范
-├── pyproject.toml            # uv 标准依赖配置 (仅 PyQt5 + PyQtWebEngine)
+├── pyproject.toml            # uv 标准依赖配置 (PyQt5 + PyQtWebEngine)
 ├── uv.lock                   # uv 依赖锁定清单
-├── README.md                 # 用户面向说明文档与 Steam Deck 配置指南
+├── README.md                 # 用户面向完整说明文档
 ├── LICENSE                   # MIT 开源许可证
-├── .gitignore                # 严格过滤运行时目录 (.venv, __pycache__, data, cache)
+├── .gitignore                # 运行时目录过滤与骨架规则
 ├── run.sh                    # Linux / SteamOS 全自动自愈启动脚本
-├── main.py                   # Flash Deck 核心主程序 (双端通用)
-├── assets/
-│   ├── hub.html              # Flash Deck 殿堂级神作大厅前端
-│   └── games/                # 内置 14 款殿堂级 Flash 单机游戏 SWF
-│       ├── kingdom_rush.swf           # 王国保卫战
-│       ├── the_last_stand_2.swf       # 最后的战役 2
-│       ├── dad_n_me.swf               # 狂扁小朋友
-│       ├── bob_the_robber.swf         # 神偷鲍勃
-│       ├── age_of_war.swf             # 战争进化史
-│       ├── learn_to_fly.swf           # 企鹅学飞
-│       ├── henry_escaping_prison.swf  # 火柴人亨利：逃狱记
-│       ├── portal_flash.swf           # 传送门 Flash 版
-│       ├── bloxorz.swf                # 滚动方块
-│       ├── extreme_pamplona.swf       # 奔牛节大逃亡
-│       ├── mad_arrow.swf              # 疯狂弓箭手
-│       ├── fish_tales.swf             # 大鱼吃小鱼
-│       ├── bad_ice_cream_3.swf        # 坏冰淇淋 3
-│       └── interactive_buddy.swf      # 互动巴迪
-└── plugins/
-    ├── libpepflashplayer.so  # Linux 原生 64 位 Pepper Flash (已解除时间锁，直接随 Git 打包)
-    └── pepflashplayer64.dll  # Windows 64 位 Pepper Flash (已解除时间锁，直接随 Git 打包)
+├── main.py                   # Omni Deck 核心调度主程序与 Direct FS 路由
+├── core.js                   # 核心 Polyfill 与环境仿真层 (NW.js / Node.js 模拟)
+├── assets/                   # 前端大厅 UI 与独立播放器视口
+│   ├── hub.html              # Omni Deck 五大专区分类控制中心
+│   ├── player_retro.html     # 复古游戏 WASM 全屏视口
+│   └── player_flash.html     # Flash 独立视口
+├── emulatorjs/               # EmulatorJS WASM 核心底座 (含 data/ 核心文件)
+├── rpg_games/                # 🗡️ RPG Maker 游戏专区
+├── renpy_games/              # 📖 Ren'Py 视觉小说专区
+├── retro_games/              # 🕹️ 复古街机掌机 ROM 专区
+├── slg_games/                # ♟️ SLG 模拟策略专区
+└── flash_games/              # ⚡ Flash 殿堂神作专区 (全量入库跟踪)
+    └── plugins/              # Linux/Windows 原生 Pepper Flash PPAPI 插件
 ```
 
 ---
 
-## ⚙️ 核心架构与设计规范 (Core Architecture)
+## ⚙️ 核心架构规范与开发约束
 
-### 1. 双端运行库动态挂载 (`get_flash_plugin_path`)
-* 程序启动时通过 `platform.system().lower()` 动态判断：
-  * Linux / SteamOS ➔ 挂载 `plugins/libpepflashplayer.so`；
-  * Windows ➔ 挂载 `plugins/pepflashplayer64.dll`；
-* **严禁规则**：**绝对不要**把插件改成网络按需下载，必须始终随 Git 仓库直接打包入库，保证新机器彻底离线可用。
+### 1. Flash 插件内聚性
+* Flash 运行库统一放置在 `flash_games/plugins/`；
+* 必须随 Git 仓库直接打包入库，保证新设备断网亦能开箱即玩；
+* `scan_games()` 扫描 `flash_games/` 时自动跳过 `plugins` 文件夹。
 
-### 2. 多标签页系统 (`QTabWidget` + `CustomWebPage`)
-* 采用 `QTabWidget(documentMode=True, tabsClosable=True, movable=True)` 作为主窗口核心容器；
-* 每个标签页拥有独立的 `QWebEngineView` 与 `CustomWebPage`；
-* 所有标签页共享同一个 `QWebEngineProfile("flash_deck_profile")`（持久化存储路径设为 `data/storage/`），共享 Cookie、硬件加速与 Flash 存档；
-* `createWindow` 拦截所有网页弹窗与 `target="_blank"` 链接，自动调度 `main_window.add_new_tab(target_url)` 在独立新标签页中打开。
+### 2. 窗口内纯净全屏
+* 悬浮胶囊中的「🎮 纯净全屏」功能专门服务于《洛克王国》（`17roco.qq.com`）等带网页边框的游戏，单机 SWF、大厅与其他专区游戏自动隐藏。
 
-### 3. 窗口内全屏逻辑 (Window Fullscreen Rule)
-* **严格限制**：「🎮 窗口内全屏」功能是专门为《洛克王国》（`17roco.qq.com`）消除网页广告横幅并沉浸居中设计的；
-* **展示条件**：在 `update_fullscreen_action_visibility` 中，**只有当前标签页 URL 包含 `17roco.qq.com` 时才展示该按钮**；
-* **隐藏规则**：在《造梦西游》、游戏大厅（`hub.html`）以及所有单机 SWF（`file://`）游戏下，**必须强制隐藏 (`setVisible(False)`)**；
-* **实现方式**：采用全局 `<style id="roco-pure-mode-style">` 注入与移除机制，彻底避免腾讯登录脚本重构 DOM 时导致样式丢失或无法退出的问题。
+### 3. Direct FS 存档持久化
+* 所有基于 Web 的游戏通过本地多线程 HTTP 路由与文件系统直通将存档写入物理磁盘（各游戏根目录下的 `save/`），绝不依赖不可靠的临时浏览器 IndexedDB。
 
-### 4. 键盘按键与快捷键准则
-* **严禁拦截快捷键**：**绝对不要**在主窗口中绑定 `Ctrl+T`、`Ctrl+W`、`Ctrl+Tab` 等全局键盘快捷键，避免与 Flash 游戏的键盘走位/技能键（如 WASD, Tab 等）产生冲突；
-* 标签的新建、关闭、切换一律通过 UI 按钮原生触发。
-
-### 5. 零垃圾文件与持久化收敛
+### 4. 零垃圾文件与持久化收敛
 * 运行时产生的全部数据严格收敛在 4 个目录中，且全部受到 `.gitignore` 保护：
-  * `data/storage/`：用户 Flash 本地存档（`.sol`）与 Cookie；
+  * `data/storage/`：用户本地存档与 Cookie；
   * `cache/engine_cache/`：Chromium 原生 C++ 磁盘缓存（上限 1GB）；
   * `.venv/`：由 `uv` 管理的隔离运行环境；
   * `__pycache__/`：Python 字节码编译缓存。

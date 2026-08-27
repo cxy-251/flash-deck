@@ -1,19 +1,22 @@
-# 🎮 Omni Deck (全能甲板)
+# 🎮 Omni Deck (全能甲板) v2.1
 
-> **专为 Steam Deck (SteamOS/Linux) 打造的多引擎次世代全能游戏控制中心**
-> *(RPG Maker · Ren'Py 视觉小说 · Retro 复古街机掌机 · SLG 模拟策略 · Flash 殿堂神作)*
+> **专为 Steam Deck (SteamOS/Linux) 打造的多引擎与全世代单机游戏控制中心**
+> *(Steam 精选 · 独立大作 · RPG Maker · Ren'Py 视觉小说 · Retro 复古街机掌机 · SLG 模拟策略 · Flash 殿堂神作)*
 
 [![Platform](https://img.shields.io/badge/Platform-Steam%20Deck%20%7C%20Linux-E95420?style=flat&logo=steam&logoColor=white)](https://store.steampowered.com/steamos)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
-[![GUI](https://img.shields.io/badge/GUI-PyQt5%20%2B%20WebEngine-41CD52?style=flat&logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
+[![GUI](https://img.shields.io/badge/GUI-PyQt6%20%2B%20WebEngine-41CD52?style=flat&logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
 [![Environment](https://img.shields.io/badge/Environment-uv%20%7C%20venv-FFC107?style=flat&logo=python&logoColor=black)](https://github.com/astral-sh/uv)
 
-Omni Deck 是一个基于 Python (PyQt5 WebEngine) 构建的现代化本地多引擎全能游戏控制中心，完美融合了五大底层架构：
-1. 🗡️ **RPG Maker (MV/MZ)**：原生 WebGL 硬件加速 + NW.js/Node 全环境模拟；
-2. 📖 **Ren'Py 视觉小说**：原生 64 位 Ren'Py SDK 调度直通；
-3. 🕹️ **Retro 掌机与街机**：EmulatorJS WebAssembly 极速加载，覆盖 GBA / NDS / Arcade / NES / SFC / MD 等；
-4. ♟️ **SLG 模拟策略与养成**：现代 2D/3D WebGL 引擎；
-5. ⚡ **Flash 殿堂级神作**：解除时间炸弹的原生 Pepper Flash 硬件加速微端。
+Omni Deck 是一个基于 Python (PyQt6 WebEngine) 构建的现代化本地多引擎全能游戏控制中心，完美融合了六大底层架构体系：
+1. 🚀 **独立大作与 Steam 精选**：
+   - 🎮 **Steam 精选神作**：完全离线化运行《缺氧》、《饥荒全系列》、《异星工厂》、《戴森球计划》、《死亡细胞》、《潜水员戴夫》等，彻底告别强制更新毁坏 Mod 与基地存档；
+   - 🟢 **Unity / 🔵 Godot / 🟡 Unreal / 🖥️ Wine PC**：全引擎支持，智能识别原生 Linux 与 Windows PE 二进制，自动挂载 Proton / Wine 运行时与多语言 UTF-8 注入；
+2. 🗡️ **RPG Maker (MV/MZ)**：原生 WebGL 硬件加速 + NW.js/Node 全环境模拟；
+3. 📖 **Ren'Py 视觉小说**：原生 64 位 Ren'Py SDK 调度直通；
+4. 🕹️ **Retro 掌机与街机**：EmulatorJS WebAssembly 极速加载，覆盖 GBA / NDS / Arcade / NES / SFC / MD 等；
+5. ♟️ **SLG 模拟策略与养成**：现代 2D/3D WebGL 引擎；
+6. ⚡ **Flash 殿堂级神作**：解除时间炸弹的原生 Pepper Flash 硬件加速微端。
 
 真正做到“全格式即拖即玩、物理硬盘存档直通、满帧流畅低功耗”。
 
@@ -22,14 +25,17 @@ Omni Deck 是一个基于 Python (PyQt5 WebEngine) 构建的现代化本地多�
 ## 🌟 核心特性
 
 - **⚡ 100% Linux / Steam Deck 原生直出**
-  彻底告别 Wine / Proton 转译开销与依赖报错，直连 AMD RDNA2 GPU 实现满帧运行。
-  
-- **🎮 现代化大厅与悬浮胶囊控制**
-  - **游戏大厅**：五大分类专区导航 + 实时搜索 + 系列包裹 + 收藏夹。
+  彻底告别无谓的转译开销与依赖报错，直连 AMD RDNA2 GPU 实现满帧运行。
+
+- **🎮 现代化大厅与专区子筛选**
+  - **分类专区**：收藏、RPG Maker、独立游戏专区（内置 Steam 精选、Unity、Ren'Py、Godot、Unreal、Wine 子分类）、街机卡带、SLG、Flash。
   - **悬浮胶囊**：半透明悬浮控制胶囊，支持一键“全屏切换”、“静音切换”、“纯净全屏”与“返回大厅”。
 
 - **💾 物理硬盘存档直通 (Direct FS Bridge)**
   内置轻量级多线程 HTTP 与 Direct FS 桥梁，自动接管各类引擎的存档写入。
+
+- **🌐 全局环境配置解耦**
+  路径全局变量化，原生支持 `OMNI_SD_ROOT`、`OMNI_GAMES_DIR`、`RENPY_SDK_PATH` 等环境变量覆盖，完美支持 MicroSD 卡与内置高寿命 NVMe 混合部署。
 
 ---
 
@@ -202,7 +208,7 @@ sudo pacman -S python-pyqt5 python-pyqtwebengine
 ### 2. 运行应用
 无需手动配置环境，直接执行 `run.sh` 即可，脚本会自动为您处理一切：
 ```bash
-cd /home/deck/Documents/rpgweb-deck
+cd /home/deck/Games/omni-deck
 chmod +x run.sh
 ./run.sh
 ```
@@ -211,18 +217,16 @@ chmod +x run.sh
 
 ## 🕹️ 如何添加游戏？
 
-向 RPGWeb Deck 中添加游戏极其简单：
+向 Omni Deck 中添加游戏极其简单，各专区自动识别：
 
-1. 将您下载好的 RPG Maker MV/MZ 游戏包（通常包含 `Game.exe` 和 `www/`，或者根目录下直接有 `index.html`）。
-2. 将整个文件夹提取并移动到 `rpgweb-deck/games/` 目录中。
-   > **注意**：您甚至可以顺手删除里面的 `Game.exe`、`nw.dll`、`locales/` 等原版运行所需的多余垃圾文件，因为本框架完全不需要它们。
-3. 重新打开 `rpgweb-deck` 或在大厅点击**“刷新库”**按钮，游戏就会自动显示在列表中！
+1. **🗡️ RPG Maker 游戏**：放入 `rpg_games/`（支持 MV/MZ，解压后包含 `index.html` 或 `www/`）；
+2. **📖 Ren'Py 视觉小说**：放入 `renpy_games/`（包含 `game/` 文件夹即可）；
+3. **🕹️ Retro 复古掌机/街机**：放入 `retro_games/`（包含对应系统的 ROM 镜像，如 `.gba`, `.nds`, `.zip`）；
+4. **♟️ SLG 模拟策略**：放入 `slg_games/`（支持 WebGL 模拟经营与养成互动）；
+5. **⚡ Flash 殿堂神作**：放入 `flash_games/`（放入 `.swf` 单机文件或 `info.json` 网页配置）。
 
-### 支持的目录结构
-扫描器非常智能，支持以下三种标准游戏目录形式：
-- `games/您的游戏名称/index.html`
-- `games/您的游戏名称/www/index.html`
-- `games/您的游戏名称/data/www/index.html`
+> **注意**：对于 RPG / SLG 类 Web 游戏，您可以直接清理掉其中的 `Game.exe`、`nw.dll` 等多余 Windows 二进制，框架完全不需要它们。
+> 放入后重新打开应用或在大厅点击**“刷新”**按钮，游戏就会自动显示在对应专区列表中！
 
 ---
 
@@ -232,8 +236,8 @@ chmod +x run.sh
 
 ```python
 DISPLAY_NAMES = {
-    'LatexDungeon': 'Latex Dungeon (中文版)',
-    'Town of Passion': '欲望小镇',
+    '001 - Cowgirl Maid Milk Cafe': '001 - 奶牛女仆咖啡厅',
+    '005 - Cradle': '005 - 面纱之外 (Cradle)',
     # '文件夹名称': '您想要的显示名称'
 }
 ```
@@ -245,12 +249,12 @@ DISPLAY_NAMES = {
 | 症状 | 可能原因 | 解决方案 |
 | :--- | :--- | :--- |
 | **启动后全白屏** | 后台存在上一次未完全退出的进程（挂起），导致端口 `8998` 冲突。 | 运行 `pkill -9 -f "main.py"` 彻底清理后台进程后重新启动。 |
-| **游戏黑屏且无声音** | 游戏底层 JS 文件出现致命的执行错误，或者部分音频编码在 Linux 原生 WebEngine 中不受支持。 | 展开左上角的悬浮胶囊，点击 **Debug** (或按 `F12`)，查看开发者工具 Console 中的报错。 |
+| **游戏黑屏且无声音** | 游戏底层 JS 文件出现致命的执行错误，或者部分音频编码在 Linux 原生 WebEngine 中不受支持。 | 展开右上角的悬浮胶囊，点击 **Debug**，查看开发者工具 Console 中的报错。 |
 | **多语言插件报错 (DKTools等)** | 原游戏插件强制通过 Node 的 `fs` 同步遍历目录寻找 `.json` 文件。 | `core.js` 已为您接管并修补此类探测，若仍有问题，请检查游戏 `locales/` 目录下是否缺少最基础的默认语言包。 |
-| **存档报错/丢失** | 浏览器的 `localStorage` 或 `IndexedDB` 空间不足或遭遇跨域限制。 | 本项目默认开启 **Direct FS Bridge**，已将存档持久化至 `games/您的游戏/save/`。若报错，请检查该目录是否有可写权限。 |
+| **存档报错/丢失** | 浏览器的 `localStorage` 或 `IndexedDB` 空间不足或遭遇跨域限制。 | 本项目默认开启 **Direct FS Bridge**，已将存档持久化至各游戏目录下的 `save/`。若报错，请检查该目录是否有可写权限。 |
 
 ---
 
 ## 📝 贡献与许可
 
-RPGWeb Deck 是一个开源解决方案，致力于让基于 Web 技术的桌面游戏在移动和掌机环境（如 Steam Deck）中无拘无束地运行。欢迎提交 Issue 探讨问题或 Pull Request 贡献代码。
+Omni Deck 是一个专为 Steam Deck 与 Linux 生态打造的开源多引擎游戏控制台解决方案，致力于让基于 Web、Python、WASM 及 Flash 技术的跨世代游戏在掌机环境（如 Steam Deck）中无拘无束地运行。欢迎提交 Issue 探讨问题或 Pull Request 贡献代码。

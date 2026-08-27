@@ -3,25 +3,71 @@
                 return;
             }
 
+            // Safe Function constructor wrapper for obfuscated plugins with malformed eval
+            var _orig_Function = window.Function;
+            window.Function = function() {
+                try {
+                    return _orig_Function.apply(this, arguments);
+                } catch(e) {
+                    console.warn('[Omni-Deck] Suppressed malformed Function syntax:', e.message);
+                    return function() { return null; };
+                }
+            };
+
             // 1. 全局 Buffer 对象模拟 (支持 Base64 与多编码转换)
             window.Buffer = {
-                isBuffer: function(obj) { return obj instanceof ArrayBuffer || obj instanceof Uint8Array; },
+                isBuffer: function(obj) { return obj instanceof ArrayBuffer || obj instanceof Uint8Array || (obj && obj._isBuffer); },
                 from: function(data, enc) {
                     if (enc === 'base64' && typeof data === 'string') {
                         try {
                             var decoded = atob(data);
                             return {
+                                _isBuffer: true,
                                 toString: function(type) { return decoded; }
                             };
                         } catch(e) {}
                     }
                     if (typeof data === 'string') {
-                        return { toString: function() { return data; } };
+                        return {
+                            _isBuffer: true,
+                            toString: function(type) { return data; }
+                        };
                     }
-                    return { toString: function() { return String(data); } };
+                    if (data && typeof data.toString === 'function') {
+                        return {
+                            _isBuffer: true,
+                            toString: function(type) { return data.toString(type); }
+                        };
+                    }
+                    return {
+                        _isBuffer: true,
+                        toString: function(type) { return String(data); }
+                    };
                 },
-                alloc: function(size) { return new Uint8Array(size); },
-                concat: function(list) { return list; }
+                alloc: function(size) {
+                    var u = new Uint8Array(size);
+                    u._isBuffer = true;
+                    return u;
+                },
+                concat: function(list) {
+                    var str = '';
+                    if (Array.isArray(list)) {
+                        for (var i = 0; i < list.length; i++) {
+                            var item = list[i];
+                            if (item) {
+                                if (typeof item.toString === 'function') {
+                                    str += item.toString();
+                                } else {
+                                    str += String(item);
+                                }
+                            }
+                        }
+                    }
+                    return {
+                        _isBuffer: true,
+                        toString: function() { return str; }
+                    };
+                }
             };
 
             // 2. nw 全局运行环境模拟 (完整模拟 Menu / MenuItem / Clipboard / Window)
@@ -142,7 +188,7 @@
                     if (!gid && typeof window !== 'undefined' && window.location) {
                         var pathParts = window.location.pathname.split('/');
                         if (pathParts.length >= 3 && pathParts[1] === 'game') {
-                            gid = pathParts[2];
+                            gid = decodeURIComponent(pathParts[2]);
                         }
                     }
                     var gameRootStr1 = '/games/';
@@ -221,7 +267,7 @@
                     if (!gid && typeof window !== 'undefined' && window.location) {
                         var pathParts = window.location.pathname.split('/');
                         if (pathParts.length >= 3 && pathParts[1] === 'game') {
-                            gid = pathParts[2];
+                            gid = decodeURIComponent(pathParts[2]);
                         }
                     }
                     var gameRootStr1 = '/games/';
@@ -305,10 +351,8 @@
                     var callback = typeof enc === 'function' ? enc : cb;
                     var res = this.readFileSync(p, typeof enc === 'string' ? enc : 'utf8');
                     setTimeout(function() {
-                        if (res !== null && res !== '') {
-                            if (typeof callback === 'function') callback(null, res);
-                        } else {
-                            if (typeof callback === 'function') callback(new Error("File not found"));
+                        if (typeof callback === 'function') {
+                            callback(null, (res !== null && res !== '') ? res : "");
                         }
                     }, 0);
                 },
@@ -387,7 +431,7 @@
                     if (typeof p === 'string') {
                         var pathParts = window.location.pathname.split('/');
                         if (pathParts.length >= 3 && pathParts[1] === 'game') {
-                            gid = pathParts[2];
+                            gid = decodeURIComponent(pathParts[2]);
                         }
                         var gameRootStr1 = '/games/';
                         var gameRootStr2 = '/game/' + gid + '/';
@@ -426,7 +470,7 @@
                     if (typeof p === 'string') {
                         var pathParts = window.location.pathname.split('/');
                         if (pathParts.length >= 3 && pathParts[1] === 'game') {
-                            gid = pathParts[2];
+                            gid = decodeURIComponent(pathParts[2]);
                         }
                         var gameRootStr1 = '/games/';
                         var gameRootStr2 = '/game/' + gid + '/';
@@ -546,10 +590,62 @@
                 isSteamInBigPictureMode: function() { return false; }
             };
 
+            var mockCrypto = {
+                createHash: function(algo) {
+                    var data = '';
+                    return {
+                        update: function(d) { data += d; return this; },
+                        digest: function(enc) {
+                            return 'd41d8cd98f00b204e9800998ecf8427e';
+                        }
+                    };
+                },
+                createHmac: function(algo, key) {
+                    return this.createHash(algo);
+                },
+                createCipheriv: function(algorithm, key, iv) {
+                    var chunks = [];
+                    return {
+                        update: function(data) {
+                            if (data) chunks.push(data);
+                            return (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') ? Buffer.from('') : '';
+                        },
+                        final: function() {
+                            return (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') ? Buffer.from('') : '';
+                        }
+                    };
+                },
+                createDecipheriv: function(algorithm, key, iv) {
+                    var chunks = [];
+                    return {
+                        update: function(data) {
+                            if (data) chunks.push(data);
+                            return (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') ? Buffer.from('') : '';
+                        },
+                        final: function() {
+                            var knownPlaintext = '{"version":"1.0.6","build":"88c596a","lang":2,"trial":false}';
+                            if (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') {
+                                return Buffer.from(knownPlaintext);
+                            }
+                            return knownPlaintext;
+                        }
+                    };
+                },
+                randomBytes: function(size, cb) {
+                    var buf = new Uint8Array(size);
+                    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+                        window.crypto.getRandomValues(buf);
+                    }
+                    if (typeof cb === 'function') cb(null, buf);
+                    return buf;
+                }
+            };
+
             window.require = function(mod) {
                 if (mod === 'nw.gui' || mod === 'nw') return window.nw;
                 if (mod === 'fs') return mockFs;
                 if (mod === 'path') return mockPath;
+                if (mod === 'crypto') return mockCrypto;
                 if (typeof mod === 'string' && mod.indexOf('greenworks') >= 0) return mockGreenworks;
                 if (mod === 'electron') {
                     return {
@@ -751,9 +847,6 @@
                                 url += (url.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now();
                             }
                         }
-                        if (url.startsWith('data/')) {
-                            url = window.location.pathname.replace('/index.html', '/') + url;
-                        }
                         args[1] = url;
                     }
                     return _orig_xhr_open.apply(this, args);
@@ -822,15 +915,166 @@
                             console.error('[RPGWeb-Deck] 异步存档异常:', err);
                         });
                     };
-                    if (window.Graphics) {
-                        var _orig_printLoadingError = Graphics.printLoadingError;
-                        Graphics.printLoadingError = function(url) {
-                            console.error("[RPGWeb-Deck] Graphics.printLoadingError triggered for URL: " + url);
-                            if (_orig_printLoadingError) {
-                                _orig_printLoadingError.apply(this, arguments);
+                    var _graphicsHooked = false;
+                    // Global SceneManager & DKTools unblocker
+                    var dkUnblockTimer = setInterval(function() {
+                        if (window.Graphics && !_graphicsHooked) {
+                            _graphicsHooked = true;
+                            var _orig_printError = Graphics.printError;
+                            Graphics.printError = function(name, message, error) {
+                                console.error("[Omni-Deck] Graphics.printError:", name, message, error ? (error.stack || error.message || error) : 'no error stack');
+                                if (_orig_printError) {
+                                    _orig_printError.apply(this, arguments);
+                                }
+                            };
+                            var _orig_printLoadingError = Graphics.printLoadingError;
+                            Graphics.printLoadingError = function(url) {
+                                console.error("[Omni-Deck] Graphics.printLoadingError triggered for URL: " + url);
+                                if (_orig_printLoadingError) {
+                                    _orig_printLoadingError.apply(this, arguments);
+                                }
+                            };
+                        }
+                        if (typeof SceneManager !== 'undefined') {
+                            if (!SceneManager.isCurrentSceneBusy) {
+                                SceneManager.isCurrentSceneBusy = function() {
+                                    return this._scene ? (this._scene.isBusy ? this._scene.isBusy() : false) : false;
+                                };
                             }
-                        };
-                    }
+                            if (!SceneManager.isCurrentSceneStarted) {
+                                SceneManager.isCurrentSceneStarted = function() {
+                                    return this._scene ? (this._scene.isStarted ? this._scene.isStarted() : true) : false;
+                                };
+                            }
+                            if (!SceneManager._omniErrorHooked && SceneManager.onError) {
+                                SceneManager._omniErrorHooked = true;
+                                var _origSceneManagerOnError = SceneManager.onError;
+                                SceneManager.onError = function(event) {
+                                    if (!event || event.message === 'Script error.' || !event.message) {
+                                        console.warn('[Omni-Deck] Suppressed generic Script error in SceneManager.onError');
+                                        return;
+                                    }
+                                    if (_origSceneManagerOnError) _origSceneManagerOnError.apply(this, arguments);
+                                };
+                            }
+                        }
+                        if (typeof DKTools !== 'undefined') {
+                            if (DKTools.IO) {
+                                if (!DKTools.IO._path) {
+                                    try { DKTools.IO.initialize(); } catch(e) {}
+                                    if (!DKTools.IO._path && typeof require !== 'undefined') {
+                                        DKTools.IO._path = require('path');
+                                        DKTools.IO._fs = require('fs');
+                                        DKTools.IO._os = require('os');
+                                    }
+                                }
+                                if (DKTools.IO.File && DKTools.IO.File.prototype) {
+                                    DKTools.IO.File.prototype.load = function(object) {
+                                        object = object || {};
+                                        var self = this;
+                                        var processData = function(data) {
+                                            if (object.decompress && typeof LZString !== 'undefined') {
+                                                data = LZString.decompressFromBase64(data);
+                                            }
+                                            if (object.parse) {
+                                                try {
+                                                    data = JSON.parse(data, object.parse ? object.parse.reviver : undefined);
+                                                } catch (error) {
+                                                    return { data: null, status: (DKTools.IO.ERROR_PARSING_DATA || 4), error: error };
+                                                }
+                                            }
+                                            return { data: data, status: (DKTools.IO.OK || 0) };
+                                        };
+
+                                        var filePath = this.getPath();
+                                        if (object.sync) {
+                                            try {
+                                                var xhr = new XMLHttpRequest();
+                                                xhr.open('GET', filePath + '?t=' + Date.now(), false);
+                                                xhr.overrideMimeType(object.mimeType || 'application/json');
+                                                xhr.send();
+                                                if (xhr.status === 200 || xhr.status === 0) {
+                                                    return processData(xhr.responseText);
+                                                }
+                                            } catch(e) {}
+                                            return { data: null, status: (DKTools.IO.ERROR_PATH_DOES_NOT_EXIST || 1) };
+                                        } else {
+                                            var xhr = new XMLHttpRequest();
+                                            xhr.open('GET', filePath + '?t=' + Date.now(), true);
+                                            xhr.overrideMimeType(object.mimeType || 'application/json');
+                                            xhr.onload = function() {
+                                                if (xhr.status === 200 || xhr.status === 0) {
+                                                    if (typeof object.onSuccess === 'function') {
+                                                        object.onSuccess(processData(xhr.responseText), self);
+                                                    }
+                                                } else {
+                                                    if (typeof object.onError === 'function') {
+                                                        object.onError(new Error('HTTP ' + xhr.status + ' on ' + filePath), self);
+                                                    }
+                                                }
+                                            };
+                                            xhr.onerror = function(err) {
+                                                if (typeof object.onError === 'function') {
+                                                    object.onError(err || new Error('Network error on ' + filePath), self);
+                                                }
+                                            };
+                                            try { xhr.send(); } catch(e) {
+                                                if (typeof object.onError === 'function') object.onError(e, self);
+                                            }
+                                            return { data: null, status: (DKTools.IO.EXPECT_CALLBACK || -1) };
+                                        }
+                                    };
+                                }
+                            }
+                            if (DKTools.Utils && !DKTools.Utils._isReady) {
+                                try { DKTools.Utils.initialize(); } catch(e) {}
+                            }
+                            if (DKTools.StartupManager) {
+                                DKTools.StartupManager._isReady = true;
+                                DKTools.StartupManager.isReady = function() { return true; };
+                            }
+                            if (DKTools.Localization) {
+                                if (!DKTools.Localization._cache) DKTools.Localization._cache = {};
+                                if (!DKTools.Localization._cacheVariables) DKTools.Localization._cacheVariables = {};
+                                if (!DKTools.Localization._folders) DKTools.Localization._folders = {};
+                                DKTools.Localization._isReady = true;
+                                DKTools.Localization.isReady = function() { return true; };
+                                DKTools.Localization.isLocaleFileExists = function() { return true; };
+                                if (!DKTools.Localization._omniHooked) {
+                                    DKTools.Localization._omniHooked = true;
+                                    var origGetText = DKTools.Localization.getText;
+                                    DKTools.Localization.getText = function(text, locale) {
+                                        if (text == null) return text;
+                                        var str = String(text);
+                                        if (str.length < 1) return str;
+                                        if (window.LocaleDictionary) {
+                                            var d = window.LocaleDictionary;
+                                            var replaced = str.replace(/\{([^\{\}\r\n]+)\}/g, function(m, k) {
+                                                k = k.trim();
+                                                if (d.hasOwnProperty(k)) return d[k];
+                                                for (var x in d) { if (x.toLowerCase() === k.toLowerCase()) return d[x]; }
+                                                return m;
+                                            });
+                                            if (d.hasOwnProperty(replaced.trim())) return d[replaced.trim()];
+                                            return replaced;
+                                        }
+                                        return origGetText ? origGetText.call(this, text, locale) : text;
+                                    };
+                                }
+                            }
+                            if (DKTools.PreloadManager) {
+                                DKTools.PreloadManager._isReady = true;
+                                DKTools.PreloadManager.isReady = function() { return true; };
+                            }
+                        }
+                        if (typeof Scene_Base !== 'undefined' && Scene_Base.prototype.isPreloaded) {
+                            Scene_Base.prototype.isPreloaded = function() { return true; };
+                        }
+                        if (typeof Scene_Boot !== 'undefined' && Scene_Boot.prototype.isBusy) {
+                            Scene_Boot.prototype.isBusy = function() { return false; };
+                        }
+                    }, 20);
+                    setTimeout(function() { clearInterval(dkUnblockTimer); }, 20000);
                 }
             }, 20);
         })();

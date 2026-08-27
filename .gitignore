@@ -1,20 +1,44 @@
 /.venv/
 /__pycache__/
+*.py[cod]
+*$py.class
 /cache/
 /data/
+*.log
 uv.lock
 
-# Large game assets ignored
+# Large game assets ignored (Flash games are completely unignored and tracked)
 rpg_games/*/*
 renpy_games/*/*
 retro_games/*/*
 slg_games/*/*
+unity_games/*/*
+godot_games/*/*
+unreal_games/*/*
+wine_games/*/*
+standalone_games/*/*
+steam_games/*/*
+
+# Manga and comic archives
+manga/*/*
+*.cbz
+*.cbr
+
+# Keep emulator runtime
+!retro_games/emulatorjs/**
 
 # Preserve folder structure and adapters
 !rpg_games/*/.gitkeep
 !renpy_games/*/.gitkeep
+!renpy_games/.gitkeep
 !retro_games/*/.gitkeep
 !slg_games/*/.gitkeep
 
 !rpg_games/*/adapter.js
 !slg_games/*/adapter.js
+
+# OS & Editor Artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

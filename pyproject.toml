@@ -1,12 +1,12 @@
 [project]
 name = "omni-deck"
-version = "2.0.0"
-description = "Omni Deck — 专为 Steam Deck (SteamOS/Linux) 打造的五大引擎多世代全能游戏控制中心"
+version = "2.1.0"
+description = "Omni Deck — 专为 Steam Deck (SteamOS/Linux) 打造的多引擎与全世代单机游戏控制中心"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pyqt5>=5.15.10",
-    "pyqtwebengine>=5.15.6",
+    "pyqt6>=6.6.0",
+    "pyqt6-webengine>=6.6.0",
 ]
 
 [tool.uv]
