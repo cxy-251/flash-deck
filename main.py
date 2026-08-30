@@ -5,12 +5,31 @@ import platform
 import threading
 import subprocess
 import json
+import re
+import socket
+import struct
+import time
 import functools
 import urllib.parse
 import atexit
 import signal
 import ctypes
+import mimetypes
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+mimetypes.add_type('application/wasm', '.wasm')
+mimetypes.add_type('application/javascript', '.js')
+mimetypes.add_type('application/x-shockwave-flash', '.swf')
+import manga_service
+import novel_service
+import audio_service
+
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+    "--enable-features=WebAssemblyThreads,SharedArrayBuffer "
+    "--enable-webgl "
+    "--ignore-gpu-blocklist "
+    "--enable-gpu-rasterization"
+)
 
 ACTIVE_CHILD_PROCESSES = []
 RUNNING_GAME_IDS = set()  # 当前正在运行的游戏 ID 集合，防止重复启动同一游戏
@@ -55,13 +74,6 @@ for env_var in [
 os.environ["no_proxy"] = "*"
 os.environ["NO_PROXY"] = "*"
 
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
-    "--enable-features=WebAssemblyThreads,SharedArrayBuffer "
-    "--enable-webgl "
-    "--ignore-gpu-blocklist "
-    "--enable-gpu-rasterization"
-)
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HOME_DIR = os.path.expanduser("~")
 
@@ -84,11 +96,209 @@ RENPY_GAMES_DIR = os.path.join(SCRIPT_DIR, "renpy_games")
 RETRO_GAMES_DIR = os.path.join(SCRIPT_DIR, "retro_games")
 SLG_GAMES_DIR = os.path.join(SCRIPT_DIR, "slg_games")
 EMULATORJS_DIR = os.path.join(RETRO_GAMES_DIR, "emulatorjs")
-GAMES_DIR = RPG_GAMES_DIR
 HUB_HTML_PATH = os.path.join(ASSETS_DIR, "hub.html")
+HUB_JS_PATH = os.path.join(ASSETS_DIR, "hub.js")
 PLAYER_RETRO_HTML = os.path.join(ASSETS_DIR, "player_retro.html")
 PLAYER_FLASH_HTML = os.path.join(ASSETS_DIR, "player_flash.html")
 PORT = 8998
+
+LAN_CONFIG_FILE = os.path.join(SCRIPT_DIR, ".lan_config.json")
+
+def get_local_ip() -> str:
+    """
+    通过 UDP Socket 探测当前设备在局域网内分配到的物理 IPv4 地址。
+    不发出真实数据包，仅探测最优路由网卡，失败时回退到 '127.0.0.1'。
+    """
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('10.255.255.255', 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
+def load_lan_sharing_enabled() -> bool:
+    """从磁盘配置文件读取局域网共享开关状态（默认 False）"""
+    try:
+        if os.path.exists(LAN_CONFIG_FILE):
+            with open(LAN_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return bool(data.get('enabled', False))
+    except Exception:
+        pass
+    return False
+
+def save_lan_sharing_enabled(enabled: bool) -> None:
+    """持久化局域网共享开关状态至磁盘"""
+    try:
+        with open(LAN_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'enabled': bool(enabled)}, f)
+    except Exception:
+        pass
+
+LAN_SHARING_ENABLED = load_lan_sharing_enabled()
+
+WAN_CONFIG_FILE = os.path.join(SCRIPT_DIR, ".wan_config.json")
+WAN_DOMAIN = "omni.cxy251.uk"
+WAN_URL = f"https://{WAN_DOMAIN}"
+
+def load_wan_sharing_enabled() -> bool:
+    """从磁盘配置文件读取 Cloudflare 广域网隧道远程共享开关状态（默认 False）"""
+    try:
+        if os.path.exists(WAN_CONFIG_FILE):
+            with open(WAN_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return bool(data.get('enabled', False))
+    except Exception:
+        pass
+    return False
+
+def save_wan_sharing_enabled(enabled: bool) -> None:
+    """持久化 Cloudflare 广域网隧道远程共享开关状态至磁盘"""
+    try:
+        with open(WAN_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'enabled': bool(enabled)}, f)
+    except Exception:
+        pass
+
+WAN_SHARING_ENABLED = load_wan_sharing_enabled()
+
+CLOUDFLARED_BIN = os.path.join(SCRIPT_DIR, "bin", "cloudflared")
+WAN_TUNNEL_PROC = None
+WAN_TUNNEL_LOCK = threading.Lock()
+LOCAL_DNS_HELPER_STARTED = False
+
+def is_cloudflared_ready():
+    """检测本地 bin/cloudflared 可执行文件是否存在且可正常运行"""
+    if not os.path.exists(CLOUDFLARED_BIN):
+        return False
+    try:
+        res = subprocess.run([CLOUDFLARED_BIN, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+        return res.returncode == 0
+    except Exception:
+        return False
+
+def start_local_dns_helper():
+    """
+    启动本地轻量级 DNS 代理助手 (127.0.0.1:53535)：
+    专门针对中国大陆或特定网络环境下 Steam Deck 解析 Argo Tunnel 域名被污染的问题，
+    精准劫持 argotunnel.com 查询并返回直连 SRV/IP 记录，其他请求转发至阿里 DNS (223.5.5.5)。
+    """
+    global LOCAL_DNS_HELPER_STARTED
+    if LOCAL_DNS_HELPER_STARTED:
+        return
+    LOCAL_DNS_HELPER_STARTED = True
+
+    def dns_worker():
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(('127.0.0.1', 53535))
+        except Exception:
+            return
+        while True:
+            try:
+                data, addr = s.recvfrom(2048)
+                if not data:
+                    break
+                tid = data[:2]
+                qname = ''
+                idx = 12
+                while idx < len(data):
+                    l = data[idx]
+                    if l == 0:
+                        idx += 1
+                        break
+                    idx += 1
+                    qname += data[idx:idx+l].decode('utf-8', 'ignore') + '.'
+                    idx += l
+                qtype = struct.unpack('>H', data[idx:idx+2])[0]
+                if qtype == 33 and 'argotunnel.com' in qname:
+                    resp_hdr = tid + b'\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00'
+                    question = data[12:idx+4]
+                    target = b'\x07region1\x02v2\x0bargotunnel\x03com\x00'
+                    rdata = struct.pack('>HHH', 0, 100, 7844) + target
+                    ans = b'\xc0\x0c\x00\x21\x00\x01\x00\x00\x01\x2c' + struct.pack('>H', len(rdata)) + rdata
+                    s.sendto(resp_hdr + question + ans, addr)
+                else:
+                    f = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    f.settimeout(2)
+                    try:
+                        f.sendto(data, ('223.5.5.5', 53))
+                        rdata, _ = f.recvfrom(2048)
+                        s.sendto(rdata, addr)
+                    except Exception:
+                        pass
+                    finally:
+                        f.close()
+            except Exception:
+                pass
+
+    threading.Thread(target=dns_worker, daemon=True).start()
+
+def ensure_wan_daemon():
+    """保证 Cloudflare 专属隧道后台静默常驻，随时待命响应请求"""
+    global WAN_TUNNEL_PROC
+    if not is_cloudflared_ready():
+        return
+    config_file = os.path.expanduser("~/.cloudflared/config.yml")
+    if not os.path.exists(config_file):
+        return
+
+    start_local_dns_helper()
+
+    def daemon_worker():
+        global WAN_TUNNEL_PROC
+        while True:
+            try:
+                cmd = [
+                    CLOUDFLARED_BIN,
+                    "--config", config_file,
+                    "tunnel", "run"
+                ]
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    preexec_fn=set_pdeathsig
+                )
+                with WAN_TUNNEL_LOCK:
+                    WAN_TUNNEL_PROC = proc
+                proc.wait()
+            except Exception as e:
+                log_omni("WARN", f"Cloudflare 隧道守护异常: {e}", tag="WAN")
+            time.sleep(3)
+
+    threading.Thread(target=daemon_worker, daemon=True).start()
+
+def get_wan_status():
+    """获取当前 Cloudflare 广域网隧道的配置与连接状态字典"""
+    return {
+        "enabled": WAN_SHARING_ENABLED,
+        "status": "running" if WAN_SHARING_ENABLED else "stopped",
+        "url": WAN_URL,
+        "domain": WAN_DOMAIN,
+        "has_binary": is_cloudflared_ready()
+    }
+
+def broadcast_network_status():
+    """向所有已连接的视口和浏览器客户端广播当前最新的局域网与广域网网络状态"""
+    try:
+        ip = get_local_ip()
+        manga_service.broadcast_manga_event({
+            'type': 'network_status',
+            'lan': {
+                'enabled': LAN_SHARING_ENABLED,
+                'ip': ip,
+                'port': PORT,
+                'url': f'http://{ip}:{PORT}'
+            },
+            'wan': get_wan_status()
+        })
+    except Exception:
+        pass
 
 FLASH_PLUGIN_PATH = os.path.join(PLUGINS_DIR, "libpepflashplayer.so") if sys.platform != "win32" else os.path.join(PLUGINS_DIR, "pepflashplayer64.dll")
 
@@ -101,7 +311,6 @@ os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(CHROMIUM_CACHE, exist_ok=True)
 
-# 2. Chromium C++ 原生极速网络与硬件加速参数（强化 AMD GPU 稳定性）
 sys.argv.append(f"--disk-cache-dir={CHROMIUM_CACHE}")
 sys.argv.append("--disk-cache-size=1073741824")
 sys.argv.append("--media-cache-size=536870912")
@@ -115,8 +324,6 @@ sys.argv.append("--disable-gpu-process-crash-limit")
 sys.argv.append("--enable-webgl")
 sys.argv.append("--no-sandbox")
 sys.argv.append("--autoplay-policy=no-user-gesture-required")
-sys.argv.append(f"--ppapi-flash-path={FLASH_PLUGIN_PATH}")
-sys.argv.append("--ppapi-flash-version=32.0.0.465")
 sys.argv.append("--allow-running-insecure-content")
 sys.argv.append("--ignore-certificate-errors")
 
@@ -207,7 +414,6 @@ DISPLAY_NAMES = {
     '082 - Zombio Apocalypse': '082 - Zombio Apocalypse',
     '083 - Village Erotic Life': '083 - Village Erotic Life',
     '084 - Hot Spring Room Sharing': '084 - Hot Spring Room Sharing',
-    '085 - Elf Girl Rifia': '085 - Elf Girl Rifia',
     '086 - This Goddess Corrupted Our World': '086 - This Goddess Corrupted Our World',
     '087 - Endless Tentacle Cave': '087 - Endless Tentacle Cave',
     '088 - Trial of Lust': '088 - Trial of Lust',
@@ -221,6 +427,8 @@ DISPLAY_NAMES = {
     '096 - Daily Greetings Wife': '096 - Daily Greetings Wife',
     '097 - The Witch and the Two Apprentices': '097 - The Witch and the Two Apprentices',
     '098 - Dragon Conqueror': '098 - Dragon Conqueror',
+
+    # === Standalone Ren'Py Games (001 - 013) ===
     "001 - Mom's Best Friend": "001 - Mom's Best Friend",
     '002 - After the Fire': '002 - After the Fire',
     '003 - Love Strikes Thrice': '003 - Love Strikes Thrice',
@@ -230,8 +438,28 @@ DISPLAY_NAMES = {
     '007 - sMother': '007 - sMother',
     '008 - Succu-Mama': '008 - SUCCU-MAMA',
     '009 - Bright Lord': '009 - Bright Lord (光明领主)',
+    '010 - Supower': '010 - 超能力者的日常 (Supower)',
+    '011 - Midnight Shifts with Femboy': '011 - 与伪娘的深夜轮班 (Midnight Shifts with Femboy)',
+    '012 - Harem x Family': '012 - 间谍后宫家 (Harem x Family)',
+    '013 - Harem Heaven': '013 - 后宫天堂 (Harem Heaven)',
+    '014 - Sayaka My Naughty Milf Neighbor': '014 - 邻家俏人妻沙耶加 (Sayaka: My Naughty Neighbor)',
+    '015 - Happy Island Fantasy': '015 - 幸福岛物语 (Happy Island Fantasy)',
+    '016 - Neighbors Wife': '016 - 邻家的人妻 (Neighbor\'s Wife)',
+    '017 - Legend of Moonlight': '017 - 月光传说 (Legend of Moonlight)',
+    '018 - Falling Undercover Nox Syndicate': '018 - 潜伏行动：夜色辛迪加 (Falling Undercover)',
+    '019 - Agent 17': '019 - 特工 17 (Agent 17)',
+    '020 - The Seven Realms': '020 - 七大王国 (The Seven Realms)',
+    '021 - Midnight Sin': '021 - 午夜之罪 (Midnight Sin)',
+    '022 - Summer Memories': '022 - 夏日回忆 (Summer Memories)',
+    '023 - Love and Life': '023 - 爱与生活 (Love and Life)',
+    '024 - Forbidden Thoughts': '024 - 禁忌的念头 (Forbidden Thoughts)',
+
+    # === SLG 策略与互动模拟 (001 - 005) ===
     '001 - Cowgirl Maid Milk Cafe': '001 - Cowgirl Maid Milk Cafe',
     '002 - Summer Sisters': '002 - Summer Sisters',
+    '003 - My Summer Vacation': '003 - 大叔的暑假 (My Summer Vacation)',
+    '004 - Girls on the Borderline': '004 - 百万引町边界的少女们 (Girls on the Borderline)',
+    '005 - Elf Girl Rifia': '005 - 精灵少女莉菲亚与梦幻迷宫 (Elf Lifia and the Labyrinth of Everdream)',
 
     # === Standalone Unity Games ===
     '001 - Kaiju Princess Detective': '001 - Kaiju Princess & Detective Servant',
@@ -260,6 +488,16 @@ DISPLAY_NAMES = {
     '024 - Hotel Tales': '024 - 旅社物语 (Hotel Tales)',
     "025 - Lovers' Fun": "025 - 连任 (Lovers' Fun)",
     "026 - Mirai's Midnight Training": "026 - 未来的午夜特训 (Mirai's Midnight Training)",
+    '027 - Exit Lust': '027 - 8号欲口 (Exit Lust)',
+    '028 - Handyman Fantasy': '028 - 便利屋奇幻物语 (Handyman Fantasy)',
+    '029 - Immoral Bathhouse': '029 - 背德混浴温泉 (Immoral Bathhouse)',
+    '030 - Problematic Subjects': '030 - 有问题的课题 (Problematic Subjects)',
+    '031 - Magi-Iki': '031 - 魔法高潮 (Magi-Iki)',
+    '032 - Oral Sex Shop 2': '032 - 口交工坊 2 (Oral Sex Shop 2)',
+    '033 - Isekai Bistro': '033 - 异世界餐酒馆 (Isekai Bistro)',
+    '034 - Ride Me Taxi Driver': '034 - 老司机带带我 (Ride Me Taxi Driver)',
+    '035 - Dekiru Kouhai Aoi-chan': '035 - 能力出众的后辈葵酱 (Dekiru Kouhai Aoi-chan)',
+    '036 - Final Boss is Mother-in-law': '036 - 最终魔王是岳母 (Final Boss is Mother-in-Law)',
 
     # === Standalone Steam 精选独立神作 ===
     '001 - Game Dev Story': '001 - 游戏开发物语 (Game Dev Story)',
@@ -276,6 +514,18 @@ DISPLAY_NAMES = {
     '012 - Oxygen Not Included': '012 - 缺氧 (Oxygen Not Included)',
     '013 - Don\'t Starve': '013 - 饥荒单机版 (Don\'t Starve)',
     '014 - Don\'t Starve Together': '014 - 饥荒联机版 (Don\'t Starve Together)',
+    '015 - Bloons TD 6': '015 - 气球塔防 6 (Bloons TD 6)',
+    '016 - Cult of the Lamb': '016 - 咩咩启示录 (Cult of the Lamb)',
+    '017 - Euro Truck Simulator 2': '017 - 欧洲卡车模拟 2 (Euro Truck Simulator 2)',
+    '018 - Hades II': '018 - 哈迪斯 2 (Hades II)',
+    '019 - Hearts of Iron IV': '019 - 钢铁雄心 4 (Hearts of Iron IV)',
+    '020 - Hollow Knight Silksong': '020 - 空洞骑士：丝之歌 (Hollow Knight: Silksong)',
+    '021 - Hollow Knight': '021 - 空洞骑士 (Hollow Knight)',
+    '022 - No Mans Sky': '022 - 无人深空 (No Man\'s Sky)',
+    '023 - Palworld': '023 - 幻兽帕鲁 (Palworld)',
+    '024 - Shapez 2': '024 - 异形工厂 2 (Shapez 2)',
+    '025 - Stellaris': '025 - 群星 (Stellaris)',
+    '026 - Marvels Spider-Man Miles Morales': "026 - 漫威蜘蛛侠：迈尔斯 (Marvel's Spider-Man: Miles Morales)",
 
     # === Standalone Godot Games ===
     '001 - Pawn Pleasure': '001 - Pawn Pleasure',
@@ -306,6 +556,18 @@ DISPLAY_NAMES = {
     '017 - Femtazio': '017 - Warrior of Femtazio',
     '018 - Xiaofan': '018 - Xiaofan',
     '019 - Depraved Scenario': '019 - 背德情境 (Depraved Scenario)',
+    '020 - Eric Mercenary Corps': '020 - 埃里克佣兵团 (Eric Mercenary Corps)',
+    '021 - YadoKasegi': '021 - 旅店打工记 (YadoKasegi)',
+    '022 - Komadori Inn': '022 - 驹鸟旅馆 (Komadori Inn)',
+    '023 - Punishment NyanNyan R': '023 - 惩罚喵喵 R (Punishment NyanNyan R)',
+
+    # === Standalone 3DS 模拟器专区 ===
+    '001 - Pokemon Ultra Sun': '001 - 宝可梦：究极之日 (Pokemon Ultra Sun)',
+    '002 - Pokemon Ultra Moon': '002 - 宝可梦：究极之月 (Pokemon Ultra Moon)',
+    '003 - Pokemon X': '003 - 宝可梦 X (Pokemon X)',
+    '004 - Pokemon Y': '004 - 宝可梦 Y (Pokemon Y)',
+    '005 - Legend of Zelda Majoras Mask 3D': "005 - 塞尔达传说：姆吉拉的假面 3D (Majora's Mask 3D)",
+    '006 - Legend of Zelda Ocarina of Time 3D': '006 - 塞尔达传说：时之笛 3D (Ocarina of Time 3D)',
 
     # === Windows 软件与独立应用 ===
     'StarCraft II': '星际争霸 2 (StarCraft II 离线版)',
@@ -319,6 +581,14 @@ DEFAULT_SVG_ICON = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 
 </svg>'''
 
 def register_rpg_folder(folder_path, custom_id=None):
+    """
+    扫描并注册单个 RPG Maker 游戏目录 (MV / MZ / VX / XP 网页打包架构)。
+    检测 index.html, www/index.html 或 data/www/index.html，自动建立存档子目录 save/。
+    
+    参数:
+        folder_path (str): 游戏根目录物理路径
+        custom_id (str, optional): 自定义游戏 ID (默认采用文件夹名称)
+    """
     if not os.path.isdir(folder_path):
         return
 
@@ -378,12 +648,24 @@ def find_best_executable(folder_path, subcategory):
             for f in files:
                 fl = f.lower()
                 full_p = os.path.join(root, f)
+                if any(bad in fl for bad in ['crashhandler', 'oalinst', 'vcredist', 'dxsetup']): continue
                 if fl.endswith('.sh'): candidates.append((100 - depth * 10, full_p))
                 elif fl.endswith('.py') and fl != 'game.py': candidates.append((80 - depth * 10, full_p))
                 elif fl.endswith('.exe'): candidates.append((50 - depth * 10, full_p))
         if candidates:
             candidates.sort(key=lambda x: x[0], reverse=True)
             return candidates[0][1]
+
+    # 3DS 模拟器游戏优先寻找 .cci, .3ds, .cxi
+    if subcategory == '3ds':
+        for root, dirs, files in os.walk(folder_path):
+            depth = os.path.relpath(root, folder_path).count(os.sep)
+            if depth > 2: continue
+            for f in files:
+                fl = f.lower()
+                full_p = os.path.join(root, f)
+                if fl.endswith(('.cci', '.3ds', '.cxi')):
+                    return full_p
 
     # 通用独立游戏 (Unity, Godot, Unreal, Wine)
     for root, dirs, files in os.walk(folder_path):
@@ -400,7 +682,7 @@ def find_best_executable(folder_path, subcategory):
             if not is_valid_exec:
                 continue
 
-            if any(bad in fl for bad in ['crashhandler', 'crashpad', 'reipatcher', 'setup', 'uninstall', 'ueprereqsetup', 'config', 'エンジン設定', 'vcredist', 'dxredist', 'redist', 'directx', 'elevate']):
+            if any(bad in fl for bad in ['crashhandler', 'crashpad', 'reipatcher', 'setup', 'uninstall', 'ueprereqsetup', 'config', 'エンジン設定', 'vcredist', 'dxredist', 'redist', 'directx', 'elevate', 'oalinst', 'openal', 'dotnet', 'vc_redist']):
                 continue
 
             score = 100 - depth * 15
@@ -417,7 +699,7 @@ def find_best_executable(folder_path, subcategory):
                 score -= 30
             if '_gl.exe' in fl:
                 score -= 20
-            if fl in ['oxygennotincluded', 'dontstarve', 'dontstarve_steam_x64.exe', 'dspgame.exe', 'deadcells.exe', 'factorio.exe', 'davethediver.exe', 'descenders.exe', 'rimworldwin64.exe', 'vampiresurvivors.exe', 'thronefall.exe', 'sandustry.exe']:
+            if fl in ['oxygennotincluded', 'dontstarve', 'dontstarve_steam_x64.exe', 'dspgame.exe', 'deadcells.exe', 'factorio.exe', 'davethediver.exe', 'descenders.exe', 'rimworldwin64.exe', 'vampiresurvivors.exe', 'thronefall.exe', 'sandustry.exe', 'bloonstd6.exe', 'cult of the lamb.exe', 'eurotrucks2.exe', 'hades2.exe', 'hoi4.exe', 'silksong.exe', 'hollow_knight.exe', 'nms.exe', 'palworld.exe', 'shapez2.exe', 'stellaris.exe']:
                 score += 100
 
             candidates.append((score, full_p))
@@ -428,6 +710,14 @@ def find_best_executable(folder_path, subcategory):
     return candidates[0][1]
 
 def register_standalone_folder(folder_path, subcategory, custom_id=None):
+    """
+    扫描并注册单个独立游戏 / PC 应用目录。
+    
+    参数:
+        folder_path (str): 游戏根目录物理路径
+        subcategory (str): 子分类引擎 ('steam', 'renpy', 'unity', 'godot', 'unreal', 'wine', '3ds', 'app')
+        custom_id (str, optional): 自定义游戏 ID
+    """
     if not os.path.isdir(folder_path):
         return
 
@@ -464,6 +754,14 @@ APPID_PFX_MAP = {
 }
 
 def get_wine_or_proton_runner(exe_path, pfx_path=None, game_id=None):
+    """
+    在 Linux / SteamOS 环境下智能定位最佳 Wine / Proton 运行容器。
+    
+    优化策略：
+    - 自动匹配 Steam 官方 Proton 运行时（Proton Experimental, 11, 10, 9, 8...）
+    - 针对专用软件（战网、微云）挂载专属 Steam 容器，保证证书与注册表完整
+    - 针对 UE5 游戏注入 DXVK/GL 异步着色器缓存与防崩溃环境变量
+    """
     if sys.platform == 'win32':
         return [exe_path], os.environ.copy()
 
@@ -524,6 +822,10 @@ def get_wine_or_proton_runner(exe_path, pfx_path=None, game_id=None):
     return None, None
 
 def register_retro_folder(folder_path, custom_id=None):
+    """
+    扫描并注册单个复古街机/主机游戏 (GBA, NDS, PS1, SFC, MD, Arcade)。
+    自动匹配 EmulatorJS 支持的 ROM 镜像扩展名与核心。
+    """
     if not os.path.isdir(folder_path):
         return
 
@@ -587,6 +889,10 @@ def register_retro_folder(folder_path, custom_id=None):
         }
 
 def register_slg_folder(folder_path, custom_id=None):
+    """
+    扫描并注册单个 SLG 策略/模拟养成游戏。
+    支持 Ren'Py 架构与 WebGL/HTML5 网页渲染架构。
+    """
     if not os.path.isdir(folder_path):
         return
     game_id = custom_id or os.path.basename(folder_path)
@@ -653,6 +959,10 @@ def register_slg_folder(folder_path, custom_id=None):
     }
 
 def register_flash_folder(folder_path, custom_id=None):
+    """
+    扫描并注册单个 Flash 游戏。
+    支持在线网页 Flash (info.json 中 type: web_flash) 与本地 SWF 离线游戏。
+    """
     if not os.path.isdir(folder_path):
         return
     game_id = custom_id or os.path.basename(folder_path)
@@ -700,6 +1010,14 @@ def register_flash_folder(folder_path, custom_id=None):
     }
 
 def scan_games():
+    """
+    全量扫描并索引 Omni Deck 的五大板块游戏与应用：
+    1. RPG Maker (rpg_games/)
+    2. 独立 PC 大作与常用应用 (Steam 精选, Ren'Py, Unity, Godot, Unreal, Wine, 3DS 模拟器, 星际争霸2, 微云)
+    3. 街机与卡带 (retro_games/)
+    4. SLG 策略模拟 (slg_games/)
+    5. Flash 殿堂 (flash_games/)
+    """
     GAMES_REGISTRY.clear()
     
     # 1. 扫描 RPG Maker 游戏目录 (rpg_games/ 或 games/)
@@ -709,8 +1027,8 @@ def scan_games():
             sub = os.path.join(rpg_dir, item)
             register_rpg_folder(sub, custom_id=item)
 
-    # 2. 扫描 独立游戏专区 (Steam 精选, Ren'Py, Unity, Godot, Unreal, Wine, Windows 软件应用)
-    standalone_categories = ['steam', 'renpy', 'unity', 'godot', 'unreal', 'wine', 'app']
+    # 2. 扫描 独立游戏专区 (Steam 精选, Ren'Py, Unity, Godot, Unreal, Wine, 3DS 模拟器, Windows 软件应用)
+    standalone_categories = ['steam', 'renpy', 'unity', 'godot', 'unreal', 'wine', '3ds', 'app']
     for cat in standalone_categories:
         scan_paths = [
             os.path.join(SD_CARD_ROOT, "standalone_games", f"{cat}_games"),
@@ -745,6 +1063,19 @@ def scan_games():
     if 'Weiyun' not in GAMES_REGISTRY and os.path.exists(WEIYUN_STEAM_PATH):
         register_standalone_folder(WEIYUN_STEAM_PATH, subcategory='app', custom_id='Weiyun')
 
+    # 注册 Lime3DS 模拟器主程序 (快速拉起主界面与设置)
+    lime3ds_sh = os.path.join(HOME_DIR, "Applications", "Lime3DS", "start-lime3ds.sh")
+    if os.path.exists(lime3ds_sh):
+        GAMES_REGISTRY['000 - Lime3DS Emulator'] = {
+            'id': '000 - Lime3DS Emulator',
+            'name': '000 - 🍋 Lime3DS 模拟器 (主界面与全局设置)',
+            'type': 'standalone',
+            'engine': '3ds',
+            'root': os.path.dirname(lime3ds_sh),
+            'exe_path': lime3ds_sh,
+            'icon': os.path.join(HOME_DIR, "Applications", "Lime3DS", "lime3ds.png"),
+        }
+
     # 3. 扫描 街机与复古卡带目录 (retro_games/)
     if os.path.exists(RETRO_GAMES_DIR):
         for item in sorted(os.listdir(RETRO_GAMES_DIR)):
@@ -772,6 +1103,10 @@ scan_games()
 REVERSE_LOCALE_CACHE = {}
 
 def get_reverse_locale(base_dir):
+    """
+    扫描游戏 locales/ 目录下的翻译 JSON 映射表，构建反向映射字典。
+    解决多语言汉化补丁中将文件名改为中文导致游戏内核找不到原英文/日文资源的问题。
+    """
     if base_dir in REVERSE_LOCALE_CACHE:
         return REVERSE_LOCALE_CACHE[base_dir]
     rev = {}
@@ -799,6 +1134,7 @@ def get_reverse_locale(base_dir):
 KNOWN_LOCALES = {'tw', 'ch', 'zh', 'zh-cn', 'zh-tw', 'en', 'ja', 'jp', 'es', 'ru', 'kr', 'fr', 'de'}
 
 def try_strip_locale(rel_path: str):
+    """尝试剥离 URL 路径中的语言前缀目录（如 img/zh-cn/pictures -> img/pictures）以实现自适应回退"""
     parts = rel_path.strip('/').split('/')
     new_parts = []
     removed = False
@@ -810,6 +1146,13 @@ def try_strip_locale(rel_path: str):
     return '/'.join(new_parts) if removed else None
 
 def _resolve_case_insensitive_path_inner(base_dir, rel_path):
+    """
+    Linux 虚拟文件系统 (VFS) 大小写无关与扩展名混淆回退核心算法：
+    1. 逐层路径贪婪匹配与 URL 解码
+    2. RPG Maker 加密扩展名自动互转 (.rpgmvp <-> .png, .rpgmvo <-> .ogg, .rpgmvm <-> .m4a)
+    3. 多语言旗帜与语言包命名互转 (flag_ <-> locale_)
+    4. 反向翻译字典逆向匹配
+    """
     current = base_dir
     decoded_path = urllib.parse.unquote(rel_path)
     parts = decoded_path.strip('/').split('/')
@@ -912,6 +1255,7 @@ def log_omni(level: str, msg: str, tag: str = None):
     sys.stderr.flush()
 
 def extract_game_id_from_path(path: str) -> str:
+    """从 HTTP 请求 URL 路径或 QueryString 中精准提取当前交互的目标游戏 ID"""
     try:
         clean = path.split('?')[0]
         unq = urllib.parse.unquote(urllib.parse.unquote(clean))
@@ -931,7 +1275,113 @@ def extract_game_id_from_path(path: str) -> str:
         pass
     return None
 
+def launch_standalone_game_process(game_id: str, title: str, on_exit_callback=None):
+    """全局独立游戏启动器：既支持 Qt GUI 触发，也支持 Steam Deck 本机浏览器 API 触发"""
+    if game_id in RUNNING_GAME_IDS:
+        log_omni("WARN", f"游戏 [{title}] 已经在运行中，忽略重复启动请求", tag="Launcher")
+        return False, "游戏已在运行中"
+
+    game_data = GAMES_REGISTRY.get(game_id)
+    if not game_data:
+        return False, f"未找到游戏配置: {game_id}"
+    root = game_data['root']
+    engine = game_data.get('engine', 'wine')
+    exe_path = game_data.get('exe_path')
+
+    cmd = None
+    run_env = os.environ.copy()
+
+    if engine == 'renpy':
+        if os.path.exists(RENPY_SDK_PATH):
+            cmd = [RENPY_SDK_PATH, root]
+        elif exe_path and os.path.exists(exe_path):
+            if exe_path.endswith('.sh') or exe_path.endswith('.py'):
+                try: os.chmod(exe_path, 0o755)
+                except: pass
+                cmd = [exe_path]
+            elif exe_path.endswith('.exe'):
+                cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
+    elif engine == '3ds':
+        lime_app = '/home/deck/Applications/Lime3DS/Lime3DS.AppImage'
+        if not os.path.exists(lime_app):
+            lime_app = shutil.which('lime3ds') or '/home/deck/.local/bin/lime3ds'
+        if exe_path and os.path.exists(exe_path):
+            if exe_path.endswith('.sh') or exe_path.endswith('.AppImage'):
+                try: os.chmod(exe_path, 0o755)
+                except: pass
+                cmd = [exe_path]
+            else:
+                # 正常窗口化启动 3DS ROM（不强制全屏，方便手柄与分屏调节）
+                cmd = [lime_app, exe_path]
+    else:
+        if exe_path and os.path.exists(exe_path):
+            if exe_path.endswith('.exe'):
+                cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
+            else:
+                try: os.chmod(exe_path, 0o755)
+                except: pass
+                cmd = [exe_path]
+
+    if not cmd:
+        log_omni("ERROR", f"未找到可用的独立游戏/软件运行时 (Wine/Proton 未就绪) ({game_id})", tag="Launcher")
+        return False, "未找到可用的独立游戏运行时 (Wine/Proton 未就绪)"
+
+    if game_id and game_id.startswith('StarCraft II'):
+        run_cwd = root
+    else:
+        run_cwd = os.path.dirname(exe_path) if (exe_path and os.path.exists(exe_path)) else root
+
+    run_env['LANG'] = 'zh_CN.UTF-8'
+    run_env['LC_ALL'] = 'zh_CN.UTF-8'
+    run_env['WINEDEBUG'] = '-all'
+
+    RUNNING_GAME_IDS.add(game_id)
+
+    def runner():
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=run_cwd,
+                env=run_env,
+                preexec_fn=set_pdeathsig,
+                start_new_session=True
+            )
+            ACTIVE_CHILD_PROCESSES.append(proc)
+            log_omni("INFO", f"独立进程已在 Steam Deck 本机成功启动: [{title}] (PID: {proc.pid})", tag="Launcher")
+            proc.wait()
+        except Exception as e:
+            log_omni("ERROR", f"独立游戏运行异常 ({game_id}): {e}", tag="Launcher")
+        finally:
+            if 'proc' in locals() and proc in ACTIVE_CHILD_PROCESSES:
+                ACTIVE_CHILD_PROCESSES.remove(proc)
+            RUNNING_GAME_IDS.discard(game_id)
+            if on_exit_callback:
+                try:
+                    on_exit_callback()
+                except Exception:
+                    pass
+
+    threading.Thread(target=runner, daemon=True).start()
+    return True, "已在 Steam Deck 屏幕启动游戏"
+
 class MultiGameRequestHandler(SimpleHTTPRequestHandler):
+    """
+    Omni Deck 核心 HTTP 请求调度分发处理器：
+    1. 门禁与安全控制 (parse_request)：
+       - 局域网请求闸门拦截 (LAN_SHARING_ENABLED)
+       - Cloudflare 广域网公网请求闸门拦截 (WAN_SHARING_ENABLED)
+    2. 虚拟文件系统映射 (translate_path)：
+       - 映射大厅静态前端 (/hub.html, /hub.js, /marked.min.js, /mermaid.min.js)
+       - 映射模拟器核心 (/emulatorjs/, /player_retro.html) 与 Flash (/ruffle/, /player_flash.html)
+       - 映射游戏资源虚拟路径 (/game/<id>/ -> 实际物理路径并结合 VFS 模糊大小写查找)
+       - 映射游戏存档路径 (/save/<id>/)
+    3. RESTful API 路由分发 (do_GET, do_POST, do_DELETE)：
+       - 游戏与媒体库扫描索引 API (/api/games, /api/manga/library, /api/novels/library, /api/docs/explorer, /api/audio/list)
+       - 异步流媒体点播与分段传输 (Range 请求支持) (/api/audio/stream)
+       - 实时事件广播 Server-Sent Events (/api/events)
+       - 网络状态与远程共享开关控制 (/api/lan/status, /api/lan/toggle, /api/wan/status, /api/wan/toggle)
+       - 在线检索、异步下载任务与队列管理 (/api/manga/*, /api/novels/*)
+    """
     def log_message(self, format, *args):
         # 彻底静音所有正常 2xx / 3xx 与游戏常规探测 HEAD / 404 日志
         try:
@@ -948,6 +1398,35 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                 log_omni("WARN", f"HTTP {code} on {req}", tag=tag)
         except Exception:
             pass
+
+    def parse_request(self):
+        if not super().parse_request():
+            return False
+
+        client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else '127.0.0.1'
+        local_ip = get_local_ip()
+        is_cf = bool(self.headers.get('CF-Connecting-IP') or self.headers.get('cf-ray'))
+        is_local = (client_ip in ('127.0.0.1', 'localhost', '::1', local_ip)) and not is_cf
+
+        # 1. 广域网公网请求闸门拦截（外部通过 omni.cxy251.uk 访问）
+        if is_cf and not WAN_SHARING_ENABLED:
+            self.send_response(403)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write("<html><body style='background:#0d1117;color:#f0f6fc;font-family:sans-serif;text-align:center;padding-top:80px;'><h2>🔒 广域网公网访问已关闭</h2><p style='color:#8b949e;margin-top:12px;'>Steam Deck 上的 Omni Deck 广域网远程访问开关目前处于关闭状态。<br>如需在外部网络访问，请在 Steam Deck 屏幕右上角点击【广域网】开关开启。</p></body></html>".encode('utf-8'))
+            return False
+
+        # 2. 外部局域网设备请求闸门拦截（外部通过 192.168.0.x 访问）
+        if not is_local and not is_cf and not LAN_SHARING_ENABLED:
+            self.send_response(403)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write("<html><body style='background:#0d1117;color:#f0f6fc;font-family:sans-serif;text-align:center;padding-top:80px;'><h2>🔒 局域网跨设备共享已关闭</h2><p style='color:#8b949e;margin-top:12px;'>Steam Deck 上的 Omni Deck 局域网共享功能目前处于关闭状态。<br>如需在手机或平板上访问，请在 Steam Deck 屏幕右上角点击【局域网共享】按钮开启。</p></body></html>".encode('utf-8'))
+            return False
+
+        return True
 
     def log_error(self, format, *args):
         try:
@@ -972,11 +1451,40 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         if unquoted in ['/', '/hub.html']:
             return HUB_HTML_PATH
 
+        if unquoted in ['/hub.js', '/assets/hub.js']:
+            return HUB_JS_PATH
+
+        if unquoted in ['/marked.min.js', '/assets/marked.min.js']:
+            return os.path.join(ASSETS_DIR, 'marked.min.js')
+
+        if unquoted in ['/mermaid.min.js', '/assets/mermaid.min.js']:
+            return os.path.join(ASSETS_DIR, 'mermaid.min.js')
+
         if unquoted in ['/player_retro.html']:
             return PLAYER_RETRO_HTML
 
         if unquoted in ['/player_flash.html']:
             return PLAYER_FLASH_HTML
+
+        if unquoted.startswith('/assets/'):
+            rel = unquoted[len('/assets/'):]
+            if rel.startswith('ruffle/'):
+                return os.path.join(FLASH_GAMES_DIR, 'plugins', rel)
+            return os.path.join(ASSETS_DIR, rel)
+
+        if unquoted.startswith('/ruffle/'):
+            rel = unquoted[len('/ruffle/'):]
+            return os.path.join(FLASH_GAMES_DIR, 'plugins', 'ruffle', rel)
+
+        if unquoted.startswith('/plugins/'):
+            rel = unquoted[len('/plugins/'):]
+            p_flash = os.path.join(FLASH_GAMES_DIR, 'plugins', rel)
+            if os.path.exists(p_flash):
+                return p_flash
+            p1 = os.path.join(SCRIPT_DIR, 'plugins', rel)
+            if os.path.exists(p1):
+                return p1
+            return p_flash
 
         if unquoted.startswith('/emulatorjs/'):
             rel = unquoted[len('/emulatorjs/'):]
@@ -1175,20 +1683,19 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                 scan_games()
             if game_id in GAMES_REGISTRY and GAMES_REGISTRY[game_id].get('type') == 'flash':
                 gdata = GAMES_REGISTRY[game_id]
-                req_file = subparts[1] if len(subparts) > 1 else gdata.get('swf_file', '')
-                target_file = os.path.join(gdata['root'], req_file)
-                if not os.path.exists(target_file):
-                    target_file = os.path.join(gdata['root'], gdata.get('swf_file', ''))
-                if os.path.exists(target_file):
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/x-shockwave-flash')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    with open(target_file, 'rb') as f:
-                        data = f.read()
-                    self.send_header('Content-Length', str(len(data)))
-                    self.end_headers()
-                    self.wfile.write(data)
-                    return
+                req_file = subparts[1] if len(subparts) > 1 else gdata.get('swf_file')
+                if req_file:
+                    target_file = os.path.join(gdata['root'], req_file)
+                    if os.path.exists(target_file):
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/x-shockwave-flash')
+                        self.send_header('Access-Control-Allow-Origin', '*')
+                        with open(target_file, 'rb') as f:
+                            data = f.read()
+                        self.send_header('Content-Length', str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return
             self.send_response(404)
             self.end_headers()
             return
@@ -1226,8 +1733,426 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                         self.end_headers()
                         self.wfile.write(data)
                         return
+        # --- Audio Stream & Library Routes ---
+        if self.path.startswith('/api/audio/library'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            q = qs.get('q', [''])[0] or ''
+            page = int(qs.get('page', ['1'])[0] or 1)
+            page_size = int(qs.get('page_size', ['80'])[0] or 80)
+            data = audio_service.query_audio_library(q, page=page, page_size=page_size)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/audio/stream'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = qs.get('name', [''])[0]
+            full_path = audio_service.find_audio_file(name)
+            if not full_path or not os.path.exists(full_path):
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            file_size = os.path.getsize(full_path)
+            range_header = self.headers.get('Range', '')
+            ext = os.path.splitext(full_path)[1].lower()
+            mime_map = {
+                '.mp3': 'audio/mpeg',
+                '.m4a': 'audio/mp4',
+                '.flac': 'audio/flac',
+                '.wav': 'audio/wav',
+                '.ogg': 'audio/ogg',
+                '.opus': 'audio/opus',
+                '.aac': 'audio/aac'
+            }
+            content_type = mime_map.get(ext, 'audio/mpeg')
+
+            if range_header and range_header.startswith('bytes='):
+                ranges = range_header[6:].split('-')
+                start = int(ranges[0]) if ranges[0] else 0
+                end = int(ranges[1]) if len(ranges) > 1 and ranges[1] else file_size - 1
+                end = min(end, file_size - 1)
+                length = end - start + 1
+
+                self.send_response(206)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
+                self.send_header('Content-Length', str(length))
+                self.send_header('Accept-Ranges', 'bytes')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+
+                with open(full_path, 'rb') as f:
+                    f.seek(start)
+                    chunk_size = 65536
+                    bytes_left = length
+                    while bytes_left > 0:
+                        to_read = min(chunk_size, bytes_left)
+                        chunk = f.read(to_read)
+                        if not chunk:
+                            break
+                        try:
+                            self.wfile.write(chunk)
+                        except (BrokenPipeError, ConnectionResetError):
+                            break
+                        bytes_left -= len(chunk)
+            else:
+                self.send_response(200)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Length', str(file_size))
+                self.send_header('Accept-Ranges', 'bytes')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                with open(full_path, 'rb') as f:
+                    shutil.copyfileobj(f, self.wfile)
+            return
+
+        # --- Manga & Media Hub API Routes ---
+        if self.path.startswith('/api/novels/library'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            q = qs.get('q', [''])[0] or ''
+            is_nsfw = qs.get('nsfw', ['0'])[0] in ('1', 'true', 'True') or qs.get('mode', [''])[0] == 'nsfw'
+            items = novel_service.get_novels_library(q, is_nsfw=is_nsfw)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(items, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/docs/explorer'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sub_dir = qs.get('dir', [''])[0]
+            q = qs.get('q', [''])[0]
+            doc_filter = qs.get('ext', ['all'])[0]
+            data = novel_service.get_docs_explorer(sub_dir=sub_dir, q=q, doc_filter=doc_filter)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/docs/library'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            q = qs.get('q', [''])[0] or ''
+            doc_filter = qs.get('ext', ['all'])[0]
+        if self.path.startswith('/api/open_external_url'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            target_url = qs.get('url', [''])[0]
+            if target_url.startswith(('http://', 'https://')):
+                try:
+                    subprocess.Popen(['xdg-open', target_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    try:
+                        import webbrowser
+                        webbrowser.open(target_url)
+                    except Exception:
+                        pass
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+            return
+
+        if self.path.startswith('/api/novels/search'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            q = qs.get('q', [''])[0] or ''
+            is_nsfw = qs.get('nsfw', ['0'])[0] in ('1', 'true', 'True') or qs.get('mode', [''])[0] == 'nsfw'
+            results = novel_service.search_online_novels(q, is_nsfw=is_nsfw)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(results, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/novels/cover'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            rel_path = qs.get('path', [''])[0] or qs.get('name', [''])[0]
+            full_path = novel_service.resolve_novel_or_doc_path(rel_path)
+            if full_path and full_path.endswith('.epub') and os.path.exists(full_path):
+                meta = novel_service.extract_epub_metadata_and_cover(full_path)
+                cover_bytes = meta.get('cover_bytes')
+                if cover_bytes:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'image/jpeg')
+                    self.send_header('Cache-Control', 'max-age=86400')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(cover_bytes)
+                    return
             self.send_response(404)
             self.end_headers()
+            return
+
+        if self.path.startswith('/api/novels/queue'):
+            q_items = novel_service.load_novel_queue()
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(q_items, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/novels/tasks'):
+            tasks = novel_service.get_novel_active_tasks()
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(tasks, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/novels/read'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            rel_path = qs.get('path', [''])[0] or qs.get('name', [''])[0]
+            data = novel_service.read_novel_file(rel_path)
+            if data:
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+
+        if self.path.startswith('/api/manga/library'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            q = qs.get('q', [''])[0] or ''
+            target_dir = qs.get('dir', ['manga'])[0] or qs.get('type', ['manga'])[0]
+            items = manga_service.get_local_library(q, target_dir=target_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(items, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/cover'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = qs.get('name', [''])[0]
+            target_dir = qs.get('dir', [''])[0]
+            data = manga_service.get_cbz_cover_bytes(name, target_dir=target_dir)
+            if data:
+                self.send_response(200)
+                self.send_header('Content-type', 'image/jpeg')
+                self.send_header('Cache-Control', 'public, max-age=3600')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+
+        if self.path.startswith('/api/manga/online_cover'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            aid = qs.get('id', [''])[0]
+            data = manga_service.get_online_cover_bytes(aid)
+            if data:
+                self.send_response(200)
+                self.send_header('Content-type', 'image/jpeg')
+                self.send_header('Cache-Control', 'public, max-age=86400')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+
+        if self.path.startswith('/api/manga/pages'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = qs.get('name', [''])[0]
+            target_dir = qs.get('dir', [''])[0]
+            pages = manga_service.get_cbz_pages(name, target_dir=target_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(pages, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/page'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = qs.get('name', [''])[0]
+            page = qs.get('page', [''])[0]
+            target_dir = qs.get('dir', [''])[0]
+            data = manga_service.get_cbz_page_bytes(name, page, target_dir=target_dir)
+            if data:
+                self.send_response(200)
+                self.send_header('Content-type', 'image/jpeg')
+                self.send_header('Cache-Control', 'public, max-age=86400')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
+
+        if self.path.startswith('/api/lan/status') or self.path.startswith('/api/client/info'):
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else '127.0.0.1'
+            is_cf = bool(self.headers.get('CF-Connecting-IP') or self.headers.get('cf-ray'))
+            ip = get_local_ip()
+            is_local = (client_ip in ('127.0.0.1', '::1', 'localhost', ip)) and not is_cf
+            resp = {
+                'enabled': LAN_SHARING_ENABLED,
+                'ip': ip,
+                'port': PORT,
+                'url': f'http://{ip}:{PORT}',
+                'is_local': is_local,
+                'is_remote': not is_local,
+                'client_ip': client_ip
+            }
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/wan/status'):
+            resp = get_wan_status()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/events'):
+            import queue
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'keep-alive')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+
+            q = queue.Queue()
+            manga_service.add_event_listener(q)
+            try:
+                client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else '127.0.0.1'
+                is_cf = bool(self.headers.get('CF-Connecting-IP') or self.headers.get('cf-ray'))
+                ip = get_local_ip()
+                is_local = (client_ip in ('127.0.0.1', '::1', 'localhost', ip)) and not is_cf
+                init_event = {
+                    'type': 'init',
+                    'manga_queue': manga_service.get_persistent_queue(target_dir='manga'),
+                    'novel_queue': manga_service.get_persistent_queue(target_dir='novels'),
+                    'queue': manga_service.get_persistent_queue(target_dir='manga'),
+                    'tasks': manga_service.get_all_tasks(),
+                    'lan': {
+                        'enabled': LAN_SHARING_ENABLED,
+                        'ip': ip,
+                        'port': PORT,
+                        'url': f'http://{ip}:{PORT}',
+                        'is_local': is_local,
+                        'is_remote': not is_local
+                    },
+                    'wan': get_wan_status()
+                }
+                self.wfile.write(f"data: {json.dumps(init_event, ensure_ascii=False)}\n\n".encode('utf-8'))
+                self.wfile.flush()
+
+                while True:
+                    try:
+                        ev = q.get(timeout=20)
+                        self.wfile.write(f"data: {json.dumps(ev, ensure_ascii=False)}\n\n".encode('utf-8'))
+                        self.wfile.flush()
+                    except queue.Empty:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+            except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+                pass
+            finally:
+                manga_service.remove_event_listener(q)
+            return
+
+        if self.path.startswith('/api/manga/queue'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            target_dir = qs.get('dir', ['manga'])[0] or qs.get('type', ['manga'])[0]
+            items = manga_service.get_persistent_queue(target_dir=target_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(items, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/search'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            q = qs.get('q', [''])[0]
+            page = int(qs.get('page', ['1'])[0])
+            category = qs.get('category', ['0'])[0] or qs.get('type', ['0'])[0]
+            order_by = qs.get('order_by', [''])[0] or qs.get('o', [''])[0]
+            local_matches = manga_service.get_local_library(q, target_dir=('novels' if category == 'novel' else 'manga')) if page == 1 else []
+            online_res = manga_service.search_jm_online(q, page, category=category, order_by=order_by)
+            resp = {
+                'local': local_matches,
+                'online': online_res.get('results', []),
+                'total_online': online_res.get('total', 0),
+                'page': page,
+                'page_count': online_res.get('page_count', 1),
+                'has_more': online_res.get('has_more', False),
+                'error': online_res.get('error')
+            }
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/rankings'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            rank_type = qs.get('type', ['week'])[0]
+            page = int(qs.get('page', ['1'])[0] or 1)
+            count = int(qs.get('count', ['80'])[0] or 80)
+            items = manga_service.get_ranking_albums(rank_type=rank_type, page=page, count=count)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'rank_type': rank_type, 'page': page, 'results': items}, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/detail'):
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            aid = qs.get('id', [''])[0]
+            try:
+                detail = manga_service.get_jm_album_detail(aid)
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(detail, ensure_ascii=False).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/tasks'):
+            tasks = manga_service.get_all_tasks()
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(tasks, ensure_ascii=False).encode('utf-8'))
             return
 
         super().do_GET()
@@ -1261,6 +2186,267 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"status": "ok"}')
             return
+
+        # --- Manga API POST Routes ---
+        if self.path.startswith('/api/manga/download'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            aid = payload.get('album_id')
+            cids = payload.get('chapter_ids')
+            pack = payload.get('pack_cbz', True)
+            clean = payload.get('clean_temp', True)
+            dest_dir = payload.get('dir', 'manga')
+            task_id = manga_service.start_download_task(aid, cids, pack, clean, dest_dir=dest_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok', 'task_id': task_id}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/lan/toggle'):
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else '127.0.0.1'
+            is_cf = bool(self.headers.get('CF-Connecting-IP') or self.headers.get('cf-ray'))
+            is_local = (client_ip in ('127.0.0.1', '::1', 'localhost', get_local_ip())) and not is_cf
+            if not is_local:
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'error': '🔒 局域网网络开关仅限在 Steam Deck 本机控制'}).encode('utf-8'))
+                return
+
+            global LAN_SHARING_ENABLED
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            if 'enabled' in payload:
+                LAN_SHARING_ENABLED = bool(payload['enabled'])
+            else:
+                LAN_SHARING_ENABLED = not LAN_SHARING_ENABLED
+            save_lan_sharing_enabled(LAN_SHARING_ENABLED)
+            broadcast_network_status()
+            ip = get_local_ip()
+            resp = {
+                'status': 'ok',
+                'enabled': LAN_SHARING_ENABLED,
+                'ip': ip,
+                'port': PORT,
+                'url': f'http://{ip}:{PORT}'
+            }
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/wan/toggle'):
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else '127.0.0.1'
+            is_cf = bool(self.headers.get('CF-Connecting-IP') or self.headers.get('cf-ray'))
+            is_local = (client_ip in ('127.0.0.1', '::1', 'localhost', get_local_ip())) and not is_cf
+            if not is_local:
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'error': '🔒 广域网公网访问开关仅限在 Steam Deck 本机控制'}).encode('utf-8'))
+                return
+
+            global WAN_SHARING_ENABLED
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            if 'enabled' in payload:
+                WAN_SHARING_ENABLED = bool(payload['enabled'])
+            else:
+                WAN_SHARING_ENABLED = not WAN_SHARING_ENABLED
+            save_wan_sharing_enabled(WAN_SHARING_ENABLED)
+            broadcast_network_status()
+
+            resp = get_wan_status()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/games/launch'):
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else '127.0.0.1'
+            is_cf = bool(self.headers.get('CF-Connecting-IP') or self.headers.get('cf-ray'))
+            is_local = (client_ip in ('127.0.0.1', '::1', 'localhost', get_local_ip())) and not is_cf
+            if not is_local:
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'status': 'error', 'error': '🔒 独立游戏专区仅限在 Steam Deck 实体机屏幕上运行，局域网禁止远程拉起'}).encode('utf-8'))
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            gid = payload.get('id')
+            title = payload.get('title', gid)
+            ok, msg = launch_standalone_game_process(gid, title)
+            self.send_response(200 if ok else 400)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok' if ok else 'error', 'message': msg}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/batch_download'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            album_ids = payload.get('album_ids', [])
+            pack_cbz = payload.get('pack_cbz', True)
+            clean_temp = payload.get('clean_temp', True)
+            dest_dir = payload.get('dir', 'manga')
+            task_id = manga_service.start_batch_download_task(album_ids, pack_cbz, clean_temp, dest_dir=dest_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok', 'task_id': task_id}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/queue'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            items = payload.get('items', [])
+            target_dir = payload.get('dir', 'manga')
+            manga_service.save_persistent_queue(items, target_dir=target_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b'{"status": "ok"}')
+            return
+
+        if self.path.startswith('/api/manga/clean_temp'):
+            freed = manga_service.clean_all_temp_files()
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok', 'cleaned_count': freed}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/manual_pack'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            folder = payload.get('folder', '')
+            tname = payload.get('target_name')
+            dest_dir = payload.get('dir', 'manga')
+            ok = manga_service.manual_pack_manga(folder, tname, dest_dir=dest_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok' if ok else 'failed'}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/manga/open_external'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            fname = payload.get('filename', '')
+            target_dir = payload.get('dir', '')
+            cbz_p = manga_service.resolve_file_path(fname, target_dir)
+            if cbz_p and os.path.exists(cbz_p):
+                subprocess.Popen(['xdg-open', cbz_p])
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b'{"status": "ok"}')
+            return
+
+        if self.path.startswith('/api/manga/delete'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            fname = payload.get('filename', '')
+            target_dir = payload.get('dir', '')
+            ok = manga_service.trash_manga_file(fname, target_dir=target_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok' if ok else 'failed'}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/novels/download'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            novel_id = payload.get('id', '') or str(int(time.time()))
+            title = payload.get('title', '未命名小说')
+            author = payload.get('author', '佚名')
+            intro = payload.get('intro', '')
+            cover_url = payload.get('cover_url', '')
+            is_nsfw = payload.get('is_nsfw', False) or payload.get('mode') == 'nsfw'
+            res = novel_service.start_download_novel_task(novel_id, title, author, intro, cover_url, is_nsfw=is_nsfw)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(res, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/novels/queue/add'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            item = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            if item.get('id'):
+                novel_service.add_novel_to_queue(item)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok'}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/novels/queue/remove'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            nid = payload.get('id', '')
+            if nid:
+                novel_service.remove_novel_from_queue(nid)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok'}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/novels/queue/clear'):
+            novel_service.clear_novel_queue()
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok'}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/novels/trash') or self.path.startswith('/api/novels/delete'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            rel_path = payload.get('path', '') or payload.get('name', '') or payload.get('filename', '')
+            ok = novel_service.trash_novel_file(rel_path)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok' if ok else 'failed'}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/audio/trash') or self.path.startswith('/api/audio/delete'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            fname = payload.get('filename', '') or payload.get('name', '')
+            ok = audio_service.trash_audio_file(fname)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok' if ok else 'failed'}).encode('utf-8'))
+            return
+
         super().do_POST()
 
     def do_DELETE(self):
@@ -1288,6 +2474,7 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         self.send_response(405)
         self.end_headers()
 class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """静默多线程 HTTP 服务器，抑制客户端中途主动断开连接引起的 BrokenPipe 异常噪音"""
     def handle_error(self, request, client_address):
         exc_type, exc_value, exc_traceback = sys.exc_info()
         if exc_type in (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
@@ -1297,13 +2484,15 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 scan_games()
 
 def start_local_server():
+    """在后台子线程中绑定并启动 0.0.0.0:8998 高性能多线程 HTTP 核心服务"""
     try:
-        httpd = QuietThreadingHTTPServer(('127.0.0.1', PORT), MultiGameRequestHandler)
+        httpd = QuietThreadingHTTPServer(('0.0.0.0', PORT), MultiGameRequestHandler)
         httpd.serve_forever()
     except OSError:
         pass
 
 threading.Thread(target=start_local_server, daemon=True).start()
+ensure_wan_daemon()
 
 try:
     from PyQt6.QtCore import QUrl, Qt, QTimer, pyqtSignal
@@ -1316,7 +2505,7 @@ try:
         QHBoxLayout,
         QPushButton,
     )
-    from PyQt6.QtGui import QKeySequence, QShortcut
+    from PyQt6.QtGui import QKeySequence, QShortcut, QDesktopServices
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     from PyQt6.QtWebEngineCore import (
         QWebEngineSettings,
@@ -1337,7 +2526,7 @@ except ImportError:
         QPushButton,
         QShortcut,
     )
-    from PyQt5.QtGui import QKeySequence
+    from PyQt5.QtGui import QKeySequence, QDesktopServices
     from PyQt5.QtWebEngineWidgets import (
         QWebEngineView,
         QWebEngineSettings,
@@ -1348,6 +2537,13 @@ except ImportError:
     QT6 = False
 
 class CustomWebPage(QWebEnginePage):
+    """
+    定制化 WebEnginePage：
+    1. 自动授予麦克风、全屏等特性权限
+    2. 控制台日志过滤并注入统一的 log_omni 系统
+    3. 自定义 JavaScript Alert / Confirm / Prompt 交互适配
+    4. 导航拦截：拦截 action://play- 内部伪协议，直通 launch_game 启动器
+    """
     def __init__(self, profile, main_window, parent=None):
         super().__init__(profile, parent)
         self.main_window = main_window
@@ -1362,17 +2558,8 @@ class CustomWebPage(QWebEnginePage):
         self.setFeaturePermission(securityOrigin, feature, perm)
 
     def createWindow(self, window_type):
-        """网页弹窗或 target='_blank' 链接时，自动在主视口中加载"""
-        proxy_page = QWebEnginePage(self.profile(), self)
-
-        def handle_new_url(target_url):
-            url_str = target_url.toString()
-            if url_str and url_str != "about:blank":
-                self.main_window.webview.load(target_url)
-                proxy_page.deleteLater()
-
-        proxy_page.urlChanged.connect(handle_new_url)
-        return proxy_page
+        """网页弹窗或新标签一律直接在当前视口加载，绝不跳出外部独立浏览器"""
+        return self
 
     def javaScriptConsoleMessage(self, level, msg, line, source):
         # 仅保留关键的 Omni-Deck / RPGWeb-Deck 框架启动信息或警告报错，彻底静音游戏自带的日常噪音 log
@@ -1433,6 +2620,8 @@ class CustomWebPage(QWebEnginePage):
     def javaScriptConfirm(self, securityOrigin, msg):
         active_game = getattr(self.main_window, 'current_game_id', None) or "Emulator"
         log_omni("WARN", f"[JS-Confirm] {msg}", tag=active_game)
+        if "flash加载可能存在异常" in msg:
+            return False
         return True
 
     def javaScriptPrompt(self, securityOrigin, msg, defaultVal):
@@ -1459,6 +2648,13 @@ class CustomWebPage(QWebEnginePage):
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
 class RpgDeckMainWindow(QMainWindow):
+    """
+    Omni Deck 主应用程序窗口 (PyQt6 桌面客户端)：
+    - 统一游戏大厅与媒体中心集成渲染
+    - 悬浮胶囊控制台 (返回专区、全屏切换、声音静音、纯净模式)
+    - 多引擎游戏动态路由 (RPG Maker 网页渲染、独立游戏子进程拉起、Retro 街机模拟器、SLG 引擎、Flash 殿堂双轨路由)
+    - 进程与网络生命周期统一监控
+    """
     renpy_finished = pyqtSignal()
 
     def __init__(self):
@@ -1487,10 +2683,11 @@ class RpgDeckMainWindow(QMainWindow):
         self.load_hub()
 
     def setup_webengine(self):
+        """配置 QtWebEngine 专用 Profile、持久化存储与核心 Runtime Polyfill 脚本注入"""
         self.profile = QWebEngineProfile("omni_deck_console_profile", self)
         self.profile.setHttpUserAgent(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36"
+            "(KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36 QtWebEngine/1.0"
         )
         self.profile.setPersistentStoragePath(os.path.join(SCRIPT_DIR, "data", "storage"))
         cookie_policy = (
@@ -1547,6 +2744,7 @@ class RpgDeckMainWindow(QMainWindow):
         self.profile.scripts().insert(script)
 
     def setup_ui(self):
+        """初始化主窗口组件、WebEngineView 视口、全局快捷键以及右上角悬浮控制胶囊"""
         self.central_widget = QWidget(self)
         self.setCentralWidget(self.central_widget)
 
@@ -1584,8 +2782,12 @@ class RpgDeckMainWindow(QMainWindow):
 
         self.layout.addWidget(self.webview)
 
+        # 快捷键支持：F5 / Ctrl+R 快速刷新页面
+        QShortcut(QKeySequence("F5"), self, self.webview.reload)
+        QShortcut(QKeySequence("Ctrl+R"), self, self.webview.reload)
+
         # 悬浮控制胶囊
-        self.overlay = QWidget(self.webview)
+        self.overlay = QWidget(self)
         self.overlay_layout = QHBoxLayout(self.overlay)
         self.overlay_layout.setContentsMargins(6, 4, 6, 4)
         self.overlay_layout.setSpacing(6)
@@ -1605,6 +2807,8 @@ class RpgDeckMainWindow(QMainWindow):
 
         for btn in [self.btn_back_category, self.btn_pure, self.btn_fullscreen, self.btn_mute]:
             self.overlay_layout.addWidget(btn)
+
+        self.webview.loadFinished.connect(self.on_load_finished)
 
         self.overlay.setStyleSheet("""
             QWidget {
@@ -1628,7 +2832,16 @@ class RpgDeckMainWindow(QMainWindow):
         """)
         self.overlay.hide()
 
+    def on_load_finished(self, ok):
+        """网页加载完毕后，若处于游戏状态则自动计算并显示右上角控制胶囊"""
+        if getattr(self, 'is_in_game', False):
+            self.overlay.adjustSize()
+            self.overlay.move(self.width() - self.overlay.width() - 16, 16)
+            self.overlay.show()
+            self.overlay.raise_()
+
     def toggle_roco_pure_mode(self):
+        """洛克王国等网页游戏专用纯净模式：注入 JS 消除周边广告与边框，使 Flash 居中铺满视口"""
         toggle_js = """
         (function() {
             var styleId = 'roco-pure-mode-style';
@@ -1692,20 +2905,24 @@ class RpgDeckMainWindow(QMainWindow):
         self.webview.page().runJavaScript(toggle_js)
 
     def setup_shortcuts(self):
+        """注册 F11 全屏与 Escape 退出快捷键"""
         QShortcut(QKeySequence("F11"), self, self.toggle_fullscreen)
         QShortcut(QKeySequence("Escape"), self, self.handle_escape)
 
     def handle_escape(self):
+        """Escape 键处理：全屏状态下退出全屏，游戏运行状态下返回专区大厅"""
         if self.isFullScreen():
             self.showNormal()
         elif self.is_in_game:
             self.load_category()
 
     def resizeEvent(self, event):
+        """窗口尺寸变动时自适应悬浮控制胶囊在右上角的位置"""
         super().resizeEvent(event)
         self.overlay.move(self.width() - self.overlay.width() - 16, 16)
 
     def load_hub(self):
+        """加载 Omni Deck 首页大厅 (hub.html) 并重置游戏状态"""
         prev_game = getattr(self, 'current_game_id', None)
         if prev_game:
             sys.stderr.write("\n" + "=" * 70 + "\n")
@@ -1721,6 +2938,7 @@ class RpgDeckMainWindow(QMainWindow):
         self.webview.setFocus()
 
     def load_category(self):
+        """退出当前正在游玩的游戏，返回其对应的专区分类列表 (hub.html?category=<cat>)"""
         cat = getattr(self, 'current_game_type', 'rpg')
         prev_game = getattr(self, 'current_game_id', None)
         if prev_game:
@@ -1737,6 +2955,16 @@ class RpgDeckMainWindow(QMainWindow):
         self.webview.setFocus()
 
     def launch_game(self, game_id: str, title: str):
+        """
+        核心游戏启动总线：
+        根据游戏类型执行精准分流路由：
+        - standalone / renpy -> 独立子进程 (Proton/Wine/Native)
+        - retro -> EmulatorJS WASM 模拟器 (player_retro.html)
+        - slg -> Web / Ren'Py
+        - flash (web_flash) -> PyQt5 隔离新窗口 (flash_runner.py)
+        - flash (swf) -> 内置 Ruffle WASM 模拟器 (player_flash.html)
+        - rpg -> 本地 HTTP 代理加载 index.html 并挂载 core.js 运行环境
+        """
         if game_id not in GAMES_REGISTRY:
             log_omni("ERROR", f"未找到游戏注册信息: {game_id}", tag="Launcher")
             return
@@ -1790,60 +3018,48 @@ class RpgDeckMainWindow(QMainWindow):
             self.is_in_game = True
             self.current_game_id = game_id
             self.setWindowTitle(f"{title} — Omni Deck")
+
             if game_data.get('engine') == 'web_flash':
-                target_url = QUrl(game_data.get('url'))
-                self.webview.load(target_url)
-                is_roco = "17roco" in game_data.get('url', '')
-                self.btn_pure.setVisible(is_roco)
+                game_data_json = json.dumps(game_data)
+                cmd = [sys.executable, os.path.join(SCRIPT_DIR, "flash_runner.py"), game_data_json]
+                
+                clean_env = os.environ.copy()
+                for k in list(clean_env.keys()):
+                    if k.startswith('QT_') or k.startswith('QML_'):
+                        del clean_env[k]
+                clean_env['QT_QPA_PLATFORM'] = 'xcb'
+                
+                def runner():
+                    log_file = open(os.path.join(SCRIPT_DIR, "flash_crash.log"), "w")
+                    try:
+                        proc = subprocess.Popen(
+                            cmd, 
+                            env=clean_env, 
+                            preexec_fn=set_pdeathsig,
+                            start_new_session=True,
+                            stdout=log_file, 
+                            stderr=subprocess.STDOUT
+                        )
+                        proc.wait()
+                    except Exception as e:
+                        log_file.write(f"\\nPython Error: {str(e)}\\n")
+                    finally:
+                        log_file.close()
+                
+                threading.Thread(target=runner, daemon=True).start()
+                return
             else:
                 self.btn_pure.hide()
-                swf_path = os.path.join(game_data['root'], game_data['swf_file'])
-                swf_file_url = QUrl(f"file://{swf_path}")
-                hint = game_data.get('hint', '')
-                html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>{title}</title>
-    <style>
-        html, body {{
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            background-color: #080a0f; overflow: hidden;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-        }}
-        embed, object {{
-            width: 100%; height: 100%; max-width: 1060px; max-height: 700px; outline: none;
-            border-radius: 4px; box-shadow: 0 0 40px rgba(0,0,0,0.8);
-        }}
-        #hint-bar {{
-            position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
-            background: rgba(22, 27, 34, 0.85); backdrop-filter: blur(8px);
-            border: 1px solid rgba(48, 54, 61, 0.6); border-radius: 20px;
-            padding: 6px 16px; color: #58a6ff; font-size: 13px; font-weight: 500;
-            display: flex; align-items: center; gap: 8px; z-index: 100;
-            pointer-events: none; transition: opacity 0.5s;
-        }}
-    </style>
-</head>
-<body>
-    <embed src="file://{swf_path}" type="application/x-shockwave-flash" quality="high" wmode="direct" allowscriptaccess="always">
-    {f'<div id="hint-bar">{hint}</div>' if hint else ''}
-    <script>
-        setTimeout(function() {{
-            var hb = document.getElementById('hint-bar');
-            if (hb) hb.style.opacity = '0';
-        }}, 8000);
-    </script>
-</body>
-</html>"""
-                self.webview.setHtml(html, swf_file_url)
-
-            self.webview.setFocus()
-            self.overlay.adjustSize()
-            self.overlay.move(self.width() - self.overlay.width() - 16, 16)
-            self.overlay.show()
-            self.overlay.raise_()
-            return
+                swf_file = game_data.get('swf_file', '')
+                target_url = QUrl(f"http://127.0.0.1:{PORT}/player_flash.html?id={urllib.parse.quote(game_id)}&file={urllib.parse.quote(swf_file)}")
+                self.webview.load(target_url)
+                
+                self.webview.setFocus()
+                self.overlay.adjustSize()
+                self.overlay.move(self.width() - self.overlay.width() - 16, 16)
+                self.overlay.show()
+                self.overlay.raise_()
+                return
 
         # RPG Maker 网页渲染流程
         self.is_in_game = True
@@ -1860,85 +3076,18 @@ class RpgDeckMainWindow(QMainWindow):
         self.overlay.raise_()
 
     def launch_standalone_game(self, game_id: str, title: str):
-        # 防止同一游戏重复启动（单实例保护）
-        if game_id in RUNNING_GAME_IDS:
-            log_omni("WARN", f"游戏 [{title}] 已经在运行中，忽略重复启动请求", tag="Launcher")
-            return
-
-        game_data = GAMES_REGISTRY.get(game_id)
-        if not game_data:
-            return
-        root = game_data['root']
-        engine = game_data.get('engine', 'wine')
-        exe_path = game_data.get('exe_path')
-
-        cmd = None
-        run_env = os.environ.copy()
-
-        if engine == 'renpy':
-            if os.path.exists(RENPY_SDK_PATH):
-                cmd = [RENPY_SDK_PATH, root]
-            elif exe_path and os.path.exists(exe_path):
-                if exe_path.endswith('.sh') or exe_path.endswith('.py'):
-                    try: os.chmod(exe_path, 0o755)
-                    except: pass
-                    cmd = [exe_path]
-                elif exe_path.endswith('.exe'):
-                    cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
-        else:
-            if exe_path and os.path.exists(exe_path):
-                if exe_path.endswith('.exe'):
-                    cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
-                else:
-                    try: os.chmod(exe_path, 0o755)
-                    except: pass
-                    cmd = [exe_path]
-
-        if not cmd:
-            log_omni("ERROR", f"未找到可用的独立游戏/软件运行时 (Wine/Proton 未就绪) ({game_id})", tag="Launcher")
-            return
-
-        # 确保工作目录准确指向实际可执行文件所在的子目录 (解决内嵌子目录游戏找不到资源与 Pak 文件的严重问题)
-        # 星际争霸 2 必须以游戏根目录作为工作目录，否则无法正确定位根目录的 Maps 与 Mods
-        if game_id and game_id.startswith('StarCraft II'):
-            run_cwd = root
-        else:
-            run_cwd = os.path.dirname(exe_path) if (exe_path and os.path.exists(exe_path)) else root
-
-        # 注入多语言环境 (修复 RPG Maker VX Ace / 吉里吉里 / 经典日文与中文单机游戏乱码与崩溃)
-        run_env['LANG'] = 'zh_CN.UTF-8'
-        run_env['LC_ALL'] = 'zh_CN.UTF-8'
-        run_env['WINEDEBUG'] = '-all'
-
-        RUNNING_GAME_IDS.add(game_id)
-
-        def runner():
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    cwd=run_cwd,
-                    env=run_env,
-                    preexec_fn=set_pdeathsig,
-                    start_new_session=True
-                )
-                ACTIVE_CHILD_PROCESSES.append(proc)
-                proc.wait()
-            except Exception as e:
-                log_omni("ERROR", f"独立游戏运行异常 ({game_id}): {e}", tag="Launcher")
-            finally:
-                if 'proc' in locals() and proc in ACTIVE_CHILD_PROCESSES:
-                    ACTIVE_CHILD_PROCESSES.remove(proc)
-                RUNNING_GAME_IDS.discard(game_id)
-                self.renpy_finished.emit()
-
-        threading.Thread(target=runner, daemon=True).start()
+        """调用全局独立进程拉起器运行大型 PC 游戏，退出时自动回调激活大厅"""
+        launch_standalone_game_process(game_id, title, on_exit_callback=lambda: self.renpy_finished.emit())
 
     def on_renpy_exit(self):
+        """独立游戏 / Ren'Py 进程退出回调：重新激活并置顶 Omni Deck 窗口，恢复专区视口"""
+        self.show()
         self.raise_()
         self.activateWindow()
         self.load_category()
 
     def toggle_fullscreen(self):
+        """切换主窗口操作系统级全屏 / 窗口化状态 (支持 F11 快捷键)"""
         if self.isFullScreen():
             self.showNormal()
             self.btn_fullscreen.setText("⛶ 全屏")
@@ -1947,15 +3096,18 @@ class RpgDeckMainWindow(QMainWindow):
             self.btn_fullscreen.setText("🗗 窗口")
 
     def toggle_mute(self):
+        """切换主浏览器视口的游戏全局音频静音状态"""
         self.is_muted = not self.is_muted
         self.webview.page().setAudioMuted(self.is_muted)
         self.btn_mute.setText("🔇 静音" if self.is_muted else "🔊 声音")
 
     def closeEvent(self, event):
+        """主窗口关闭拦截：彻底递归清理所有拉起的游戏与后台守护子进程"""
         kill_all_child_processes()
         super().closeEvent(event)
 
 def main():
+    """Omni Deck 应用程序全局启动主入口"""
     app = QApplication(sys.argv)
     window = RpgDeckMainWindow()
     window.show()

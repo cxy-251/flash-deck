@@ -1,13 +1,18 @@
 [project]
 name = "omni-deck"
-version = "2.1.0"
-description = "Omni Deck — 专为 Steam Deck (SteamOS/Linux) 打造的多引擎与全世代单机游戏控制中心"
+version = "2.3.0"
+description = "Omni Deck — 专为 Steam Deck (SteamOS/Linux) 打造的单机游戏与漫画阅读双一级控制中心"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "docutils>=0.23",
+    "jmcomic>=2.7.5",
     "pyqt6>=6.6.0",
     "pyqt6-webengine>=6.6.0",
 ]
 
 [tool.uv]
 package = false
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"

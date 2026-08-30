@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Omni Deck — 全能游戏控制中心</title>
+    <script src="/marked.min.js"></script>
+    <script src="/mermaid.min.js"></script>
     <script>
         (function() {
             var params = new URLSearchParams(window.location.search);
@@ -60,19 +62,6 @@
         }
         .back-btn:hover { background: #30363d; border-color: #58a6ff; color: #ffffff; }
         .back-btn:active { transform: scale(0.96); }
-
-        .refresh-btn {
-            background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
-            padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
-            cursor: pointer; transition: all 0.15s; outline: none; display: flex; align-items: center; gap: 4px;
-        }
-        .refresh-btn:hover { background: #30363d; border-color: #58a6ff; color: #f0f6fc; }
-        .refresh-btn:active { transform: scale(0.96); }
-        .refresh-btn.spinning {
-            animation: spin 0.6s linear infinite;
-            pointer-events: none;
-            opacity: 0.75;
-        }
         @keyframes spin {
             100% { transform: rotate(360deg); }
         }
@@ -329,6 +318,1599 @@
             from { opacity: 0; transform: translateY(3px); }
             to { opacity: 1; transform: translateY(0); }
         }
+
+        /* 局域网与广域网跨设备网络控制栏及悬停气泡 */
+        .nav-net-control {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .nav-net-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 6px 11px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+        .nav-net-btn:hover {
+            border-color: #8b949e;
+            color: #f0f6fc;
+        }
+        .nav-net-btn.active {
+            background: rgba(35, 134, 54, 0.18);
+            border-color: rgba(46, 160, 67, 0.6);
+            color: #3fb950;
+        }
+        .nav-net-btn.starting {
+            background: rgba(187, 128, 9, 0.18);
+            border-color: rgba(187, 128, 9, 0.6);
+            color: #d29922;
+        }
+        .nav-net-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #8b949e;
+            display: inline-block;
+            transition: all 0.2s ease;
+        }
+        .nav-net-btn.active .nav-net-dot {
+            background: #3fb950;
+            box-shadow: 0 0 6px #3fb950;
+        }
+        .nav-net-btn.starting .nav-net-dot {
+            background: #d29922;
+            box-shadow: 0 0 6px #d29922;
+        }
+        .nav-net-bubble {
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            width: 300px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.65);
+            z-index: 99999;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-4px);
+            transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+            pointer-events: none;
+        }
+        /* 隐形桥接层：无缝填补按钮与气泡之间的空隙，彻底解决鼠标滑动时气泡意外关闭的问题 */
+        .nav-net-bubble::before {
+            content: '';
+            position: absolute;
+            top: -12px;
+            left: -10px;
+            right: -10px;
+            height: 14px;
+            background: transparent;
+        }
+        .nav-net-control:hover .nav-net-bubble {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .bubble-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .bubble-title { color: #f0f6fc; }
+        .bubble-status {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            background: #21262d;
+            color: #8b949e;
+        }
+        .bubble-status.active {
+            background: rgba(35, 134, 54, 0.25);
+            color: #3fb950;
+        }
+        .bubble-status.starting {
+            background: rgba(187, 128, 9, 0.25);
+            color: #d29922;
+        }
+        .bubble-url-box {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            margin-bottom: 8px;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .bubble-url-box:hover {
+            border-color: #58a6ff;
+            background: rgba(88, 166, 255, 0.08);
+        }
+        .bubble-url-text {
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            font-size: 11.5px;
+            color: #58a6ff;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 195px;
+        }
+        .bubble-copy-badge {
+            font-size: 11px;
+            color: #8b949e;
+            white-space: nowrap;
+            background: #21262d;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        .bubble-url-box:hover .bubble-copy-badge {
+            color: #f0f6fc;
+            background: #1f6feb;
+        }
+        .bubble-desc {
+            font-size: 11px;
+            color: #8b949e;
+            line-height: 1.45;
+        }
+
+        /* 一级页面切换按钮 */
+        .primary-section-btn {
+            background: linear-gradient(135deg, #1f6feb 0%, #8957e5 100%);
+            border: 1px solid #388bfd;
+            color: #ffffff;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 8px rgba(31,111,235,0.25);
+        }
+        .primary-section-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(137,87,229,0.4);
+            filter: brightness(1.15);
+        }
+        .primary-section-btn:active { transform: scale(0.96); }
+
+        /* 漫画区核心样式 */
+        #manga-section { animation: fadeIn 0.2s ease; }
+
+        .manga-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #f0f6fc;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .manga-btn:hover { background: #30363d; border-color: #58a6ff; }
+        .manga-btn-primary {
+            background: #238636;
+            border-color: #2ea043;
+            color: #fff;
+        }
+        .manga-btn-primary:hover { background: #2ea043; }
+        .manga-btn-purple {
+            background: #8957e5;
+            border-color: #a371f7;
+            color: #fff;
+        }
+        .manga-btn-purple:hover { background: #9e6ffb; }
+
+        .manga-tag-pill {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 4px 11px;
+            border-radius: 14px;
+            font-size: 11.5px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            outline: none;
+        }
+        .manga-tag-pill:hover {
+            background: #30363d;
+            border-color: #bc8cff;
+            color: #f0f6fc;
+            transform: translateY(-1px);
+        }
+        .manga-tag-pill:active { transform: scale(0.95); }
+
+        .manga-btn-in-queue {
+            background: #1f6feb22 !important;
+            border-color: #388bfd !important;
+            color: #58a6ff !important;
+        }
+
+        .manga-sort-select {
+            background: #161b22;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.15s;
+        }
+        .manga-sort-select:hover, .manga-sort-select:focus {
+            border-color: #58a6ff;
+            color: #f0f6fc;
+            background: #21262d;
+        }
+
+        .manga-rank-badge {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 2px 7px;
+            border-radius: 4px;
+            color: #ffffff;
+            z-index: 2;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+            letter-spacing: 0.5px;
+        }
+        .rank-top-1 {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border: 1px solid #fbbf24;
+            color: #ffffff;
+        }
+        .rank-top-2 {
+            background: linear-gradient(135deg, #94a3b8, #64748b);
+            border: 1px solid #cbd5e1;
+            color: #ffffff;
+        }
+        .rank-top-3 {
+            background: linear-gradient(135deg, #b45309, #78350f);
+            border: 1px solid #d97706;
+            color: #ffffff;
+        }
+        .rank-other {
+            background: rgba(13, 17, 23, 0.85);
+            border: 1px solid #30363d;
+            color: #8b949e;
+        }
+
+        /* 漫画卡片网格 */
+        .manga-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+            gap: 18px;
+            margin-bottom: 30px;
+        }
+        .manga-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        .manga-card:hover {
+            transform: translateY(-4px);
+            border-color: #bc8cff;
+            box-shadow: 0 8px 24px rgba(188, 140, 255, 0.22);
+        }
+        .manga-cover-wrap {
+            width: 100%;
+            aspect-ratio: 3/4;
+            background: #0d1117;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .manga-cover {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+        .manga-card:hover .manga-cover { transform: scale(1.04); }
+        .manga-cover-fallback {
+            font-size: 38px;
+            color: #8b949e;
+        }
+        .manga-badge-cbz {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(35, 134, 54, 0.92);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            backdrop-filter: blur(4px);
+        }
+        .manga-badge-online {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(137, 87, 229, 0.92);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 6px;
+            backdrop-filter: blur(4px);
+        }
+        .manga-info {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+        }
+        .manga-title {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #f0f6fc;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .manga-meta {
+            font-size: 11.5px;
+            color: #8b949e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+        }
+        .manga-actions-hover {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: none;
+            gap: 5px;
+        }
+        .manga-card:hover .manga-actions-hover { display: flex; }
+        .manga-mini-btn {
+            background: rgba(22, 27, 34, 0.9);
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 4px 7px;
+            border-radius: 6px;
+            font-size: 11.5px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+            transition: all 0.15s;
+        }
+        .manga-mini-btn:hover { background: #30363d; color: #fff; }
+
+        /* 任务实时进度面板 */
+        .manga-tasks-card {
+            background: #161b22;
+            border: 1px solid #388bfd;
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            animation: fadeIn 0.2s;
+        }
+        .manga-task-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .progress-bar-bg {
+            background: #21262d;
+            border-radius: 6px;
+            height: 8px;
+            width: 100%;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            background: linear-gradient(90deg, #1f6feb, #238636);
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.3s ease;
+        }
+
+        /* 内置 Webtoon 阅读器全屏视口 */
+        #manga-reader-modal {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            max-width: 100vw;
+            background: #090c10;
+            z-index: 10000;
+            overflow-x: hidden;
+            overflow-y: auto;
+            display: none;
+            flex-direction: column;
+            box-sizing: border-box;
+            touch-action: pan-y;
+        }
+        .reader-topbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(13, 17, 23, 0.94);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid #21262d;
+            padding: 8px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            max-width: 100vw;
+            box-sizing: border-box;
+            gap: 12px;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        .reader-topbar-tools {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .reader-title-box {
+            font-size: 14px;
+            font-weight: 700;
+            color: #f0f6fc;
+            line-height: 1.35;
+            word-break: break-word;
+            flex: 1;
+            min-width: 0;
+        }
+        .reader-topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .reader-counter {
+            font-size: 12px;
+            color: #8b949e;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        #manga-reader-modal.reader-immersive-fullscreen .reader-topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            opacity: 0.15;
+        }
+        #manga-reader-modal.reader-immersive-fullscreen .reader-topbar:hover {
+            opacity: 1;
+        }
+        #novel-reader-modal.reader-immersive-fullscreen .novel-reader-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            opacity: 0.15;
+        }
+        #novel-reader-modal.reader-immersive-fullscreen .novel-reader-header:hover {
+            opacity: 1;
+        }
+        .reader-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 0 60px 0;
+            width: 100%;
+            max-width: 100vw;
+            overflow-x: hidden;
+            box-sizing: border-box;
+        }
+        .reader-img {
+            display: block;
+            width: 100%;
+            max-width: 920px;
+            height: auto;
+            margin: 0 auto;
+            border: none;
+            box-sizing: border-box;
+            touch-action: pan-y;
+        }
+
+        /* 媒体中心与小说/文档阅读器样式 */
+        .media-nav-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+            border-bottom: 1px solid #21262d;
+            padding-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .media-tab-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .media-tab-btn:hover { background: #30363d; color: #fff; }
+        .media-tab-btn.active {
+            background: #1f6feb;
+            border-color: #388bfd;
+            color: #fff;
+            box-shadow: 0 0 12px rgba(56, 139, 253, 0.4);
+        }
+
+        .novel-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+        .novel-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            position: relative;
+        }
+        .novel-card:hover {
+            transform: translateY(-3px);
+            border-color: #58a6ff;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+        .novel-card-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .novel-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .novel-badge-txt { background: #1f6feb22; color: #58a6ff; border: 1px solid #388bfd44; }
+        .novel-badge-md { background: #d2992222; color: #e3b341; border: 1px solid #d2992244; }
+        .novel-badge-rst { background: #8957e522; color: #bc8cff; border: 1px solid #8957e544; }
+        .novel-title {
+            font-size: 14.5px;
+            font-weight: 600;
+            color: #f0f6fc;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .novel-excerpt {
+            font-size: 12.5px;
+            color: #8b949e;
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            background: #0d1117;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid #21262d;
+        }
+        .novel-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11.5px;
+            color: #8b949e;
+            margin-top: auto;
+        }
+
+        /* 全能文本阅读器全屏视口 */
+        #novel-reader-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: none;
+            flex-direction: column;
+        }
+        .novel-reader-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background: var(--novel-bg, #0d1117);
+            color: var(--novel-text, #e6edf3);
+            transition: background 0.2s, color 0.2s;
+        }
+        .novel-reader-header {
+            padding: 8px 16px;
+            background: var(--novel-header-bg, rgba(13, 17, 23, 0.95));
+            border-bottom: 1px solid var(--novel-border, #21262d);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(8px);
+            z-index: 10;
+            width: 100%;
+            max-width: 100vw;
+            box-sizing: border-box;
+            gap: 8px;
+        }
+        .novel-reader-title {
+            font-size: 15px;
+            font-weight: 700;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .reader-tool-btn {
+            background: var(--novel-btn-bg, #21262d);
+            border: 1px solid var(--novel-border, #30363d);
+            color: var(--novel-text, #c9d1d9);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .reader-tool-btn:hover { background: #388bfd22; border-color: #388bfd; }
+        .novel-reader-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+        }
+        .novel-chapter-drawer {
+            width: 280px;
+            background: var(--novel-drawer-bg, #161b22);
+            border-right: 1px solid var(--novel-border, #30363d);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            flex-shrink: 0;
+            z-index: 5;
+        }
+        .novel-chapter-item {
+            padding: 10px 14px;
+            font-size: 13px;
+            color: var(--novel-text, #c9d1d9);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .novel-chapter-item:hover { background: var(--novel-btn-bg, #21262d); color: #58a6ff; }
+        .novel-chapter-item.active { background: #1f6feb33; color: #58a6ff; font-weight: 600; }
+        .novel-content-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px 20px 80px 20px;
+            scroll-behavior: smooth;
+        }
+        .novel-content-view {
+            max-width: 820px;
+            margin: 0 auto;
+            font-size: var(--novel-font-size, 17px);
+            line-height: 1.85;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            word-break: break-word;
+        }
+        .novel-content-view p {
+            margin-bottom: 1.25em;
+            text-indent: 2em;
+        }
+        .novel-content-view h1, .novel-content-view h2, .novel-content-view h3, .novel-content-view h4 {
+            margin-top: 1.5em;
+            margin-bottom: 0.6em;
+            font-weight: 700;
+            color: var(--novel-heading, #f0f6fc);
+            text-indent: 0;
+        }
+        .novel-content-view code {
+            background: rgba(128,128,128,0.15);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .novel-content-view pre {
+            background: rgba(128,128,128,0.15);
+            padding: 14px;
+            border-radius: 8px;
+            overflow-x: auto;
+            text-indent: 0;
+            margin-bottom: 1.2em;
+        }
+        .novel-content-view blockquote {
+            border-left: 4px solid #388bfd;
+            padding: 8px 16px;
+            margin: 1em 0;
+            background: rgba(56, 139, 253, 0.08);
+            border-radius: 0 6px 6px 0;
+            text-indent: 0;
+        }
+        .novel-content-view table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.2em 0;
+            text-indent: 0;
+        }
+        .novel-content-view th, .novel-content-view td {
+            border: 1px solid var(--novel-border, #30363d);
+            padding: 8px 12px;
+            text-align: left;
+        }
+        .novel-content-view th { background: rgba(128,128,128,0.1); }
+
+        /* 深度 Markdown 与 Mermaid 渲染样式 (GitHub / Notion 级高质感排版) */
+        .doc-markdown-body {
+            line-height: 1.75;
+            color: var(--novel-text, #c9d1d9);
+            font-size: var(--novel-font-size, 16px);
+        }
+        .doc-markdown-body p {
+            margin-top: 0;
+            margin-bottom: 16px;
+            text-indent: 0 !important;
+            line-height: 1.75;
+        }
+        .doc-markdown-body h1 {
+            font-size: 2em;
+            font-weight: 700;
+            padding-bottom: 0.3em;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--novel-border, #30363d);
+            color: var(--novel-heading, #f0f6fc);
+        }
+        .doc-markdown-body h2 {
+            font-size: 1.5em;
+            font-weight: 700;
+            padding-bottom: 0.25em;
+            margin-top: 24px;
+            margin-bottom: 14px;
+            border-bottom: 1px solid rgba(48, 54, 61, 0.6);
+            color: var(--novel-heading, #f0f6fc);
+        }
+        .doc-markdown-body h3 {
+            font-size: 1.25em;
+            font-weight: 600;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: var(--novel-heading, #e6edf3);
+        }
+        .doc-markdown-body h4, .doc-markdown-body h5, .doc-markdown-body h6 {
+            font-size: 1.05em;
+            font-weight: 600;
+            margin-top: 16px;
+            margin-bottom: 8px;
+            color: var(--novel-heading, #c9d1d9);
+        }
+        .doc-markdown-body a.doc-markdown-link {
+            color: #58a6ff;
+            text-decoration: none;
+            font-weight: 500;
+            border-bottom: 1px solid rgba(88, 166, 255, 0.35);
+            transition: all 0.15s;
+        }
+        .doc-markdown-body a.doc-markdown-link:hover {
+            color: #79c0ff;
+            border-bottom-color: #79c0ff;
+            background: rgba(56, 139, 253, 0.08);
+        }
+        .doc-markdown-body a.doc-internal-link {
+            color: #79c0ff;
+            background: rgba(56, 139, 253, 0.12);
+            padding: 2px 6px;
+            border-radius: 4px;
+            border-bottom: none;
+        }
+        .doc-markdown-body a.doc-internal-link:hover {
+            background: rgba(56, 139, 253, 0.25);
+            color: #a5d6ff;
+        }
+        .doc-markdown-body pre {
+            background: #161b22;
+            border: 1px solid var(--novel-border, #30363d);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+            margin: 18px 0;
+            font-size: 13.5px;
+            line-height: 1.5;
+        }
+        .doc-markdown-body pre code {
+            background: transparent !important;
+            padding: 0 !important;
+            font-family: "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, monospace;
+            font-size: 13.5px;
+            color: #e6edf3;
+            border-radius: 0;
+        }
+        .doc-markdown-body code {
+            background: rgba(110, 118, 129, 0.25);
+            color: #e6edf3;
+            padding: 0.2em 0.45em;
+            border-radius: 5px;
+            font-family: "JetBrains Mono", "Fira Code", monospace;
+            font-size: 88%;
+        }
+        .doc-markdown-body blockquote {
+            border-left: 4px solid #388bfd;
+            background: rgba(56, 139, 253, 0.08);
+            padding: 12px 18px;
+            margin: 16px 0;
+            border-radius: 0 8px 8px 0;
+            color: #8b949e;
+        }
+        .doc-markdown-body blockquote p {
+            margin-bottom: 0;
+            color: #c9d1d9;
+        }
+        .doc-markdown-body table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0;
+            display: table;
+            overflow-x: auto;
+            border: 1px solid var(--novel-border, #30363d);
+            border-radius: 8px;
+        }
+        .doc-markdown-body th {
+            background: #161b22;
+            color: var(--novel-heading, #f0f6fc);
+            font-weight: 600;
+            padding: 10px 14px;
+            border: 1px solid var(--novel-border, #30363d);
+            text-align: left;
+        }
+        .doc-markdown-body td {
+            padding: 10px 14px;
+            border: 1px solid var(--novel-border, #30363d);
+            color: var(--novel-text, #c9d1d9);
+        }
+        .doc-markdown-body tr:nth-child(even) {
+            background: rgba(110, 118, 129, 0.04);
+        }
+        .doc-markdown-body tr:hover {
+            background: rgba(56, 139, 253, 0.06);
+        }
+        .doc-markdown-body ul, .doc-markdown-body ol {
+            padding-left: 2em;
+            margin: 14px 0;
+        }
+        .doc-markdown-body li {
+            margin: 5px 0;
+            line-height: 1.7;
+        }
+        .doc-markdown-body hr {
+            border: none;
+            border-top: 1px solid var(--novel-border, #30363d);
+            margin: 24px 0;
+        }
+        .doc-markdown-body img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            margin: 14px 0;
+        }
+        /* Mermaid 图表专属容器 */
+        .mermaid-block-wrapper {
+            margin: 22px 0;
+            padding: 20px 16px;
+            background: #161b22;
+            border: 1px solid var(--novel-border, #30363d);
+            border-radius: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow-x: auto;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        }
+        .mermaid-block-wrapper .mermaid {
+            width: 100%;
+            text-align: center;
+        }
+        .mermaid-block-wrapper svg {
+            max-width: 100% !important;
+            height: auto !important;
+        }
+
+        .novel-chapter-bottom-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 45px;
+            padding-top: 25px;
+            border-top: 1px solid var(--novel-border, #30363d);
+            gap: 12px;
+        }
+        .novel-nav-btn {
+            padding: 8px 18px;
+            font-size: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* 资源管理器式技术文档 (Docs Explorer) 专属样式 */
+        .docs-explorer-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+            background: #161b22;
+            padding: 10px 16px;
+            border-radius: 10px;
+            border: 1px solid #30363d;
+        }
+        .docs-breadcrumbs-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            font-size: 13px;
+        }
+        .docs-crumb-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            color: #8b949e;
+            cursor: pointer;
+            padding: 3px 8px;
+            border-radius: 6px;
+            transition: all 0.15s;
+            font-weight: 500;
+        }
+        .docs-crumb-item:hover {
+            background: #21262d;
+            color: #58a6ff;
+        }
+        .docs-crumb-item.active {
+            color: #f0f6fc;
+            font-weight: 700;
+            cursor: default;
+            background: #1f6feb22;
+            border: 1px solid #388bfd44;
+        }
+        .docs-crumb-sep {
+            color: #484f58;
+            font-size: 12px;
+            user-select: none;
+        }
+        .docs-explorer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 14px;
+        }
+        .docs-folder-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            user-select: none;
+        }
+        .docs-folder-card:hover {
+            background: #1f242c;
+            border-color: #58a6ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .docs-folder-icon {
+            font-size: 30px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+        .docs-folder-info {
+            overflow: hidden;
+            flex: 1;
+        }
+        .docs-folder-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #f0f6fc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .docs-folder-meta {
+            font-size: 12px;
+            color: #8b949e;
+            margin-top: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .docs-file-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 115px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .docs-file-card:hover {
+            background: #1f242c;
+            border-color: #388bfd;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .docs-file-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .docs-file-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #f0f6fc;
+            line-height: 1.4;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            word-break: break-word;
+        }
+        .docs-file-path-hint {
+            font-size: 11px;
+            color: #8b949e;
+            margin-top: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .docs-file-meta {
+            font-size: 12px;
+            color: #8b949e;
+            margin-top: 8px;
+            display: flex;
+            justify-content: space-between;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            padding-top: 6px;
+        }
+
+        /* 阅读器主题配色方案 */
+        .novel-theme-dark {
+            --novel-bg: #0d1117;
+            --novel-text: #c9d1d9;
+            --novel-heading: #f0f6fc;
+            --novel-header-bg: rgba(13, 17, 23, 0.95);
+            --novel-drawer-bg: #161b22;
+            --novel-border: #30363d;
+            --novel-btn-bg: #21262d;
+        }
+        .novel-theme-sepia {
+            --novel-bg: #f4ecd8;
+            --novel-text: #3d2b1f;
+            --novel-heading: #23160e;
+            --novel-header-bg: rgba(244, 236, 216, 0.95);
+            --novel-drawer-bg: #ede1c4;
+            --novel-border: #d8cbb0;
+            --novel-btn-bg: #e5d8b8;
+        }
+        .novel-theme-eye {
+            --novel-bg: #cce8cf;
+            --novel-text: #1b3824;
+            --novel-heading: #0f2416;
+            --novel-header-bg: rgba(204, 232, 207, 0.95);
+            --novel-drawer-bg: #bddbbd;
+            --novel-border: #a9cba9;
+            --novel-btn-bg: #b0d4b0;
+        }
+        .novel-theme-light {
+            --novel-bg: #ffffff;
+            --novel-text: #24292f;
+            --novel-heading: #090c10;
+            --novel-header-bg: rgba(255, 255, 255, 0.95);
+            --novel-drawer-bg: #f6f8fa;
+            --novel-border: #d0d7de;
+            --novel-btn-bg: #eaeef2;
+        }
+
+        /* 移动端全宽瀑布流与自适应优化 */
+        @media (max-width: 768px) {
+            #manga-reader-modal {
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-x: hidden !important;
+            }
+            .reader-topbar {
+                padding: 6px 10px !important;
+                flex-direction: column !important;
+                align-items: stretch !important;
+                gap: 4px !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+            }
+            .reader-topbar-tools {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                width: 100% !important;
+                gap: 6px !important;
+            }
+            .reader-title-box {
+                font-size: 13px !important;
+                line-height: 1.35 !important;
+                word-break: break-word !important;
+                white-space: normal !important;
+                overflow: visible !important;
+                color: #f0f6fc !important;
+                width: 100% !important;
+                padding-top: 2px !important;
+                border-top: 1px solid #21262d44 !important;
+            }
+            .reader-back-btn {
+                padding: 4px 8px !important;
+                font-size: 12px !important;
+                flex-shrink: 0 !important;
+            }
+            .reader-topbar-right {
+                gap: 4px !important;
+                flex-shrink: 0 !important;
+            }
+            .reader-topbar-right .manga-btn {
+                padding: 4px 6px !important;
+                font-size: 11px !important;
+            }
+            .reader-ext-text {
+                display: none !important;
+            }
+            .reader-counter {
+                font-size: 11px !important;
+            }
+            .reader-img {
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 !important;
+                border-radius: 0 !important;
+                box-sizing: border-box !important;
+            }
+            .reader-content {
+                padding: 0 0 40px 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-x: hidden !important;
+                box-sizing: border-box !important;
+            }
+            .novel-reader-header {
+                padding: 6px 8px !important;
+                gap: 4px !important;
+            }
+            .novel-reader-title {
+                font-size: 13px !important;
+            }
+            .novel-reader-header .reader-tool-btn {
+                padding: 3px 6px !important;
+                font-size: 11px !important;
+            }
+            .novel-content-view {
+                padding: 0 8px;
+            }
+            .novel-chapter-drawer {
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                box-shadow: 4px 0 16px rgba(0,0,0,0.5);
+            }
+            #global-audio-player-bar {
+                padding: 0 12px;
+                height: 64px;
+            }
+            .player-right {
+                display: none;
+            }
+            .player-left {
+                width: 45%;
+            }
+            .player-center {
+                width: 50%;
+            }
+        }
+
+        /* 音声画廊与全局音频播放底栏样式 */
+        .audio-track-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 90px;
+        }
+        .audio-track-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            gap: 12px;
+        }
+        .audio-track-item:hover {
+            background: #1c2128;
+            border-color: #58a6ff;
+            transform: translateX(4px);
+        }
+        .audio-track-item.playing {
+            background: #1f6feb18;
+            border-color: #388bfd;
+        }
+        .audio-track-item.playing .audio-track-title {
+            color: #58a6ff;
+            font-weight: 700;
+        }
+        .audio-track-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            overflow: hidden;
+            flex: 1;
+        }
+        .audio-track-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 8px;
+            background: #21262d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        .audio-track-item.playing .audio-track-icon {
+            background: #1f6feb;
+            color: #fff;
+        }
+        .audio-track-title {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #f0f6fc;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .audio-track-meta {
+            font-size: 11.5px;
+            color: #8b949e;
+            margin-top: 3px;
+            display: flex;
+            gap: 10px;
+        }
+
+        /* 全局浮动音频播放底栏 (音声画廊专属高质感播放器) */
+        #global-audio-player-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 76px;
+            background: rgba(18, 22, 29, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+            z-index: 9999;
+            box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.65);
+        }
+        .player-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            width: 28%;
+            min-width: 200px;
+            overflow: hidden;
+        }
+        .player-disc {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #21262d 40%, #161b22 100%);
+            border: 2px solid rgba(88, 166, 255, 0.4);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+            transition: border-color 0.3s;
+        }
+        .player-disc.spinning {
+            border-color: #58a6ff;
+            box-shadow: 0 0 12px rgba(56, 139, 253, 0.4);
+            animation: spin 6s linear infinite;
+        }
+        .player-track-info {
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .player-title {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #f0f6fc;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            letter-spacing: 0.2px;
+        }
+        .player-sub-badge {
+            font-size: 11px;
+            color: #58a6ff;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .player-center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            width: 44%;
+            max-width: 580px;
+        }
+        .player-controls {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+        .player-ctrl-btn {
+            background: transparent;
+            border: none;
+            color: #c9d1d9;
+            font-size: 18px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }
+        .player-ctrl-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+            transform: scale(1.1);
+        }
+        .player-icon-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #8b949e;
+            font-size: 11.5px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .player-icon-btn:hover {
+            color: #58a6ff;
+            border-color: #58a6ff;
+            background: rgba(56, 139, 253, 0.1);
+        }
+        .player-play-btn {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, #1f6feb, #388bfd);
+            border: none;
+            color: #ffffff;
+            border-radius: 50%;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(31, 111, 235, 0.4);
+            transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .player-play-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 16px rgba(56, 139, 253, 0.6);
+            background: linear-gradient(135deg, #388bfd, #58a6ff);
+        }
+
+        .player-progress-wrap {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            gap: 12px;
+        }
+        .player-time-num {
+            font-size: 11px;
+            color: #8b949e;
+            font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+            width: 36px;
+            text-align: center;
+            user-select: none;
+        }
+        .player-slider-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+        }
+        .player-slider {
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: #30363d;
+            outline: none;
+            cursor: pointer;
+            accent-color: #58a6ff;
+            transition: height 0.15s;
+        }
+        .player-slider:hover {
+            height: 6px;
+        }
+
+        .player-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 28%;
+            justify-content: flex-end;
+        }
+        .player-pill-btn {
+            background: #21262d;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #c9d1d9;
+            padding: 5px 10px;
+            border-radius: 14px;
+            font-size: 11.5px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .player-pill-btn:hover {
+            background: #30363d;
+            color: #58a6ff;
+            border-color: rgba(88, 166, 255, 0.4);
+        }
+        .player-volume-box {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .player-vol-slider {
+            width: 75px;
+        }
+        .player-close-btn {
+            background: transparent;
+            border: none;
+            color: #8b949e;
+            font-size: 15px;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+        .player-close-btn:hover {
+            color: #f85149;
+            background: rgba(248, 81, 73, 0.12);
+        }
+
+        /* 章节多选下载弹窗 */
+        .manga-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.78);
+            backdrop-filter: blur(6px);
+            z-index: 10001;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .manga-modal-content {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            max-width: 620px;
+            width: 100%;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 16px 36px rgba(0,0,0,0.6);
+        }
+        .manga-modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .manga-modal-body {
+            padding: 16px 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .manga-modal-footer {
+            padding: 14px 20px;
+            border-top: 1px solid #21262d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
     </style>
     <script>
         (function() {
@@ -337,6 +1919,12 @@
             if (initCat && initCat !== 'portal') {
                 document.write('<style id="cat-init-style">#portal-view { display: none !important; } #list-view { display: block !important; } #list-controls { display: flex !important; } #nav-back-btn { display: flex !important; }</style>');
             }
+            try {
+                var savedSec = localStorage.getItem('omni_primary_section');
+                if (savedSec === 'manga') {
+                    document.write('<style id="sec-init-style">#games-section { display: none !important; } #manga-section { display: block !important; } #manga-queue-btn { display: inline-flex !important; }</style>');
+                }
+            } catch(e) {}
         })();
     </script>
 </head>
@@ -346,17 +1934,58 @@
         <div class="sticky-header">
             <div class="top-navbar">
                 <div class="nav-title" id="nav-title-box">
-                    <span>🎮 Omni Deck</span>
+                    <span id="header-brand-title">🎮 Omni Deck Games</span>
                     <span class="badge-total" id="total-badge">0 款游戏</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;">
-                    <input type="text" id="global-search" class="search-input" placeholder="🔍 全局搜索游戏或编号 (如 001)..." oninput="onSearchInput(this.value)">
+                    <!-- 局域网共享控制组件 (悬停展示气泡与可复制网址) -->
+                    <div class="nav-net-control" id="lan-control-wrapper">
+                        <button id="lan-share-btn" class="nav-net-btn" onclick="toggleLanSharing()" title="点击开启或关闭局域网共享">
+                            <span id="lan-share-dot" class="nav-net-dot"></span>
+                            <span id="lan-share-text">局域网: 关</span>
+                        </button>
+                        <div class="nav-net-bubble" id="lan-share-bubble">
+                            <div class="bubble-header">
+                                <span class="bubble-title">📡 局域网跨设备访问</span>
+                                <span class="bubble-status" id="lan-bubble-status">未开启</span>
+                            </div>
+                            <div class="bubble-body">
+                                <div class="bubble-url-box" id="lan-url-box" onclick="copyNetUrl('lan')" title="点击复制局域网网址">
+                                    <span class="bubble-url-text" id="lan-url-text">http://192.168.0.21:8998</span>
+                                    <span class="bubble-copy-badge" id="lan-copy-badge">📋 点击复制</span>
+                                </div>
+                                <div class="bubble-desc">同一 Wi-Fi 下的手机、iPad 或电脑浏览器直接访问此网址，可在线看漫画与玩网页轻量游戏。</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 广域网公网穿透控制组件 (Cloudflare Tunnel，悬停展示气泡与可复制网址) -->
+                    <div class="nav-net-control" id="wan-control-wrapper">
+                        <button id="wan-share-btn" class="nav-net-btn" onclick="toggleWanSharing()" title="点击开启或关闭 Cloudflare 广域网公网穿透">
+                            <span id="wan-share-dot" class="nav-net-dot"></span>
+                            <span id="wan-share-text">广域网: 关</span>
+                        </button>
+                        <div class="nav-net-bubble" id="wan-share-bubble">
+                            <div class="bubble-header">
+                                <span class="bubble-title">🌍 Cloudflare 广域网公网隧道</span>
+                                <span class="bubble-status" id="wan-bubble-status">未开启</span>
+                            </div>
+                            <div class="bubble-body">
+                                <div class="bubble-url-box" id="wan-url-box" onclick="copyNetUrl('wan')" title="点击复制广域网网址">
+                                    <span class="bubble-url-text" id="wan-url-text">未启动</span>
+                                    <span class="bubble-copy-badge" id="wan-copy-badge">📋 点击复制</span>
+                                </div>
+                                <div class="bubble-desc" id="wan-bubble-desc">开启后自动生成全球可访问的官方 HTTPS 加密通道，出门在外（手机 5G/公司电脑）随时看漫画！</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="primary-section-btn" class="primary-section-btn" onclick="togglePrimarySection()">📖 媒体专区</button>
                     <button class="back-btn" id="nav-back-btn" style="display:none;" onclick="showPortalView()">🏠 返回大厅</button>
-                    <button class="refresh-btn" onclick="loadGames(true)">🔄 刷新</button>
                 </div>
             </div>
 
-            <!-- 二级页面控制栏 (分类标签 + 统计) -->
+            <!-- 二级页面控制栏 (分类标签 + 统计 + 独立游戏内搜索框) -->
             <div class="list-controls" id="list-controls" style="display:none;flex-direction:column;gap:8px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                     <div class="filter-tabs">
@@ -367,7 +1996,10 @@
                         <button class="tab-btn" data-tab="slg" onclick="switchTab('slg', this)">♟️ SLG 策略</button>
                         <button class="tab-btn" data-tab="flash" onclick="switchTab('flash', this)">⚡ Flash 殿堂</button>
                     </div>
-                    <div style="font-size:13px;color:#8b949e;" id="filter-stats">共 0 款游戏</div>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <input type="text" id="game-search-input" class="search-input" style="width:230px;" placeholder="🔍 搜索游戏或编号 (如 001)..." oninput="onGameSearchInput(this.value)">
+                        <div style="font-size:13px;color:#8b949e;" id="filter-stats">共 0 款游戏</div>
+                    </div>
                 </div>
                 <div class="sub-filter-bar" id="standalone-sub-filters" style="display:none;margin-top:6px;gap:8px;flex-wrap:wrap;align-items:center;">
                     <span style="font-size:12px;color:#8b949e;margin-right:2px;">引擎/专区:</span>
@@ -377,516 +2009,500 @@
                     <button class="sub-tab-btn" data-sub="godot" onclick="switchStandaloneSubTab('godot', this)">🔵 Godot</button>
                     <button class="sub-tab-btn" data-sub="unreal" onclick="switchStandaloneSubTab('unreal', this)">🟡 Unreal</button>
                     <button class="sub-tab-btn" data-sub="wine" onclick="switchStandaloneSubTab('wine', this)">🖥️ PC / Wine</button>
+                    <button class="sub-tab-btn" data-sub="3ds" onclick="switchStandaloneSubTab('3ds', this)">🔴 3DS 模拟器 (Lime3DS)</button>
                     <button class="sub-tab-btn" data-sub="app" onclick="switchStandaloneSubTab('app', this)">🪟 Windows 软件</button>
                 </div>
             </div>
         </div>
 
-        <!-- 一级页面: 分类专区大厅 -->
-        <div id="portal-view">
-            <div class="portal-hero">
-                <div>
-                    <h2>欢迎使用 Omni Deck</h2>
-                    <p>已接入 RPG Maker、PC 独立游戏 (Unity / Ren'Py / Godot / Unreal / Wine)、复古街机掌机、SLG 策略 与 Flash 经典神作，即点即玩。</p>
+        <!-- ================= 一级板块 A: 游戏中心 (Games) ================= -->
+        <div id="games-section">
+            <!-- 一级页面: 分类专区大厅 -->
+            <div id="portal-view">
+                <div class="portal-hero">
+                    <div>
+                        <h2>欢迎使用 Omni Deck Games</h2>
+                        <p>已接入 RPG Maker、PC 独立游戏 (Unity / Ren'Py / Godot / Unreal / Wine / 3DS 模拟器)、复古街机掌机、SLG 策略 与 Flash 经典神作，即点即玩。</p>
+                    </div>
+                </div>
+
+                <div class="category-grid">
+                    <!-- 喜欢 / 收藏列表卡片 -->
+                    <div class="cat-card fav-card" onclick="openCategory('fav')">
+                        <div class="cat-header">
+                            <div class="cat-title">⭐ 收藏与喜欢</div>
+                            <span class="cat-count fav-count" id="fav-count-badge">0 Favorites</span>
+                        </div>
+                        <div class="cat-desc">
+                            随时置顶收藏你最爱玩的神作 · 点击任意游戏卡片上的 ⭐ 即可快速加入或移除
+                        </div>
+                        <div class="cat-action">查看精选 ➔</div>
+                    </div>
+
+                    <!-- RPG Maker 专区 -->
+                    <div class="cat-card rpg-card" onclick="openCategory('rpg')">
+                        <div class="cat-header">
+                            <div class="cat-title">🗡️ RPG Maker 专区</div>
+                            <span class="cat-count rpg-count" id="rpg-count-badge">0 Games</span>
+                        </div>
+                        <div class="cat-desc">
+                            经典回合制与动作 RPG · MV/MZ 引擎 · 原生硬件加速 · 物理 Direct FS 存档直通
+                        </div>
+                        <div class="cat-action">进入专区 ➔</div>
+                    </div>
+
+                    <!-- 独立游戏专区 (Steam 精选 / Unity / Ren'Py / Godot / Unreal / Wine) -->
+                    <div class="cat-card standalone-card" onclick="openCategory('standalone')">
+                        <div class="cat-header">
+                            <div class="cat-title">🚀 独立游戏专区</div>
+                            <span class="cat-count standalone-count" id="standalone-count-badge">0 Games</span>
+                        </div>
+                        <div class="cat-desc">
+                            🎮 Steam 精选 · 缺氧/饥荒/死亡细胞 · Unity/Godot/Unreal · 官方 Linux 原生 & Proton 兼容运行时
+                        </div>
+                        <div class="cat-action">进入专区 ➔</div>
+                    </div>
+
+                    <!-- 街机与复古掌机专区 -->
+                    <div class="cat-card retro-card" onclick="openCategory('retro')">
+                        <div class="cat-header">
+                            <div class="cat-title">🕹️ 街机与掌机卡带</div>
+                            <span class="cat-count retro-count" id="retro-count-badge">0 Games</span>
+                        </div>
+                        <div class="cat-desc">
+                            GBA · NDS · PS1 · 街机 Arcade · SFC · MD · WASM 极速加载满帧运行
+                        </div>
+                        <div class="cat-action">进入专区 ➔</div>
+                    </div>
+
+                    <!-- SLG 模拟策略专区 -->
+                    <div class="cat-card slg-card" onclick="openCategory('slg')">
+                        <div class="cat-header">
+                            <div class="cat-title">♟️ SLG 策略与互动</div>
+                            <span class="cat-count slg-count" id="slg-count-badge">0 Games</span>
+                        </div>
+                        <div class="cat-desc">
+                            SLG 模拟策略 · 动态互动 · 角色养成 · ACGGW 精选专区
+                        </div>
+                        <div class="cat-action">进入专区 ➔</div>
+                    </div>
+
+                    <!-- Flash 殿堂级神作专区 -->
+                    <div class="cat-card flash-card" onclick="openCategory('flash')">
+                        <div class="cat-header">
+                            <div class="cat-title">⚡ Flash 殿堂神作</div>
+                            <span class="cat-count flash-count" id="flash-count-badge">0 Games</span>
+                        </div>
+                        <div class="cat-desc">
+                            王国保卫战 · 狂扁小朋友 · 战争进化史 · 坏冰淇淋 · Pepper Flash 原生硬件加速
+                        </div>
+                        <div class="cat-action">进入专区 ➔</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="category-grid">
-                <!-- 喜欢 / 收藏列表卡片 -->
-                <div class="cat-card fav-card" onclick="openCategory('fav')">
-                    <div class="cat-header">
-                        <div class="cat-title">⭐ 收藏与喜欢</div>
-                        <span class="cat-count fav-count" id="fav-count-badge">0 Favorites</span>
-                    </div>
-                    <div class="cat-desc">
-                        随时置顶收藏你最爱玩的神作 · 点击任意游戏卡片上的 ⭐ 即可快速加入或移除
-                    </div>
-                    <div class="cat-action">查看精选 ➔</div>
+            <!-- 二级页面: 游戏网格列表 -->
+            <div id="list-view">
+                <div class="game-grid" id="game-grid"></div>
+            </div>
+        </div>
+
+        <!-- ================= 一级板块 B: 媒体阅读中枢 (Media Hub) ================= -->
+        <div id="media-section" style="display:none;">
+            <!-- 二级媒体导航栏 (漫画画廊 / 小说画廊 / 技术文档 / 音声画廊) -->
+            <div class="media-nav-bar" id="media-nav-bar">
+                <div class="filter-tabs">
+                    <button class="tab-btn active" id="media-tab-manga" onclick="switchMediaTab('manga', this)">🖼️ 漫画画廊</button>
+                    <button class="tab-btn" id="media-tab-novels" onclick="switchMediaTab('novels', this)">📖 小说画廊</button>
+                    <button class="tab-btn" id="media-tab-docs" onclick="switchMediaTab('docs', this)">💻 技术文档 (MD / RST)</button>
+                    <button class="tab-btn" id="media-tab-audio" onclick="switchMediaTab('audio', this)">🎧 音声画廊</button>
+                </div>
+                <div style="font-size:13px;color:#8b949e;" id="media-sub-stats">共 0 部作品</div>
+            </div>
+
+            <!-- 二级页面 1: 漫画画廊 (Manga View) -->
+            <div id="media-manga-view">
+                <!-- 异步任务进度面板 (有下载任务时自动展现) -->
+                <div id="manga-tasks-container" style="display:none;margin-bottom:16px;">
+                    <div class="manga-tasks-card" id="manga-tasks-card"></div>
                 </div>
 
-                <!-- RPG Maker 专区 -->
-                <div class="cat-card rpg-card" onclick="openCategory('rpg')">
-                    <div class="cat-header">
-                        <div class="cat-title">🗡️ RPG Maker 专区</div>
-                        <span class="cat-count rpg-count" id="rpg-count-badge">0 Games</span>
+                <!-- 漫画区专属顶栏：子标签 (本地已收录 / 每周必看 / 每月必看) + 右侧搜索框与待下载列表 -->
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                    <div class="filter-tabs" id="manga-sub-tabs">
+                        <button class="tab-btn active" id="manga-subtab-shelf" onclick="switchMangaSubTab('shelf', this)">📚 本地已收录</button>
+                        <button class="tab-btn" id="manga-subtab-week" onclick="switchMangaSubTab('week', this)">🔥 每周必看</button>
+                        <button class="tab-btn" id="manga-subtab-month" onclick="switchMangaSubTab('month', this)">🏆 每月必看</button>
                     </div>
-                    <div class="cat-desc">
-                        RPG Maker MV / MZ 原生 WebGL 硬件加速引擎 · 物理硬盘存档直通 · 纯净免安装
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="manga-search-input" class="search-input" style="width:260px;" placeholder="🔍 搜索漫画或输入编号 (如 287234)..." oninput="onMangaSearchInput(this.value)" onkeydown="if(event.key==='Enter')onMangaSearchEnter()">
+                        <button class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#f0f6fc;font-size:12px;padding:6px 12px;" onclick="openMangaQueueModal()">📋 待下载列表 (<span id="manga-queue-badge-count">0</span>)</button>
                     </div>
-                    <div class="cat-action">进入专区 ➔</div>
                 </div>
 
-                <!-- 🚀 独立游戏专区 (Ren'Py / Unity / Godot / Unreal / Wine) -->
-                <div class="cat-card standalone-card" onclick="openCategory('standalone')">
-                    <div class="cat-header">
-                        <div class="cat-title">🚀 独立游戏专区</div>
-                        <span class="cat-count standalone-count" id="standalone-count-badge">0 Games</span>
+                <!-- 漫画一体化展示大厅 (本地书架 + 热门榜单 + 在线检索) -->
+                <div id="manga-main-container">
+                    <!-- 1. 本地漫画书架 -->
+                    <div id="manga-local-section">
+                        <div class="manga-grid" id="manga-shelf-grid"></div>
+                        <div id="manga-shelf-empty" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+                            <div style="font-size:36px;margin-bottom:10px;">📖</div>
+                            <div style="font-size:15px;font-weight:600;color:#f0f6fc;" id="manga-empty-title">本地暂无收录的漫画</div>
+                            <div style="font-size:13px;margin-top:6px;">切换上方【🔥 每周必看】或【🏆 每月必看】榜单，或在右侧搜索框输入漫画名/编号即可一键批量下载！</div>
+                        </div>
                     </div>
-                    <div class="cat-desc">
-                        Unity · Ren'Py · Godot · Unreal 虚幻 · PC 原生独立大作 · SD 卡直通秒开
+
+                    <!-- 2. 热门必看榜单板块 (每周/每月 TOP 80) -->
+                    <div id="manga-ranking-section" style="display:none;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                            <div style="font-size:16px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                                <span id="manga-ranking-heading">🔥 每周必看榜单</span>
+                                <span style="font-size:12px;color:#8b949e;font-weight:normal;">(禁漫天堂官方全网热度 TOP 80 · 点击封面沉浸阅读或一键下载)</span>
+                            </div>
+                        </div>
+                        <div id="manga-ranking-loading" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                            <div style="font-size:28px;animation:spin 1s linear infinite;display:inline-block;margin-bottom:8px;">⏳</div>
+                            <div>正在连接禁漫服务器获取热门榜单，请稍候...</div>
+                        </div>
+                        <div class="manga-grid" id="manga-ranking-grid"></div>
                     </div>
-                    <div class="cat-action">进入专区 ➔</div>
+
+                    <!-- 2. 线上漫画搜索结果板块 (搜索时自动展开) -->
+                    <div id="manga-online-section" style="display:none;margin-top:24px;border-top:1px solid #21262d;padding-top:20px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:16px;font-weight:700;color:#f0f6fc;">🌐 线上漫画搜索结果</span>
+                                <span id="manga-search-kw-label" style="font-size:12px;color:#58a6ff;font-weight:normal;"></span>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:12px;color:#8b949e;">排序方式:</span>
+                                <select id="manga-sort-select" class="manga-sort-select" onchange="onMangaSortChange(this.value)">
+                                    <option value="mv" selected>🔥 最多点击 (热度最高)</option>
+                                    <option value="mr">⏱️ 最新收录 (最近更新)</option>
+                                    <option value="tf">⭐ 最多收藏</option>
+                                    <option value="tr">👍 最多点赞</option>
+                                    <option value="mp">📑 最多页数</option>
+                                    <option value="md">💬 最多评论</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="manga-online-loading" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                            <div style="font-size:28px;animation:spin 1s linear infinite;display:inline-block;margin-bottom:8px;">⏳</div>
+                            <div>正在连接禁漫服务器检索作品，请稍候...</div>
+                        </div>
+                        <div class="manga-grid" id="manga-online-grid"></div>
+                        <div id="manga-online-more-loading" style="display:none;text-align:center;padding:24px 20px;color:#8b949e;">
+                            <span style="font-size:20px;display:inline-block;animation:spin 1s linear infinite;margin-right:8px;">⏳</span>
+                            <span style="font-size:13px;">正在加载下一轮热门作品...</span>
+                        </div>
+                        <div id="manga-online-end-tip" style="display:none;text-align:center;padding:30px 20px;color:#484f58;font-size:13px;">
+                            —— 已展示全网全部搜索结果 ——
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 二级页面 2: 小说画廊 (Novel Gallery - 纯净小说与 NSFW 独立隔离) -->
+            <div id="media-novels-view" style="display:none;">
+                <!-- 异步任务进度面板 (有下载任务时自动展现) -->
+                <div id="novel-tasks-container" style="display:none;margin-bottom:16px;">
+                    <div class="manga-tasks-card" id="novel-tasks-card"></div>
                 </div>
 
-                <!-- 复古街机与掌机卡带专区 -->
-                <div class="cat-card retro-card" onclick="openCategory('retro')">
-                    <div class="cat-header">
-                        <div class="cat-title">🕹️ 街机与掌机卡带</div>
-                        <span class="cat-count retro-count" id="retro-count-badge">0 Games</span>
+                <!-- 小说区顶栏：标题 + NSFW 独立隔离按钮 + 右侧模糊搜索与待下载列表 -->
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span id="novel-shelf-heading" style="font-size:15px;font-weight:700;color:#f0f6fc;">📚 本地已收录小说</span>
+                        <span id="novel-local-count" style="font-size:12px;color:#8b949e;">(0 部)</span>
+                        <button class="tab-btn" id="novel-nsfw-toggle-btn" onclick="toggleNovelNsfw()" title="开启/关闭 NSFW 绅士专区" style="padding:4px 12px;font-size:13px;border-radius:16px;cursor:pointer;transition:all 0.2s;">🔞 NSFW</button>
                     </div>
-                    <div class="cat-desc">
-                        GBA · NES · 街机 (FBNeo) · SFC · MD · WebAssembly 硬件沙盒
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="novel-search-input" class="search-input" style="width:280px;" placeholder="🔍 搜索小说书名、作者或关键词..." oninput="onNovelSearchInput(this.value)" onkeydown="if(event.key==='Enter')onNovelSearchEnter()">
+                        <button class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#f0f6fc;font-size:12px;padding:6px 12px;" onclick="openNovelQueueModal()">📋 待下载列表 (<span id="novel-queue-badge-count">0</span>)</button>
                     </div>
-                    <div class="cat-action">进入专区 ➔</div>
                 </div>
 
-                <!-- SLG 模拟策略与互动养成专区 -->
-                <div class="cat-card slg-card" onclick="openCategory('slg')">
-                    <div class="cat-header">
-                        <div class="cat-title">♟️ SLG 策略与互动</div>
-                        <span class="cat-count slg-count" id="slg-count-badge">0 Games</span>
+                <!-- 小说展示区 (本地书架 + 线上检索结果) -->
+                <div id="novel-main-container">
+                    <!-- 1. 本地已收录书架 -->
+                    <div id="novel-local-section" style="margin-bottom:24px;">
+                        <div class="manga-grid" id="novels-shelf-grid"></div>
+                        <div id="novels-shelf-empty" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+                            <div style="font-size:32px;margin-bottom:8px;">📖</div>
+                            <div style="font-size:14px;font-weight:600;color:#f0f6fc;">暂无本地已收录小说</div>
+                            <div style="font-size:12px;margin-top:6px;">在上方搜索框检索感兴趣的作品，一键下载打包为标准 EPUB 即可离线畅读！</div>
+                        </div>
                     </div>
-                    <div class="cat-desc">
-                        SLG 模拟策略 · 动态互动 · 角色养成 · ACGGW 精选专区
+
+                    <!-- 2. 线上小说检索结果 -->
+                    <div id="novel-online-section" style="display:none;margin-top:20px;border-top:1px dashed #30363d;padding-top:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                            <div style="font-size:15px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:6px;">
+                                <span>🌐 小说检索结果</span>
+                                <span id="novel-online-stats" style="font-size:12px;color:#58a6ff;font-weight:600;">(共 0 部)</span>
+                            </div>
+                        </div>
+
+                        <!-- 搜索源与来源展示栏 -->
+                        <div id="novel-online-source-bar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#8b949e;margin-bottom:12px;background:#161b22;padding:8px 12px;border-radius:8px;border:1px solid #30363d;flex-wrap:wrap;">
+                            <div style="display:flex;align-items:center;gap:6px;">
+                                <span>📡 检索数据源:</span>
+                                <span id="novel-source-indicator" style="color:#58a6ff;font-weight:600;">🏛️ 中华古典名著公版库 · 全网精选文学源 (修真/科幻/都市/家庭)</span>
+                            </div>
+                            <div id="novel-source-tip" style="font-size:11px;color:#7d8590;">支持书名/作者/标签/题材多维联想</div>
+                        </div>
+
+                        <div id="novel-online-loading" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                            <div style="font-size:28px;animation:spin 1s linear infinite;display:inline-block;margin-bottom:8px;">⏳</div>
+                            <div>正在检索小说书库，请稍候...</div>
+                        </div>
+                        <div class="manga-grid" id="novels-online-grid"></div>
+                        <div id="novel-online-end-tip" style="display:none;text-align:center;padding:30px 20px;color:#484f58;font-size:13px;">
+                            —— 已展示全部匹配结果 ——
+                        </div>
                     </div>
-                    <div class="cat-action">进入专区 ➔</div>
+                </div>
+            </div>
+
+            <!-- 二级页面 3: 技术文档 (Docs Explorer - 资源管理器式分类层级浏览) -->
+            <div id="media-docs-view" style="display:none;">
+                <div class="docs-explorer-toolbar">
+                    <div class="docs-breadcrumbs-bar" id="docs-breadcrumbs-bar">
+                        <span class="docs-crumb-item active" onclick="navigateDocsDir('')">🏠 技术文档根目录</span>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <div class="filter-tabs" id="doc-filter-tabs">
+                            <button class="tab-btn active" data-doc-filter="all" onclick="switchDocFilter('all', this)">全部</button>
+                            <button class="tab-btn" data-doc-filter="md" onclick="switchDocFilter('md', this)">📙 Markdown</button>
+                            <button class="tab-btn" data-doc-filter="rst" onclick="switchDocFilter('rst', this)">📕 reStructuredText</button>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <input type="text" id="doc-search-input" class="search-input" style="width:210px;" placeholder="🔍 搜索文档..." oninput="onDocSearchInput(this.value)">
+                            <button class="reader-tool-btn" onclick="refreshCurrentDocsDir()" title="刷新当前目录">🔄</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="docs-explorer-grid" id="docs-explorer-grid"></div>
+                <div id="docs-shelf-empty" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;margin-top:14px;">
+                    <div style="font-size:36px;margin-bottom:10px;">📂</div>
+                    <div style="font-size:15px;font-weight:600;color:#f0f6fc;">此目录下暂无文档</div>
+                    <div style="font-size:13px;margin-top:6px;">可将 Markdown (.md) 或 RST (.rst) 技术手册放入当前目录。</div>
+                </div>
+            </div>
+
+            <!-- 二级页面 4: 音声画廊 (Audio Gallery) -->
+            <div id="media-audio-view" style="display:none;">
+                <!-- 顶栏统计与控制 -->
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <span style="font-size:15px;font-weight:700;color:#f0f6fc;">🎧 音声画廊</span>
+                        <span id="audio-total-count-badge" style="font-size:12px;color:#58a6ff;background:#1f6feb22;padding:2px 8px;border-radius:12px;border:1px solid #388bfd44;">共 0 部</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="audio-search-input" class="search-input" style="width:230px;" placeholder="🔍 搜索音声作品..." oninput="onAudioSearchInput(this.value)">
+                        <button class="manga-mini-btn" onclick="playRandomAudio()" title="随机播放一首">🔀 随机播放</button>
+                    </div>
                 </div>
 
-                <!-- Flash 殿堂级神作专区 -->
-                <div class="cat-card flash-card" onclick="openCategory('flash')">
-                    <div class="cat-header">
-                        <div class="cat-title">⚡ Flash 殿堂神作</div>
-                        <span class="cat-count flash-count" id="flash-count-badge">0 Games</span>
-                    </div>
-                    <div class="cat-desc">
-                        王国保卫战 · 狂扁小朋友 · 战争进化史 · 坏冰淇淋 · Pepper Flash 原生硬件加速
-                    </div>
-                    <div class="cat-action">进入专区 ➔</div>
+                <!-- 音频曲目列表 -->
+                <div class="audio-track-list" id="audio-track-list"></div>
+
+                <!-- 加载更多指示器 -->
+                <div id="audio-loading-more" style="display:none;text-align:center;padding:20px;color:#8b949e;">
+                    <span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> 正在加载更多音声...
+                </div>
+
+                <!-- 空状态提示 -->
+                <div id="audio-empty-msg" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+                    <div style="font-size:36px;margin-bottom:10px;">🎧</div>
+                    <div style="font-size:15px;font-weight:600;color:#f0f6fc;">未扫描到音频文件</div>
+                    <div style="font-size:13px;margin-top:6px;">请确保 SD 卡已挂载于 <code>/run/media/deck/FUCKDECK/telegramFile/</code> 或本地 <code>audio/</code> 目录。</div>
                 </div>
             </div>
         </div>
 
-        <!-- 二级页面: 游戏网格列表 -->
-        <div id="list-view">
-            <div class="game-grid" id="game-grid"></div>
+        <!-- 漫画专属待下载列表模态弹窗 -->
+        <div class="manga-modal-backdrop" id="manga-download-queue-modal">
+            <div class="manga-modal-content" style="max-width:560px;">
+                <div class="manga-modal-header">
+                    <div style="font-size:15px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                        <span>🖼️ 漫画待下载列表</span>
+                        <span id="manga-queue-modal-badge" style="font-size:12px;color:#58a6ff;font-weight:600;">(共 0 部)</span>
+                    </div>
+                    <button class="manga-mini-btn" onclick="closeMangaQueueModal()" style="font-size:14px;padding:4px 8px;">✕</button>
+                </div>
+                <div class="manga-modal-body" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+                    <div id="manga-queue-empty-msg" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                        <div style="font-size:32px;margin-bottom:8px;">📭</div>
+                        <div style="font-size:14px;color:#c9d1d9;font-weight:600;">漫画待下载列表为空</div>
+                        <div style="font-size:12px;color:#8b949e;margin-top:6px;">在漫画区搜索框输入作品名或编号，检索出作品后点击【➕ 加入待下载列表】即可加入此处。</div>
+                    </div>
+                    <div id="manga-queue-items-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+                </div>
+                <div class="manga-modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+                    <button class="manga-btn" onclick="clearMangaDownloadQueue()" id="manga-queue-clear-btn">🧹 清空列表</button>
+                    <div style="display:flex;gap:10px;">
+                        <button class="manga-btn" onclick="closeMangaQueueModal()">关闭</button>
+                        <button class="manga-btn manga-btn-primary" id="manga-queue-start-download-btn" onclick="startMangaQueueBatchDownload()">📥 开始批量下载 (<span id="manga-queue-btn-count">0</span>)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 小说专属待下载列表模态弹窗 -->
+        <div class="manga-modal-backdrop" id="novel-download-queue-modal">
+            <div class="manga-modal-content" style="max-width:560px;">
+                <div class="manga-modal-header">
+                    <div style="font-size:15px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                        <span>📖 小说待下载列表</span>
+                        <span id="novel-queue-modal-badge" style="font-size:12px;color:#58a6ff;font-weight:600;">(共 0 部)</span>
+                    </div>
+                    <button class="manga-mini-btn" onclick="closeNovelQueueModal()" style="font-size:14px;padding:4px 8px;">✕</button>
+                </div>
+                <div class="manga-modal-body" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+                    <div id="novel-queue-empty-msg" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                        <div style="font-size:32px;margin-bottom:8px;">📭</div>
+                        <div style="font-size:14px;color:#c9d1d9;font-weight:600;">小说待下载列表为空</div>
+                        <div style="font-size:12px;color:#8b949e;margin-top:6px;">在小说专区搜索框输入书名或作者，检索出作品后点击【➕ 加入待下载列表】即可加入此处批量封箱为 EPUB。</div>
+                    </div>
+                    <div id="novel-queue-items-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+                </div>
+                <div class="manga-modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+                    <button class="manga-btn" onclick="clearNovelDownloadQueue()" id="novel-queue-clear-btn">🧹 清空列表</button>
+                    <div style="display:flex;gap:10px;">
+                        <button class="manga-btn" onclick="closeNovelQueueModal()">关闭</button>
+                        <button class="manga-btn manga-btn-primary" id="novel-queue-start-download-btn" onclick="startNovelQueueBatchDownload()">📥 开始批量打包 EPUB (<span id="novel-queue-btn-count">0</span>)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 章节选择补充下载模态弹窗 -->
+        <div class="manga-modal-backdrop" id="manga-chapters-modal">
+            <div class="manga-modal-content">
+                <div class="manga-modal-header">
+                    <div>
+                        <div style="font-size:15px;font-weight:700;color:#f0f6fc;" id="modal-album-title">选择下载章节</div>
+                        <div style="font-size:12px;color:#8b949e;" id="modal-album-author"></div>
+                    </div>
+                    <button class="manga-mini-btn" onclick="closeChapterModal()" style="font-size:14px;padding:4px 8px;">✕</button>
+                </div>
+                <div style="padding:8px 20px;background:#0d1117;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center;">
+                    <div style="display:flex;gap:8px;">
+                        <button class="manga-mini-btn" onclick="selectAllChapters(true)">全选</button>
+                        <button class="manga-mini-btn" onclick="selectAllChapters(false)">全不选</button>
+                    </div>
+                    <span style="font-size:12px;color:#8b949e;" id="modal-selected-count">已选 0 话</span>
+                </div>
+                <div class="manga-modal-body" id="modal-chapters-list" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(130px, 1fr));gap:8px;">
+                    <!-- 章节勾选复选框 -->
+                </div>
+                <div class="manga-modal-footer">
+                    <label style="font-size:12px;color:#8b949e;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" id="modal-clean-temp-cb" checked>
+                        <span>打包后清理切片碎片</span>
+                    </label>
+                    <div style="display:flex;gap:8px;">
+                        <button class="manga-btn" onclick="closeChapterModal()">取消</button>
+                        <button class="manga-btn manga-btn-primary" onclick="confirmDownloadSelectedChapters()">🚀 开始下载所选章节</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 内嵌 Webtoon 瀑布流漫画阅读器全屏视口 -->
+        <div id="manga-reader-modal">
+            <div class="reader-topbar">
+                <div class="reader-topbar-tools">
+                    <button class="manga-btn reader-back-btn" onclick="closeMangaReader()">◀ <span class="reader-back-text">返回</span></button>
+                    <div class="reader-topbar-right">
+                        <span id="reader-page-counter" class="reader-counter">0 / 0</span>
+                        <button class="manga-btn reader-ext-btn" onclick="openCurrentMangaExternal()" title="使用系统预设应用 (Okular) 打开当前 CBZ">🖥️ <span class="reader-ext-text">外部打开</span></button>
+                        <button class="manga-btn" id="manga-fullscreen-btn" onclick="toggleReaderFullscreen()" title="切换全屏">⛶ 全屏</button>
+                        <button class="manga-mini-btn" onclick="closeMangaReader()" title="关闭阅读器" style="font-size:15px;padding:4px 8px;line-height:1;margin-left:2px;">✕</button>
+                    </div>
+                </div>
+                <div class="reader-title-box" id="reader-title">漫画阅读器</div>
+            </div>
+            <div class="reader-content" id="reader-image-container">
+                <!-- 动态瀑布流流式载入漫画切片 -->
+            </div>
+        </div>
+
+        <!-- 全能文本阅读器全屏视口 (TXT / Markdown / RST) -->
+        <div id="novel-reader-modal" class="novel-theme-dark">
+            <div class="novel-reader-container">
+                <div class="novel-reader-header">
+                    <div style="display:flex;align-items:center;gap:10px;overflow:hidden;flex:1;">
+                        <button class="reader-tool-btn" onclick="closeNovelReader()">◀ 返回中枢</button>
+                        <span id="novel-reader-ext-badge" class="novel-badge novel-badge-txt">TXT</span>
+                        <span id="novel-reader-title" class="novel-reader-title">文档标题</span>
+                        <span id="novel-reader-meta" style="font-size:12px;color:#8b949e;white-space:nowrap;"></span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                        <button id="novel-chapter-btn" class="reader-tool-btn" onclick="toggleChapterDrawer()">📋 目录</button>
+                        <button class="reader-tool-btn" onclick="changeFontSize(-1)" title="缩小字号">A-</button>
+                        <button class="reader-tool-btn" onclick="changeFontSize(1)" title="放大字号">A+</button>
+                        <button class="reader-tool-btn" id="novel-theme-btn" onclick="cycleReaderTheme()" title="切换配色">🌙 暗夜</button>
+                        <button class="reader-tool-btn" id="novel-fullscreen-btn" onclick="toggleNovelFullscreen()">⛶ 全屏</button>
+                        <button class="manga-mini-btn" onclick="closeNovelReader()" style="font-size:16px;padding:4px 10px;">✕</button>
+                    </div>
+                </div>
+                <div class="novel-reader-body">
+                    <div class="novel-chapter-drawer" id="novel-chapter-drawer" style="display:none;">
+                        <div style="font-weight:700;padding:12px 14px;border-bottom:1px solid var(--novel-border);color:var(--novel-heading);">📑 章节目录 (<span id="novel-chapter-count">0</span>)</div>
+                        <div id="novel-chapter-list" style="overflow-y:auto;flex:1;padding:8px;"></div>
+                    </div>
+                    <div class="novel-content-scroll" id="novel-content-scroll">
+                        <div class="novel-content-view" id="novel-content-view">
+                            <div style="text-align:center;padding:40px;color:#8b949e;">正在加载文档...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <!-- 全局常驻浮动音频播放底栏 (音声画廊播放器) -->
+    <div id="global-audio-player-bar">
+        <audio id="main-audio-element" preload="none"></audio>
+        
+        <!-- 左侧：唱片 + 标题 + 格式标签 (已移除冗余时间) -->
+        <div class="player-left">
+            <div class="player-disc" id="player-disc-icon">🎧</div>
+            <div class="player-track-info">
+                <div class="player-title" id="player-track-title">未播放音声</div>
+                <div class="player-sub-badge" id="player-track-badge">音声画廊 · 正在播放</div>
+            </div>
+        </div>
+
+        <!-- 中间：控制按钮 + 时间轴进度条 -->
+        <div class="player-center">
+            <div class="player-controls">
+                <button class="player-icon-btn" onclick="cycleAudioMode()" id="player-mode-quick-btn" title="播放模式">🔁 列表</button>
+                <button class="player-ctrl-btn" onclick="playPrevAudio()" title="上一首">⏮</button>
+                <button class="player-play-btn" id="player-play-btn" onclick="toggleAudioPlay()" title="播放 / 暂停">▶</button>
+                <button class="player-ctrl-btn" onclick="playNextAudio()" title="下一首">⏭</button>
+                <button class="player-icon-btn" onclick="cycleAudioSpeed()" id="player-speed-quick-btn" title="播放倍速">1.0x</button>
+            </div>
+            <div class="player-progress-wrap">
+                <span class="player-time-num" id="player-cur-time">00:00</span>
+                <div class="player-slider-container">
+                    <input type="range" id="player-seek-bar" class="player-slider" min="0" max="100" value="0" oninput="onAudioSeek(this.value)">
+                </div>
+                <span class="player-time-num" id="player-total-time">00:00</span>
+            </div>
+        </div>
+
+        <!-- 右侧：定时/音量/关闭 -->
+        <div class="player-right">
+            <button class="player-pill-btn" id="player-sleep-btn" onclick="cycleSleepTimer()" title="定时关闭">⏳ 定时</button>
+            <div class="player-volume-box">
+                <span style="font-size:14px;color:#8b949e;">🔊</span>
+                <input type="range" id="player-vol-slider" class="player-slider player-vol-slider" min="0" max="1" step="0.05" value="1" oninput="setAudioVolume(this.value)" title="音量调节">
+            </div>
+            <button class="player-close-btn" onclick="hideGlobalAudioPlayer()" title="最小化底栏">✕</button>
         </div>
     </div>
 
-    <script>
-        let allGames = [];
-        let currentTab = 'rpg';
-        let currentStandaloneSubTab = null;
-        let currentSearchQuery = '';
-
-        // 收藏夹管理 (永久存储于 localStorage)
-        function getFavorites() {
-            try {
-                return JSON.parse(localStorage.getItem('rpgweb_favorites') || '[]');
-            } catch(e) {
-                return [];
-            }
-        }
-
-        function saveFavorites(favs) {
-            localStorage.setItem('rpgweb_favorites', JSON.stringify(favs));
-            updateFavBadges();
-        }
-
-        function toggleFavorite(e, gameId) {
-            e.preventDefault();
-            e.stopPropagation();
-            let favs = getFavorites();
-            if (favs.includes(gameId)) {
-                favs = favs.filter(id => id !== gameId);
-            } else {
-                favs.push(gameId);
-            }
-            saveFavorites(favs);
-            applyFilter();
-        }
-
-        function updateFavBadges() {
-            const favs = getFavorites();
-            const badge = document.getElementById('fav-count-badge');
-            if (badge) badge.textContent = favs.length + ' Favorites';
-        }
-
-        function showPortalView() {
-            var initStyle = document.getElementById('cat-init-style');
-            if (initStyle) initStyle.remove();
-            document.getElementById('portal-view').style.display = 'block';
-            document.getElementById('list-view').style.display = 'none';
-            document.getElementById('list-controls').style.display = 'none';
-            document.getElementById('nav-back-btn').style.display = 'none';
-            document.getElementById('global-search').value = '';
-            currentSearchQuery = '';
-            currentTab = 'rpg';
-            currentStandaloneSubTab = null;
-            document.querySelectorAll('#standalone-sub-filters .sub-tab-btn').forEach(btn => btn.classList.remove('active'));
-            if (window.history && window.history.replaceState) {
-                window.history.replaceState(null, '', window.location.pathname);
-            }
-            window.scrollTo({ top: 0, behavior: 'instant' });
-        }
-
-        function openCategory(cat) {
-            document.getElementById('portal-view').style.display = 'none';
-            document.getElementById('list-view').style.display = 'block';
-            document.getElementById('list-controls').style.display = 'flex';
-            document.getElementById('nav-back-btn').style.display = 'flex';
-            currentTab = cat;
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.tab === cat);
-            });
-            applyFilter();
-        }
-
-        function switchStandaloneSubTab(sub, el) {
-            if (currentStandaloneSubTab === sub) {
-                currentStandaloneSubTab = null;
-                if (el) el.classList.remove('active');
-            } else {
-                currentStandaloneSubTab = sub;
-                document.querySelectorAll('#standalone-sub-filters .sub-tab-btn').forEach(btn => btn.classList.remove('active'));
-                if (el) el.classList.add('active');
-            }
-            applyFilter();
-        }
-
-        function switchTab(tab, el) {
-            currentTab = tab;
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            if (el) el.classList.add('active');
-            applyFilter();
-        }
-
-        function onSearchInput(val) {
-            currentSearchQuery = (val || '').trim().toLowerCase();
-            if (currentSearchQuery && document.getElementById('portal-view').style.display !== 'none') {
-                openCategory('rpg');
-            } else {
-                applyFilter();
-            }
-        }
-
-        function applyFilter() {
-            const favs = getFavorites();
-            const standaloneFilterEl = document.getElementById('standalone-sub-filters');
-            if (standaloneFilterEl) {
-                standaloneFilterEl.style.display = (!currentSearchQuery && currentTab === 'standalone') ? 'flex' : 'none';
-            }
-
-            const filtered = allGames.filter(g => {
-                const name = g.name || g.id || '';
-                const matchesQuery = !currentSearchQuery || g.id.toLowerCase().includes(currentSearchQuery) || name.toLowerCase().includes(currentSearchQuery);
-
-                // 全局搜索：只要有搜索词，始终在所有游戏（全库）中跨类别搜索
-                if (currentSearchQuery) {
-                    return matchesQuery;
-                }
-
-                // 无搜索词时，按当前选中的专区与子标签过滤
-                if (currentTab === 'fav') return favs.includes(g.id);
-                if (currentTab === 'standalone') {
-                    if (g.type !== 'standalone') return false;
-                    if (currentStandaloneSubTab) return g.engine === currentStandaloneSubTab;
-                    return true;
-                }
-                return g.type === currentTab;
-            });
-            renderGames(filtered);
-        }
-
-        const RETRO_FRANCHISES = [
-            {
-                key: 'kov',
-                name: '三国战纪与街机清版名作 (Knights of Valour & Arcade Classics)',
-                icon: '🐉',
-                match: g => /valour|oriental legend|warriors of fate|三国|西游/i.test(g.id) || /kov|orlegend|wof/i.test(g.rom_file || '')
-            },
-            {
-                key: 'kof',
-                name: '拳皇全系列 (The King of Fighters)',
-                icon: '🥊',
-                match: g => /fighters|kof|热斗/i.test(g.id) || /kof/i.test(g.rom_file || '')
-            },
-            {
-                key: 'mslug',
-                name: '合金弹头全系列 (Metal Slug)',
-                icon: '🪖',
-                match: g => /metal slug|mslug/i.test(g.id) || /mslug/i.test(g.rom_file || '')
-            },
-            {
-                key: 'pokemon',
-                name: '宝可梦全世代与外传 (Pokemon)',
-                icon: '🐾',
-                match: g => /pokemon|宝可梦|口袋妖怪/i.test(g.id)
-            },
-            {
-                key: 'zelda',
-                name: '塞尔达传说系列 (The Legend of Zelda)',
-                icon: '🗡️',
-                match: g => /zelda|塞尔达/i.test(g.id)
-            },
-            {
-                key: 'mario',
-                name: '超级马里奥与瓦里奥系列 (Super Mario & Wario)',
-                icon: '🍄',
-                match: g => /mario|wario|yoshi|princess peach|马里奥|瓦里奥|耀西|碧姬/i.test(g.id)
-            },
-            {
-                key: 'ff',
-                name: '最终幻想系列 (Final Fantasy)',
-                icon: '🔮',
-                match: g => /final fantasy|最终幻想/i.test(g.id)
-            },
-            {
-                key: 'contra',
-                name: '魂斗罗全系列 (Contra)',
-                icon: '🔫',
-                match: g => /contra|operation c|魂斗罗/i.test(g.id)
-            },
-            {
-                key: 'other_retro',
-                name: '其他复古经典名作 (Other Retro Classics)',
-                icon: '🕹️',
-                match: g => g.type === 'retro'
-            }
-        ];
-
-        function createGameCardElement(g, favs) {
-            const item = document.createElement('a');
-            item.className = 'game-card';
-            
-            let actionProto = 'action://play-rpg';
-            let badgeText = 'RPG';
-            let badgeClass = 'badge-rpg';
-
-            if (g.type === 'standalone') {
-                actionProto = 'action://play-standalone';
-                const eng = (g.engine || 'PC').toLowerCase();
-                if (eng === 'renpy') {
-                    badgeText = "Ren'Py";
-                    badgeClass = 'badge-renpy';
-                } else if (eng === 'unity') {
-                    badgeText = 'Unity';
-                    badgeClass = 'badge-unity';
-                } else if (eng === 'godot') {
-                    badgeText = 'Godot';
-                    badgeClass = 'badge-godot';
-                } else if (eng === 'unreal') {
-                    badgeText = 'Unreal';
-                    badgeClass = 'badge-unreal';
-                } else if (eng === 'app') {
-                    badgeText = 'Windows 软件';
-                    badgeClass = 'badge-app';
-                } else {
-                    badgeText = 'PC / Wine';
-                    badgeClass = 'badge-wine';
-                }
-            } else if (g.type === 'retro') {
-                actionProto = 'action://play-retro';
-                badgeText = (g.system || 'Retro').toUpperCase();
-                badgeClass = 'badge-retro';
-            } else if (g.type === 'slg') {
-                actionProto = 'action://play-slg';
-                badgeText = 'SLG';
-                badgeClass = 'badge-slg';
-            } else if (g.type === 'flash') {
-                actionProto = 'action://play-flash';
-                badgeText = 'Flash';
-                badgeClass = 'badge-flash';
-            }
-
-            item.href = actionProto + '?id=' + encodeURIComponent(g.id) + '&title=' + encodeURIComponent(g.name || g.id);
-
-            const isFav = favs.includes(g.id);
-            const starBtn = document.createElement('button');
-            starBtn.className = 'fav-star-btn' + (isFav ? ' is-fav' : '');
-            starBtn.title = isFav ? '取消收藏' : '加入喜欢';
-            starBtn.innerHTML = isFav ? '★' : '☆';
-            starBtn.onclick = (e) => toggleFavorite(e, g.id);
-
-            const titleBox = document.createElement('div');
-            titleBox.className = 'game-title-box';
-
-            const titleSpan = document.createElement('span');
-            titleSpan.className = 'game-title';
-            titleSpan.textContent = g.id;
-
-            titleBox.appendChild(starBtn);
-            titleBox.appendChild(titleSpan);
-
-            const badgeSpan = document.createElement('span');
-            badgeSpan.className = 'engine-badge ' + badgeClass;
-            badgeSpan.textContent = badgeText;
-
-            item.appendChild(titleBox);
-            item.appendChild(badgeSpan);
-            item.addEventListener('click', () => {
-                sessionStorage.setItem('hub_scroll_' + currentTab, String(window.scrollY));
-            });
-            return item;
-        }
-
-        function createSeriesCardElement(icon, title, count, gameCards) {
-            const card = document.createElement('div');
-            card.className = 'series-card';
-
-            const header = document.createElement('div');
-            header.className = 'series-header';
-
-            const titleBox = document.createElement('div');
-            titleBox.className = 'series-title-box';
-
-            const iconSpan = document.createElement('span');
-            iconSpan.className = 'series-icon';
-            iconSpan.textContent = icon;
-
-            const titleSpan = document.createElement('span');
-            titleSpan.className = 'series-title';
-            titleSpan.textContent = title;
-
-            titleBox.appendChild(iconSpan);
-            titleBox.appendChild(titleSpan);
-
-            const countBadge = document.createElement('span');
-            countBadge.className = 'series-count-badge';
-            countBadge.textContent = count + ' 款游戏';
-
-            header.appendChild(titleBox);
-            header.appendChild(countBadge);
-
-            const flow = document.createElement('div');
-            flow.className = 'series-game-flow';
-            gameCards.forEach(c => flow.appendChild(c));
-
-            card.appendChild(header);
-            card.appendChild(flow);
-            return card;
-        }
-
-        function renderGames(games) {
-            const grid = document.getElementById('game-grid');
-            grid.innerHTML = '';
-            
-            const stats = document.getElementById('filter-stats');
-            if (stats) stats.textContent = '共 ' + games.length + ' 款游戏';
-
-            if (games.length === 0) {
-                const emptyTip = currentTab === 'fav' 
-                    ? '⭐ 暂无收藏游戏，点击任意游戏卡片左侧的 ★ 即可加入喜欢列表！'
-                    : '未检索到相关游戏';
-                const empty = document.createElement('div');
-                empty.className = 'empty-state';
-                empty.innerHTML = `
-                    <div style="font-size:36px;margin-bottom:12px;">🔍</div>
-                    <div style="font-size:16px;color:#c9d1d9;margin-bottom:6px;">${emptyTip}</div>
-                    <div style="font-size:13px;">请尝试更换搜索关键词或切换上方专区标签</div>
-                `;
-                grid.appendChild(empty);
-                return;
-            }
-
-            const favs = getFavorites();
-            const isRetroView = (currentTab === 'retro' && !currentSearchQuery);
-
-            if (isRetroView) {
-                const seriesContainer = document.createElement('div');
-                seriesContainer.className = 'series-container';
-
-                const assignedSet = new Set();
-                RETRO_FRANCHISES.forEach(f => {
-                    const matching = games.filter(g => !assignedSet.has(g.id) && f.match(g));
-                    if (matching.length > 0) {
-                        matching.forEach(g => assignedSet.add(g.id));
-                        const cards = matching.map(g => createGameCardElement(g, favs));
-                        seriesContainer.appendChild(createSeriesCardElement(f.icon, f.name, matching.length, cards));
-                    }
-                });
-
-                grid.appendChild(seriesContainer);
-            } else {
-                // 各专区平铺流 (RPG / 独立大作 / SLG / Flash / 喜欢)
-                games.forEach(g => {
-                    grid.appendChild(createGameCardElement(g, favs));
-                });
-            }
-
-            const savedScroll = sessionStorage.getItem('hub_scroll_' + currentTab);
-            if (savedScroll) {
-                const sTop = parseInt(savedScroll, 10);
-                document.documentElement.scrollTop = sTop;
-                document.body.scrollTop = sTop;
-                window.scrollTo(0, sTop);
-            }
-        }
-
-        function populateGames(games, isManualRefresh = false) {
-            allGames = games;
-            const rpgCount = games.filter(g => g.type === 'rpg').length;
-            const standaloneCount = games.filter(g => g.type === 'standalone').length;
-            const retroCount = games.filter(g => g.type === 'retro').length;
-            const slgCount = games.filter(g => g.type === 'slg').length;
-            const flashCount = games.filter(g => g.type === 'flash').length;
-            
-            document.getElementById('total-badge').textContent = games.length + ' 款游戏';
-            document.getElementById('rpg-count-badge').textContent = rpgCount + ' Games';
-            const standaloneBadge = document.getElementById('standalone-count-badge');
-            if (standaloneBadge) standaloneBadge.textContent = standaloneCount + ' Games';
-            document.getElementById('retro-count-badge').textContent = retroCount + ' Games';
-            document.getElementById('slg-count-badge').textContent = slgCount + ' Games';
-            document.getElementById('flash-count-badge').textContent = flashCount + ' Games';
-            
-            updateFavBadges();
-            
-            if (!isManualRefresh) {
-                const urlParams = new URLSearchParams(window.location.search);
-                const initCat = urlParams.get('category');
-                if (initCat && initCat !== 'portal') {
-                    document.getElementById('portal-view').style.display = 'none';
-                    document.getElementById('list-view').style.display = 'block';
-                    document.getElementById('list-controls').style.display = 'flex';
-                    document.getElementById('nav-back-btn').style.display = 'flex';
-                    currentTab = initCat;
-                    document.querySelectorAll('.tab-btn').forEach(btn => {
-                        btn.classList.toggle('active', btn.dataset.tab === initCat);
-                    });
-                }
-            }
-            applyFilter();
-        }
-
-        // 优先从缓存中同步完成秒级渲染，避免网络请求延迟导致的视觉闪烁
-        try {
-            const cached = sessionStorage.getItem('omni_games_cache');
-            if (cached) {
-                populateGames(JSON.parse(cached));
-            }
-        } catch(e) {}
-
-        function loadGames(isManualRefresh = false) {
-            const btn = document.querySelector('.refresh-btn');
-            if (btn && isManualRefresh) {
-                btn.classList.add('spinning');
-            }
-
-            fetch('/api/games?t=' + Date.now(), { cache: 'no-store' })
-                .then(res => res.json())
-                .then(games => {
-                    sessionStorage.setItem('omni_games_cache', JSON.stringify(games));
-                    populateGames(games, isManualRefresh);
-                    if (btn && isManualRefresh) {
-                        setTimeout(() => btn.classList.remove('spinning'), 350);
-                    }
-                })
-                .catch(err => {
-                    console.error('Failed to load games:', err);
-                    if (btn && isManualRefresh) btn.classList.remove('spinning');
-                });
-        }
-
-        loadGames();
-    </script>
+    <script src="/hub.js"></script>
 </body>
 </html>

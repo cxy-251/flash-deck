@@ -1,7 +1,7 @@
-# 🎮 Omni Deck (全能甲板) v2.1
+# 🎮 Omni Deck (全能甲板) v2.3
 
-> **专为 Steam Deck (SteamOS/Linux) 打造的多引擎与全世代单机游戏控制中心**
-> *(Steam 精选 · 独立大作 · RPG Maker · Ren'Py 视觉小说 · Retro 复古街机掌机 · SLG 模拟策略 · Flash 殿堂神作)*
+> **专为 Steam Deck (SteamOS/Linux) 打造的多引擎单机游戏与媒体流式中枢控制中心**
+> *(Steam 精选 · 独立大作 · RPG Maker · Ren'Py · Retro 复古掌机 · SLG · Flash 殿堂 · 漫画阅读器 · 小说书架 · 音声广播剧)*
 
 [![Platform](https://img.shields.io/badge/Platform-Steam%20Deck%20%7C%20Linux-E95420?style=flat&logo=steam&logoColor=white)](https://store.steampowered.com/steamos)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)

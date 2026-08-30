@@ -19,18 +19,25 @@ wine_games/*/*
 standalone_games/*/*
 steam_games/*/*
 
-# Manga and comic archives
-manga/*/*
+# Documentation subfolders (keep root docs files tracked)
+docs/*/
+
+# Manga and novels archives
+manga/
+novels/
 *.cbz
 *.cbr
+*.epub
+
+# Local configs
+.lan_config.json
+.wan_config.json
 
 # Keep emulator runtime
 !retro_games/emulatorjs/**
 
 # Preserve folder structure and adapters
 !rpg_games/*/.gitkeep
-!renpy_games/*/.gitkeep
-!renpy_games/.gitkeep
 !retro_games/*/.gitkeep
 !slg_games/*/.gitkeep
 

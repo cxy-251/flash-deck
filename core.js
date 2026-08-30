@@ -1,4 +1,11 @@
         (function() {
+            // Polyfill for structuredClone in older Chromium (PyQt5 / Chromium 87)
+            if (typeof window.structuredClone !== 'function') {
+                window.structuredClone = function(obj) {
+                    return JSON.parse(JSON.stringify(obj));
+                };
+            }
+
             if (!window.location.pathname.startsWith('/game/')) {
                 return;
             }
