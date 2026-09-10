@@ -15,6 +15,8 @@ import urllib.parse
 import ssl
 from typing import List, Dict, Any, Optional, Tuple
 
+import media_index
+
 logger = logging.getLogger("novel_service")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -168,93 +170,104 @@ def extract_epub_metadata_and_cover(epub_path: str) -> Dict[str, Any]:
         pass
     return meta
 
+def _rich_parse_novel(full_p: str) -> Dict[str, Any]:
+    """开一次 .epub 抽标题/作者/简介/有无封面 —— 只在文件新增/变动时被 media_index 调用。
+    .txt 只读前几行做摘要（本来就便宜）。"""
+    base_name = os.path.splitext(os.path.basename(full_p))[0]
+    ext = os.path.splitext(full_p)[1].lower()
+    m = {'title': base_name, 'author': '未知作者', 'excerpt': '', 'has_cover': False}
+    try:
+        if ext == '.epub':
+            em = extract_epub_metadata_and_cover(full_p)
+            m['title'] = em.get('title') or base_name
+            m['author'] = em.get('author') or '未知作者'
+            m['excerpt'] = em.get('intro') or ''
+            m['has_cover'] = bool(em.get('cover_bytes'))
+        else:
+            with open(full_p, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = [line.strip() for line in f if line.strip()]
+                m['excerpt'] = " ".join(lines[:3])[:120]
+    except Exception:
+        pass
+    return m
+
+
 def get_novels_library(q: str = "", is_nsfw: bool = False) -> List[Dict[str, Any]]:
-    """
-    扫描小说书架 (严格只扫描 novels 目录，绝不混入 docs)
-    is_nsfw: False -> novels/standard/ 及 novels/ 根目录
-             True  -> novels/nsfw/
-    """
+    """小说书架列表 —— 走 media_index 持久化索引：只有新增/变动的 .epub 才真去开压缩包，
+    其余吃 SQLite 缓存。冷启动第一次照旧慢，之后每次秒出。"""
     q = (q or "").lower().strip()
     norm_q = to_simplified_chinese(q).lower() if q else ""
-    items = []
-    seen_paths = set()
     valid_exts = {'.epub', '.txt'}
-
+    kind = 'novellib:nsfw' if is_nsfw else 'novellib:std'
     target_dirs = [NOVELS_NSFW_DIR] if is_nsfw else [NOVELS_STANDARD_DIR, NOVELS_DIR]
 
+    # 1. 快速收集文件 (path, mtime, size)，不开任何 epub
+    files = []
+    fs_info = {}          # path -> (root, fname, size, mtime)
+    seen = set()
     for dir_path in target_dirs:
         if not os.path.exists(dir_path):
             continue
-        for root, dirs, files in os.walk(dir_path):
-            # 防止在 novels 根目录递归扫描到 standard / nsfw 子目录导致重复
+        for root, dirs, fnames in os.walk(dir_path):
             if dir_path == NOVELS_DIR and root != NOVELS_DIR:
                 continue
-            for fname in sorted(files):
+            for fname in fnames:
                 if fname.startswith('.') or fname.startswith('__'):
                     continue
-                ext = os.path.splitext(fname)[1].lower()
-                if ext not in valid_exts:
+                if os.path.splitext(fname)[1].lower() not in valid_exts:
                     continue
-
                 full_p = os.path.join(root, fname)
-                if full_p in seen_paths:
+                if full_p in seen:
                     continue
-                seen_paths.add(full_p)
-
-                rel_p = os.path.relpath(full_p, SCRIPT_DIR).replace('\\', '/')
-                base_name = os.path.splitext(fname)[0]
-                if norm_q:
-                    norm_name = to_simplified_chinese(base_name).lower()
-                    norm_rel = to_simplified_chinese(rel_p).lower()
-                    if (norm_q not in norm_name) and (norm_q not in norm_rel) and (q not in base_name.lower()):
-                        continue
-
+                seen.add(full_p)
                 try:
-                    stat = os.stat(full_p)
-                    size_kb = round(stat.st_size / 1024, 1)
-                    mtime_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(stat.st_mtime))
-                    
-                    author = '未知作者'
-                    excerpt = ''
-                    has_cover = False
+                    st = os.stat(full_p)
+                except OSError:
+                    continue
+                files.append((full_p, st.st_mtime, st.st_size))
+                fs_info[full_p] = (root, fname, st.st_size, st.st_mtime)
 
-                    if ext == '.epub':
-                        epub_meta = extract_epub_metadata_and_cover(full_p)
-                        title = epub_meta.get('title') or base_name
-                        author = epub_meta.get('author') or '未知作者'
-                        excerpt = epub_meta.get('intro') or ''
-                        has_cover = bool(epub_meta.get('cover_bytes'))
-                    else:
-                        title = base_name
-                        try:
-                            with open(full_p, 'r', encoding='utf-8', errors='ignore') as f:
-                                lines = [line.strip() for line in f if line.strip()]
-                                excerpt = " ".join(lines[:3])[:120]
-                        except Exception:
-                            pass
+    def _on_progress(done, total):
+        try:
+            import manga_service
+            manga_service.broadcast_manga_event({'type': 'library_indexed', 'dir': 'novels', 'done': done, 'total': total})
+        except Exception:
+            pass
 
-                    # 提取分类（从所属子文件夹获取）
-                    sub_rel = os.path.relpath(root, NOVELS_NSFW_DIR if is_nsfw else (NOVELS_STANDARD_DIR if root.startswith(NOVELS_STANDARD_DIR) else NOVELS_DIR))
-                    category = sub_rel.split(os.sep)[0] if (sub_rel != '.' and not sub_rel.startswith('.')) else ('未分类' if is_nsfw else '公版名著')
+    metas = media_index.diff_scan(kind, files, _rich_parse_novel, sync_limit=24, on_progress=_on_progress)
 
-                    cover_url = f"/api/novels/cover?path={urllib.parse.quote(rel_p)}" if has_cover else ""
+    # 2. 组装
+    items = []
+    for full_p, (root, fname, size, mtime) in fs_info.items():
+        m = metas.get(full_p) or {}
+        rel_p = os.path.relpath(full_p, SCRIPT_DIR).replace('\\', '/')
+        base_name = os.path.splitext(fname)[0]
+        ext = os.path.splitext(fname)[1].lower()
+        title = m.get('title') or base_name
 
-                    items.append({
-                        'rel_path': rel_p,
-                        'filename': fname,
-                        'title': title,
-                        'author': author,
-                        'category': category,
-                        'ext': ext.lstrip('.'),
-                        'is_nsfw': is_nsfw,
-                        'size_kb': size_kb,
-                        'mtime': mtime_str,
-                        'excerpt': excerpt,
-                        'has_cover': has_cover,
-                        'cover_url': cover_url
-                    })
-                except Exception:
-                    pass
+        if norm_q:
+            norm_name = to_simplified_chinese(base_name).lower()
+            norm_rel = to_simplified_chinese(rel_p).lower()
+            if (norm_q not in norm_name) and (norm_q not in norm_rel) and (q not in base_name.lower()):
+                continue
+
+        sub_rel = os.path.relpath(root, NOVELS_NSFW_DIR if is_nsfw else (NOVELS_STANDARD_DIR if root.startswith(NOVELS_STANDARD_DIR) else NOVELS_DIR))
+        category = sub_rel.split(os.sep)[0] if (sub_rel != '.' and not sub_rel.startswith('.')) else ('未分类' if is_nsfw else '公版名著')
+        has_cover = bool(m.get('has_cover'))
+        items.append({
+            'rel_path': rel_p,
+            'filename': fname,
+            'title': title,
+            'author': m.get('author', '未知作者'),
+            'category': category,
+            'ext': ext.lstrip('.'),
+            'is_nsfw': is_nsfw,
+            'size_kb': round(size / 1024, 1),
+            'mtime': time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime)),
+            'excerpt': m.get('excerpt', ''),
+            'has_cover': has_cover,
+            'cover_url': f"/api/novels/cover?path={urllib.parse.quote(rel_p)}" if has_cover else "",
+        })
 
     items.sort(key=lambda x: x.get('mtime', ''), reverse=True)
     return items

@@ -9,10 +9,24 @@ flash_runner.py - Omni Deck 独立 Flash 运行引擎 (PyQt5 隔离环境)
 
 import sys
 import os
+import traceback
 import urllib.parse
 import json
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# PyQt5 默认把槽函数里未捕获的异常直接 qFatal 掉整个进程（"点一下按钮就闪退"）。
+# 装个 excepthook：异常写进 flash_crash.log，进程不因此退出。
+def _log_uncaught(exc_type, exc_value, exc_tb):
+    try:
+        with open(os.path.join(SCRIPT_DIR, "flash_crash.log"), "a") as f:
+            f.write("\n[flash_runner uncaught]\n")
+            traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
+    except Exception:
+        pass
+
+sys.excepthook = _log_uncaught
+
 PLUGINS_DIR = os.path.join(SCRIPT_DIR, "flash_games", "plugins")
 FLASH_PLUGIN_PATH = os.path.join(PLUGINS_DIR, "libpepflashplayer.so") if sys.platform != "win32" else os.path.join(PLUGINS_DIR, "pepflashplayer64.dll")
 
@@ -128,46 +142,63 @@ class FlashRunner(QMainWindow):
 
     def toggle_web_fullscreen(self):
         """
-        网页 Flash 窗口内全屏切换：
-        通过注入 JavaScript 寻找页面中的 <object> 或 <embed> Flash 元素，
-        将其样式修改为 fixed 定位并填满整个视口 (100vw, 100vh)，再次点击恢复原样。
+        网页 Flash 窗口内全屏切换：注入 JS，在**所有同源 iframe**里找最大的
+        <object>/<embed> Flash 元素（洛克王国的 Flash 藏在内层 iframe，只查顶层 document
+        找不到 —— 这就是之前"全屏按钮没生效"的原因），把它拉成 fixed 100vw/100vh 并派发
+        resize 让 Flash 重绘。找不到就回退到整窗口 OS 全屏。
         """
-        js = '''
+        js = r'''
         (function() {
-            if (window.__omni_fs) {
-                var el = window.__omni_fs_el;
-                if (el) {
-                    el.style.position = window.__omni_fs.pos;
-                    el.style.top = window.__omni_fs.top;
-                    el.style.left = window.__omni_fs.left;
-                    el.style.width = window.__omni_fs.width;
-                    el.style.height = window.__omni_fs.height;
-                    el.style.zIndex = window.__omni_fs.zindex;
+            function allDocs() {
+                var docs = [document];
+                function dive(w) {
+                    var fr;
+                    try { fr = w.frames; } catch (e) { return; }
+                    for (var i = 0; i < fr.length; i++) {
+                        try {
+                            var d = fr[i].document;
+                            if (d) { docs.push(d); dive(fr[i]); }
+                        } catch (e) {}   // 跨源 iframe，跳过
+                    }
                 }
-                window.__omni_fs = null;
-                return false;
-            } else {
-                var el = document.querySelector('object') || document.querySelector('embed');
-                if (el) {
-                    window.__omni_fs = {
-                        pos: el.style.position,
-                        top: el.style.top,
-                        left: el.style.left,
-                        width: el.style.width,
-                        height: el.style.height,
-                        zindex: el.style.zIndex
-                    };
-                    window.__omni_fs_el = el;
-                    el.style.position = 'fixed';
-                    el.style.top = '0';
-                    el.style.left = '0';
-                    el.style.width = '100vw';
-                    el.style.height = '100vh';
-                    el.style.zIndex = '999999';
-                    return true;
-                }
-                return null;
+                try { dive(window); } catch (e) {}
+                return docs;
             }
+            function biggestFlash() {
+                var best = null, bestArea = 0;
+                allDocs().forEach(function(d) {
+                    var list = d.querySelectorAll('object, embed');
+                    for (var i = 0; i < list.length; i++) {
+                        var el = list[i];
+                        var t = (el.type || '') + ' ' + (el.getAttribute('src') || '') + ' ' + (el.getAttribute('data') || '');
+                        if (list.length > 1 && t.indexOf('flash') < 0 && t.indexOf('.swf') < 0) continue;
+                        var r = el.getBoundingClientRect();
+                        var area = r.width * r.height;
+                        if (area >= bestArea) { bestArea = area; best = el; }
+                    }
+                });
+                return best;
+            }
+            if (window.top.__omni_fs && window.top.__omni_fs_el) {
+                var el = window.top.__omni_fs_el, s = window.top.__omni_fs;
+                el.style.position = s.pos; el.style.top = s.top; el.style.left = s.left;
+                el.style.width = s.width; el.style.height = s.height; el.style.zIndex = s.zindex;
+                window.top.__omni_fs = null; window.top.__omni_fs_el = null;
+                try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+                return false;
+            }
+            var el = biggestFlash();
+            if (!el) return null;
+            window.top.__omni_fs = {
+                pos: el.style.position, top: el.style.top, left: el.style.left,
+                width: el.style.width, height: el.style.height, zindex: el.style.zIndex
+            };
+            window.top.__omni_fs_el = el;
+            el.style.position = 'fixed'; el.style.top = '0'; el.style.left = '0';
+            el.style.width = '100vw'; el.style.height = '100vh'; el.style.zIndex = '2147483647';
+            el.style.background = '#000';
+            try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+            return true;
         })();
         '''
         def callback(is_fs):
@@ -175,16 +206,31 @@ class FlashRunner(QMainWindow):
                 self.btn_fullscreen.setText("🗗 还原页面")
             elif is_fs is False:
                 self.btn_fullscreen.setText("⛶ 窗口内全屏")
+            else:
+                # 页面里找不到 Flash 元素 —— 回退到整窗口 OS 全屏
+                if self.isFullScreen():
+                    self.showNormal()
+                    self.btn_fullscreen.setText("⛶ 窗口内全屏")
+                else:
+                    self.showFullScreen()
+                    self.btn_fullscreen.setText("🗗 退出全屏")
         self.page.runJavaScript(js, callback)
         
     def toggle_mute(self):
         """切换当前 Chromium 实例的底层音频静音状态"""
-        is_muted = self.page.audioMuted()
-        self.page.setAudioMuted(not is_muted)
-        if not is_muted:
-            self.btn_mute.setText("🔇 取消静音")
-        else:
-            self.btn_mute.setText("🔊 静音")
+        # 坑：PyQt5 QWebEnginePage 的读取器是 isAudioMuted()，没有 audioMuted() 这个方法。
+        # 之前写成 self.page.audioMuted() → AttributeError → PyQt5 把整个进程 qFatal 掉
+        #（就是"点一下声音按钮页面卡死然后闪退"）。
+        try:
+            is_muted = self.page.isAudioMuted()
+        except Exception:
+            is_muted = getattr(self, "_muted", False)
+        try:
+            self.page.setAudioMuted(not is_muted)
+        except Exception:
+            traceback.print_exc()
+        self._muted = not is_muted
+        self.btn_mute.setText("🔇 取消静音" if self._muted else "🔊 静音")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

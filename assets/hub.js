@@ -372,6 +372,11 @@ let currentGameSearchQuery = '';
 
         function applyRemoteClientRestrictions() {
             if (!isRemoteClient) return;
+            document.body.classList.add('remote-client');   // 驱动 CSS 隐藏联网/下载类控件
+            const mSearch = document.getElementById('manga-search-input');
+            if (mSearch) mSearch.placeholder = '🔍 搜索本机已收录的漫画...';
+            const nSearch = document.getElementById('novel-search-input');
+            if (nSearch) nSearch.placeholder = '🔍 搜索本机已收录的小说...';
 
             // 1. 灰显并禁用大厅门面的独立大作卡片
             const standaloneCard = document.querySelector('.standalone-card');
@@ -407,6 +412,23 @@ let currentGameSearchQuery = '';
                 if (badgeEl) badgeEl.textContent = '🔒 本机独占';
             }
 
+            // 2b. 灰显并禁用大厅门面的星际争霸2卡片（对战只能在 Steam Deck 实体机屏幕上跑）
+            const sc2Card = document.querySelector('.sc2-card');
+            if (sc2Card) {
+                sc2Card.style.opacity = '0.42';
+                sc2Card.style.filter = 'grayscale(0.85)';
+                sc2Card.style.cursor = 'not-allowed';
+                sc2Card.style.borderColor = '#30363d';
+                sc2Card.title = '🔒 星际争霸2 对战仅限 Steam Deck 实体机屏幕运行，局域网禁止远程拉起。';
+                const actionEl = sc2Card.querySelector('.cat-action');
+                if (actionEl) {
+                    actionEl.innerHTML = '🔒 仅限本机运行 (局域网禁用)';
+                    actionEl.style.color = '#8b949e';
+                }
+                const badgeEl = sc2Card.querySelector('#sc2-count-badge');
+                if (badgeEl) badgeEl.textContent = '🔒 本机独占';
+            }
+
             // 3. 灰显并禁用分类切换栏中的独立游戏标签和 Flash 标签
             const standaloneTabBtn = document.querySelector('.tab-btn[data-tab="standalone"]');
             if (standaloneTabBtn) {
@@ -421,6 +443,13 @@ let currentGameSearchQuery = '';
                 flashTabBtn.style.cursor = 'not-allowed';
                 flashTabBtn.style.filter = 'grayscale(0.85)';
                 flashTabBtn.title = '🔒 Flash 殿堂仅限 Steam Deck 本机运行 (外部浏览器不支持 Flash)';
+            }
+            const sc2TabBtn = document.querySelector('.tab-btn[data-tab="sc2"]');
+            if (sc2TabBtn) {
+                sc2TabBtn.style.opacity = '0.38';
+                sc2TabBtn.style.cursor = 'not-allowed';
+                sc2TabBtn.style.filter = 'grayscale(0.85)';
+                sc2TabBtn.title = '🔒 星际争霸2 对战仅限 Steam Deck 本机运行 (局域网已禁用)';
             }
 
             // 4. 隐藏网络能力开关 (局域网与广域网)：远程访客严禁操作服务端的网络能力，同时为移动端界面释放宝贵顶栏空间
@@ -440,6 +469,7 @@ let currentGameSearchQuery = '';
 
         function removeRemoteClientRestrictions() {
             // Steam Deck 本机环境：彻底恢复独立大作卡片与专区原本的生机与互动能力
+            document.body.classList.remove('remote-client');
             const standaloneCard = document.querySelector('.standalone-card');
             if (standaloneCard) {
                 standaloneCard.style.opacity = '';
@@ -478,6 +508,22 @@ let currentGameSearchQuery = '';
                 }
             }
 
+            const sc2Card = document.querySelector('.sc2-card');
+            if (sc2Card) {
+                sc2Card.style.opacity = '';
+                sc2Card.style.filter = '';
+                sc2Card.style.cursor = '';
+                sc2Card.style.borderColor = '';
+                sc2Card.title = '';
+                const actionEl = sc2Card.querySelector('.cat-action');
+                if (actionEl) {
+                    actionEl.innerHTML = '进入专区 →';
+                    actionEl.style.color = '';
+                }
+                const badgeEl = sc2Card.querySelector('#sc2-count-badge');
+                if (badgeEl) badgeEl.textContent = '离线对战';
+            }
+
             const standaloneTabBtn = document.querySelector('.tab-btn[data-tab="standalone"]');
             if (standaloneTabBtn) {
                 standaloneTabBtn.style.opacity = '';
@@ -491,6 +537,13 @@ let currentGameSearchQuery = '';
                 flashTabBtn.style.cursor = '';
                 flashTabBtn.style.filter = '';
                 flashTabBtn.title = '';
+            }
+            const sc2TabBtn = document.querySelector('.tab-btn[data-tab="sc2"]');
+            if (sc2TabBtn) {
+                sc2TabBtn.style.opacity = '';
+                sc2TabBtn.style.cursor = '';
+                sc2TabBtn.style.filter = '';
+                sc2TabBtn.title = '';
             }
 
             // 恢复本机网络能力控制按钮显示
@@ -805,6 +858,10 @@ let currentGameSearchQuery = '';
                 alert('🔒 Flash 殿堂专区依赖 Steam Deck 本地 Pepper Flash 插件环境，外部浏览器不支持运行。\n\n局域网访问已禁用此专区。');
                 return;
             }
+            if (isRemoteClient && tab === 'sc2') {
+                alert('🔒 星际争霸2 对战仅限在 Steam Deck 实体机屏幕上运行，局域网禁止远程拉起。');
+                return;
+            }
             cleanupCatInitStyle();
             currentTab = tab;
             document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -892,6 +949,10 @@ let currentGameSearchQuery = '';
         function onMangaSearchEnter() {
             const input = document.getElementById('manga-search-input');
             const val = (input ? input.value : '').trim();
+            if (isRemoteClient) {          // 非本机：只搜本地，回车不触发联网检索
+                onMangaSearchInput(val);
+                return;
+            }
             if (val) {
                 executeUnifiedSearch(val);
             } else {
@@ -914,6 +975,10 @@ let currentGameSearchQuery = '';
         function onNovelSearchEnter() {
             const input = document.getElementById('novel-search-input');
             const val = (input ? input.value : '').trim();
+            if (isRemoteClient) {          // 非本机：只搜本地，回车不触发联网检索
+                onNovelSearchInput(val);
+                return;
+            }
             if (val) {
                 executeNovelSearch(val);
             } else {
@@ -1517,6 +1582,8 @@ let currentGameSearchQuery = '';
             document.getElementById('slg-count-badge').textContent = slgCount + ' Games';
             const flashBadge = document.getElementById('flash-count-badge');
             if (flashBadge) flashBadge.textContent = isRemoteClient ? '🔒 本机独占' : flashCount + ' Games';
+            const sc2Badge = document.getElementById('sc2-count-badge');
+            if (sc2Badge) sc2Badge.textContent = isRemoteClient ? '🔒 本机独占' : '离线对战';
             
             updateFavBadges();
             applyRemoteClientRestrictions();
@@ -2180,6 +2247,9 @@ let currentGameSearchQuery = '';
         };
 
         function switchMangaSubTab(subTab, btnEl) {
+            if (isRemoteClient && subTab !== 'shelf') {   // 非本机：榜单是联网内容，禁用（按钮也已 CSS 隐藏）
+                return;
+            }
             activeMangaSubTab = subTab;
             document.querySelectorAll('#manga-sub-tabs .tab-btn').forEach(b => b.classList.remove('active'));
             if (btnEl) btnEl.classList.add('active');
@@ -3026,6 +3096,20 @@ let currentGameSearchQuery = '';
                             loadPersistentMangaQueue();
                             if (event.task) {
                                 renderMangaTasksProgress([event.task]);
+                            }
+                        } else if (event.type === 'library_indexed') {
+                            // 后台补媒体索引：中途 debounce 刷一次，补完立刻刷
+                            const dir = event.dir;
+                            const finished = event.total && event.done >= event.total;
+                            const doReload = () => {
+                                if (dir === 'novels') loadNovelsLibrary();
+                                else loadMangaLibrary();
+                            };
+                            if (finished) {
+                                doReload();
+                            } else {
+                                clearTimeout(window.__libIdxTimer);
+                                window.__libIdxTimer = setTimeout(doReload, 1500);
                             }
                         }
                     } catch(err) {}

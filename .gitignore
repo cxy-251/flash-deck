@@ -22,16 +22,21 @@ steam_games/*/*
 # Documentation subfolders (keep root docs files tracked)
 docs/*/
 
-# Manga and novels archives
+# Manga / novels / audio libraries + crawler scripts
 manga/
 novels/
+audio/
+crawlers/
 *.cbz
 *.cbr
 *.epub
 
-# Local configs
+# Local configs / secrets / runtime
 .lan_config.json
 .wan_config.json
+privacy_config.json
+cookies.txt
+boot.log
 
 # Keep emulator runtime
 !retro_games/emulatorjs/**
@@ -40,6 +45,7 @@ novels/
 !rpg_games/*/.gitkeep
 !retro_games/*/.gitkeep
 !slg_games/*/.gitkeep
+!steam_games/*/.gitkeep
 
 !rpg_games/*/adapter.js
 !slg_games/*/adapter.js

@@ -16,6 +16,8 @@ import subprocess
 import urllib.parse
 from typing import List, Dict, Any, Optional
 
+import media_index
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 EXTERNAL_AUDIO_DIR = os.environ.get("OMNI_AUDIO_DIR", "/run/media/deck/FUCKDECK/telegramFile")
 AUDIO_STANDARD_DIR = os.path.join(SCRIPT_DIR, "audio", "standard")
@@ -56,116 +58,113 @@ def get_audio_dirs(is_nsfw: bool = False) -> List[str]:
             dirs.append(AUDIO_ROOT_DIR)
     return dirs
 
+def _rich_parse_audio(full_p: str) -> Dict[str, Any]:
+    """读章节信息：优先 .chapters.json 旁车文件，其次对 .m4b 跑一次 ffprobe。
+    只在文件新增/变动时被 media_index 调用（ffprobe 是这里最贵的一步）。"""
+    ext = os.path.splitext(full_p)[1].lower()
+    chapters: List[Dict[str, Any]] = []
+    chap_p = full_p.rsplit('.', 1)[0] + '.chapters.json'
+    if os.path.exists(chap_p):
+        try:
+            with open(chap_p, 'r', encoding='utf-8') as cf:
+                chapters = json.load(cf)
+        except Exception:
+            pass
+    elif ext == '.m4b':
+        try:
+            probe_cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_chapters', full_p]
+            p_res = json.loads(subprocess.check_output(probe_cmd, text=True)).get('chapters', [])
+            for idx, ch in enumerate(p_res, start=1):
+                st = float(ch.get('start_time', 0))
+                et = float(ch.get('end_time', 0))
+                dur_sec = max(0, et - st)
+                chapters.append({
+                    'index': idx,
+                    'title': ch.get('tags', {}).get('title', f'第{idx}章'),
+                    'start': round(st, 2),
+                    'end': round(et, 2),
+                    'duration_str': f'{int(dur_sec//60):02d}:{int(dur_sec%60):02d}'
+                })
+        except Exception:
+            pass
+    return {'chapters': chapters}
+
+
 def scan_audio_library(is_nsfw: bool = False, force: bool = False) -> List[Dict[str, Any]]:
     """
-    全量扫描音频库目录并提取文件元数据。
-    
-    性能与缓存机制：
-    - 内存中保留 30 秒缓存有效期，避免高频请求产生磁盘 I/O 瓶颈。
-    - 递归识别子文件夹作为专辑/系列 (如《鬼吹灯之精绝古城》)。
-    - 计算文件体积 (MB)、修改时间以及生成流式点播 URL。
+    扫描音频库目录并返回文件元数据列表。
+
+    - 章节信息（.chapters.json / .m4b ffprobe）走 media_index 持久化索引：只有新增/
+      变动的文件才真去读，其余吃 SQLite 缓存。冷启动第一次照旧慢，之后秒出。
+    - 上面再叠一层 30 秒内存缓存，挡高频请求。
+    - 递归识别子文件夹作为专辑/系列。
     """
     global _AUDIO_STD_CACHE, _LAST_SCAN_STD, _AUDIO_NSFW_CACHE, _LAST_SCAN_NSFW
     now = time.time()
-    
+
     if not force:
         if not is_nsfw and _AUDIO_STD_CACHE and (now - _LAST_SCAN_STD < 30):
             return _AUDIO_STD_CACHE
         if is_nsfw and _AUDIO_NSFW_CACHE and (now - _LAST_SCAN_NSFW < 30):
             return _AUDIO_NSFW_CACHE
 
-    audios = []
+    kind = 'audiolib:nsfw' if is_nsfw else 'audiolib:std'
+    files = []
+    fs_info = {}          # full_p -> (fname, rel_p, album, size, mtime, adir)
     seen_files = set()
 
     for adir in get_audio_dirs(is_nsfw=is_nsfw):
         try:
-            for root, dirs, files in os.walk(adir):
-                # 排除隐藏目录
+            for root, dirs, fnames in os.walk(adir):
                 dirs[:] = [d for d in dirs if not d.startswith('.')]
-                
-                # 若扫描 audio/ 根目录，避免重复进入 standard/ 或 nsfw/
                 if adir == AUDIO_ROOT_DIR:
                     dirs[:] = [d for d in dirs if d not in ('standard', 'nsfw')]
-
-                for fname in sorted(files, key=natural_sort_key):
+                for fname in fnames:
                     if fname.startswith('.'):
                         continue
-                    ext = os.path.splitext(fname)[1].lower()
-                    if ext not in VALID_EXTS:
+                    if os.path.splitext(fname)[1].lower() not in VALID_EXTS:
                         continue
-
                     full_p = os.path.join(root, fname)
-                    if not os.path.isfile(full_p):
-                        continue
-
                     rel_p = os.path.relpath(full_p, adir).replace('\\', '/')
                     if rel_p in seen_files:
                         continue
-                    seen_files.add(rel_p)
-
-                    # 智能解析专辑名称
-                    if '/' in rel_p:
-                        album = rel_p.split('/')[0]
-                    else:
-                        album = "未分类音声" if is_nsfw else "经典单曲"
-
                     try:
-                        stat = os.stat(full_p)
-                        size_mb = round(stat.st_size / (1024 * 1024), 2)
-                        mtime_str = time.strftime('%Y-%m-%d', time.localtime(stat.st_mtime))
-                        base_title = os.path.splitext(fname)[0]
-
-                        chapters = []
-                        chap_p = full_p.rsplit('.', 1)[0] + '.chapters.json'
-                        if os.path.exists(chap_p):
-                            try:
-                                with open(chap_p, 'r', encoding='utf-8') as cf:
-                                    chapters = json.load(cf)
-                            except Exception:
-                                pass
-                        elif ext == '.m4b':
-                            try:
-                                probe_cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_chapters', full_p]
-                                p_res = json.loads(subprocess.check_output(probe_cmd, text=True)).get('chapters', [])
-                                for idx, ch in enumerate(p_res, start=1):
-                                    st = float(ch.get('start_time', 0))
-                                    et = float(ch.get('end_time', 0))
-                                    dur_sec = max(0, et - st)
-                                    chapters.append({
-                                        'index': idx,
-                                        'title': ch.get('tags', {}).get('title', f'第{idx}章'),
-                                        'start': round(st, 2),
-                                        'end': round(et, 2),
-                                        'duration_str': f'{int(dur_sec//60):02d}:{int(dur_sec%60):02d}'
-                                    })
-                            except Exception:
-                                pass
-
-                        stream_url = (
-                            f"/audio/standard/{urllib.parse.quote(rel_p)}"
-                            if not is_nsfw and adir == AUDIO_STANDARD_DIR
-                            else f"/api/audio/stream?path={urllib.parse.quote(rel_p)}&nsfw={1 if is_nsfw else 0}"
-                        )
-
-                        audios.append({
-                            'filename': fname,
-                            'rel_path': rel_p,
-                            'title': base_title,
-                            'album': album,
-                            'is_nsfw': is_nsfw,
-                            'ext': ext.lstrip('.'),
-                            'size_mb': size_mb,
-                            'mtime': mtime_str,
-                            'path': full_p,
-                            'stream_url': stream_url,
-                            'chapters': chapters
-                        })
-                    except Exception:
-                        pass
+                        st = os.stat(full_p)
+                        if not os.path.isfile(full_p):
+                            continue
+                    except OSError:
+                        continue
+                    seen_files.add(rel_p)
+                    album = rel_p.split('/')[0] if '/' in rel_p else ("未分类音声" if is_nsfw else "经典单曲")
+                    files.append((full_p, st.st_mtime, st.st_size))
+                    fs_info[full_p] = (fname, rel_p, album, st.st_size, st.st_mtime, adir)
         except Exception as e:
             print("Scan audio err:", e)
 
-    # 全局按照专辑与文件名进行自然数字排序，确保 EP1-10 < EP11-20 < EP104-120
+    metas = media_index.diff_scan(kind, files, _rich_parse_audio, sync_limit=30)
+
+    audios = []
+    for full_p, (fname, rel_p, album, size, mtime, adir) in fs_info.items():
+        ext = os.path.splitext(fname)[1].lower()
+        stream_url = (
+            f"/audio/standard/{urllib.parse.quote(rel_p)}"
+            if not is_nsfw and adir == AUDIO_STANDARD_DIR
+            else f"/api/audio/stream?path={urllib.parse.quote(rel_p)}&nsfw={1 if is_nsfw else 0}"
+        )
+        audios.append({
+            'filename': fname,
+            'rel_path': rel_p,
+            'title': os.path.splitext(fname)[0],
+            'album': album,
+            'is_nsfw': is_nsfw,
+            'ext': ext.lstrip('.'),
+            'size_mb': round(size / (1024 * 1024), 2),
+            'mtime': time.strftime('%Y-%m-%d', time.localtime(mtime)),
+            'path': full_p,
+            'stream_url': stream_url,
+            'chapters': (metas.get(full_p) or {}).get('chapters', []),
+        })
+
     audios.sort(key=lambda a: (natural_sort_key(a.get('album', '')), natural_sort_key(a.get('filename', ''))))
 
     if is_nsfw:

@@ -2456,6 +2456,18 @@
         html.nsfw-locked #media-tab-audio {
             display: none !important;
         }
+        /* 非本机访客（局域网/广域网）：藏掉一切联网搜索 / 榜单 / 下载类控件，只留浏览本地媒体 */
+        body.remote-client #manga-subtab-week,
+        body.remote-client #manga-subtab-month,
+        body.remote-client #novel-nsfw-toggle-btn,
+        body.remote-client button[onclick="openMangaQueueModal()"],
+        body.remote-client button[onclick="openNovelQueueModal()"],
+        body.remote-client #manga-incomplete-banner,
+        body.remote-client #manga-ranking-section,
+        body.remote-client #novel-online-section,
+        body.remote-client #manga-online-section {
+            display: none !important;
+        }
         /* MEGA 网盘集成专属样式 */
         .mega-file-row {
             display: grid;
@@ -2579,6 +2591,7 @@
                         <button class="tab-btn" data-tab="retro" onclick="switchTab('retro', this)">🕹️ 街机与卡带</button>
                         <button class="tab-btn" data-tab="slg" onclick="switchTab('slg', this)">♟️ SLG 策略</button>
                         <button class="tab-btn" data-tab="flash" onclick="switchTab('flash', this)">⚡ Flash 殿堂</button>
+                        <button class="tab-btn" data-tab="sc2" onclick="switchTab('sc2', this)">⭐ 星际争霸2</button>
                     </div>
                     <div style="display:flex;align-items:center;gap:10px;">
                         <input type="text" id="game-search-input" class="search-input" style="width:230px;" placeholder="🔍 搜索游戏或编号 (如 001)..." oninput="onGameSearchInput(this.value)">

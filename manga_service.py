@@ -19,6 +19,7 @@ import threading
 import subprocess
 import json
 from urllib.parse import quote as urllib_quote
+import media_index
 import jmcomic
 jmcomic.JmModuleConfig.FLAG_API_CLIENT_AUTO_UPDATE_DOMAIN = False
 from typing import List, Dict, Optional, Any, Tuple
@@ -267,92 +268,101 @@ def get_cover_path(target_path: str) -> Optional[str]:
         return p2
     return None
 
-_LIBRARY_META_CACHE: Dict[Tuple[str, float], Dict[str, Any]] = {}
 _ALBUM_ID_TO_FILE: Dict[str, str] = {}
 
+
+def _seed_media_index(cbz_path: str, meta: Dict[str, Any]) -> None:
+    """把刚下载好 / 修复好的 CBZ 直接写进索引，省得下次扫描再开一遍。"""
+    try:
+        st = os.stat(cbz_path)
+        parent = os.path.abspath(os.path.dirname(cbz_path))
+        dir_flag = 'novels' if parent == os.path.abspath(NOVELS_DIR) else 'manga'
+        media_index.put_many([(cbz_path, f'mangalib:{dir_flag}', st.st_mtime, st.st_size, meta)])
+    except Exception:
+        pass
+
+
+def _rich_parse_manga(full_path: str) -> Dict[str, Any]:
+    """开一次 .cbz 读页数 + metadata.json —— 只在文件新增/变动时被 media_index 调用。"""
+    meta = {
+        'id': '', 'author': '', 'tags': [], 'is_complete': True,
+        'online_chapters': 0, 'local_chapters': 0, 'page_count': 0, 'has_cover': False,
+    }
+    if not full_path.lower().endswith('.cbz'):
+        return meta
+    try:
+        with zipfile.ZipFile(full_path, 'r') as zf:
+            namelist = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
+            img_files = [n for n in namelist if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp'))]
+            meta['page_count'] = len(img_files)
+            meta['has_cover'] = len(img_files) > 0
+            if 'metadata.json' in namelist:
+                try:
+                    m = json.loads(zf.read('metadata.json').decode('utf-8'))
+                    meta['id'] = str(m.get('id', '') or '').strip()
+                    meta['author'] = m.get('author', '')
+                    meta['tags'] = m.get('tags', [])
+                    meta['is_complete'] = m.get('is_complete', True)
+                    meta['online_chapters'] = m.get('online_chapters', 0)
+                    meta['local_chapters'] = m.get('local_chapters', 0)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return meta
+
+
 def get_local_library(q: str = "", target_dir: str = "manga") -> List[Dict[str, Any]]:
-    """扫描本地漫画(manga)或小说(novels)目录下的所有 .cbz 文件并解析元数据 (支持繁简双向模糊匹配，配备毫秒级 mtime 内存缓存)"""
+    """本地漫画/小说库列表 —— 走 media_index 持久化索引：只有新增/变动的文件才会真的
+    去开压缩包，其余直接吃 SQLite 缓存。冷启动第一次照旧慢，之后每次都是秒出。"""
     base_dir = NOVELS_DIR if str(target_dir).lower() in ('novels', 'novel') else MANGA_DIR
     if not os.path.exists(base_dir):
         return []
 
+    dir_flag = 'novels' if base_dir == NOVELS_DIR else 'manga'
+    kind = f'mangalib:{dir_flag}'
     q = (q or "").lower().strip()
     norm_q = to_simplified_chinese(q)
+
+    # 1. 快速拿到每个文件的 (path, mtime, size) —— 不开任何压缩包
+    files = []
+    fs_info = {}
+    try:
+        with os.scandir(base_dir) as it:
+            for entry in it:
+                name = entry.name
+                if name.startswith('.') or not name.lower().endswith(('.cbz', '.txt', '.epub')):
+                    continue
+                try:
+                    st = entry.stat()
+                    if not entry.is_file():
+                        continue
+                except OSError:
+                    continue
+                files.append((entry.path, st.st_mtime, st.st_size))
+                fs_info[entry.path] = (name, st.st_size, st.st_mtime)
+    except FileNotFoundError:
+        return []
+
+    def _on_progress(done, total):
+        try:
+            broadcast_manga_event({'type': 'library_indexed', 'dir': dir_flag, 'done': done, 'total': total})
+        except Exception:
+            pass
+
+    metas = media_index.diff_scan(kind, files, _rich_parse_manga, sync_limit=40, on_progress=_on_progress)
+
+    # 2. 组装列表（元数据来自索引，文件名/大小/时间来自刚才的 scandir）
     items = []
-
-    for fname in os.listdir(base_dir):
-        if not fname.lower().endswith(('.cbz', '.txt', '.epub')):
-            continue
-        if fname.startswith('.'):
-            continue
-
-        full_path = os.path.join(base_dir, fname)
-        if not os.path.isfile(full_path):
-            continue
-
+    for path, (fname, size_bytes, mtime) in fs_info.items():
+        m = metas.get(path) or {}
         base_name = os.path.splitext(fname)[0]
         ext = os.path.splitext(fname)[1].lower().lstrip('.')
-
-        stat = os.stat(full_path)
-        mtime = stat.st_mtime
-        size_mb = round(stat.st_size / (1024 * 1024), 2)
-        mtime_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime))
-
-        cache_key = (full_path, mtime)
-        cached_meta = _LIBRARY_META_CACHE.get(cache_key)
-
-        if cached_meta:
-            album_id = cached_meta.get('id', '')
-            page_count = cached_meta['page_count']
-            has_cover = cached_meta['has_cover']
-            author = cached_meta['author']
-            tags = cached_meta['tags']
-            is_complete = cached_meta['is_complete']
-            online_chapters = cached_meta['online_chapters']
-            local_chapters = cached_meta['local_chapters']
-        else:
-            album_id = ''
-            page_count = 0
-            has_cover = False
-            author = ''
-            tags = []
-            is_complete = True
-            online_chapters = 0
-            local_chapters = 0
-            if ext == 'cbz':
-                try:
-                    with zipfile.ZipFile(full_path, 'r') as zf:
-                        namelist = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
-                        img_files = [n for n in namelist if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp'))]
-                        page_count = len(img_files)
-                        has_cover = page_count > 0
-                        if 'metadata.json' in namelist:
-                            try:
-                                meta = json.loads(zf.read('metadata.json').decode('utf-8'))
-                                album_id = str(meta.get('id', '') or '').strip()
-                                author = meta.get('author', '')
-                                tags = meta.get('tags', [])
-                                is_complete = meta.get('is_complete', True)
-                                online_chapters = meta.get('online_chapters', 0)
-                                local_chapters = meta.get('local_chapters', 0)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-
-            _LIBRARY_META_CACHE[cache_key] = {
-                'id': album_id,
-                'page_count': page_count,
-                'has_cover': has_cover,
-                'author': author,
-                'tags': tags,
-                'is_complete': is_complete,
-                'online_chapters': online_chapters,
-                'local_chapters': local_chapters,
-            }
-
+        album_id = m.get('id', '')
+        author = m.get('author', '')
+        tags = m.get('tags', []) or []
         if album_id:
-            _ALBUM_ID_TO_FILE[album_id] = full_path
+            _ALBUM_ID_TO_FILE[album_id] = path
 
         if norm_q:
             norm_name = to_simplified_chinese(base_name).lower()
@@ -362,26 +372,24 @@ def get_local_library(q: str = "", target_dir: str = "manga") -> List[Dict[str, 
             if not matched:
                 continue
 
-        dir_flag = 'novels' if base_dir == NOVELS_DIR else 'manga'
         items.append({
             'id': album_id,
             'filename': fname,
             'title': base_name,
             'author': author,
             'tags': tags,
-            'is_complete': is_complete,
-            'online_chapters': online_chapters,
-            'local_chapters': local_chapters,
+            'is_complete': m.get('is_complete', True),
+            'online_chapters': m.get('online_chapters', 0),
+            'local_chapters': m.get('local_chapters', 0),
             'ext': ext,
             'dir': dir_flag,
-            'size_mb': size_mb,
-            'mtime': mtime_str,
-            'page_count': page_count,
-            'has_cover': has_cover,
+            'size_mb': round(size_bytes / (1024 * 1024), 2),
+            'mtime': time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime)),
+            'page_count': m.get('page_count', 0),
+            'has_cover': m.get('has_cover', False),
             'cover_url': f'/api/manga/cover?name={urllib_quote(fname)}&dir={dir_flag}',
         })
 
-    # 按修改时间倒序排列 (新收录的排前面)
     items.sort(key=lambda x: x.get('mtime', ''), reverse=True)
     return items
 
@@ -401,6 +409,18 @@ def get_cbz_cover_bytes(filename: str, target_dir: str = "") -> Optional[bytes]:
             return zf.read(cover_entry)
     except Exception:
         return None
+
+
+def get_cbz_cover_thumb(filename: str, target_dir: str = "") -> Optional[str]:
+    """封面网格缩略图（<=360px WebP，磁盘缓存）的文件路径。源 CBZ 没变就不再开压缩包。"""
+    cbz_path = resolve_file_path(filename, target_dir)
+    if not cbz_path or not os.path.exists(cbz_path):
+        return None
+    return media_index.get_or_make_thumb(
+        cbz_path,
+        lambda: get_cbz_cover_bytes(filename, target_dir),
+        max_w=360, tag="cover",
+    )
 
 def get_cbz_pages_list(filename: str, target_dir: str = "") -> List[str]:
     """获取 .cbz 内部所有排好序的图片文件名列表"""
@@ -810,8 +830,9 @@ def find_existing_cbz_by_aid(aid: str, target_dir_path: str = MANGA_DIR) -> Opti
     if fast_path and os.path.isfile(fast_path) and os.path.dirname(fast_path) == target_dir_path:
         return fast_path
 
-    for (fpath, _), meta in list(_LIBRARY_META_CACHE.items()):
-        if os.path.dirname(fpath) == target_dir_path and str(meta.get('id', '')) == aid_str:
+    dir_flag = 'novels' if os.path.abspath(target_dir_path) == os.path.abspath(NOVELS_DIR) else 'manga'
+    for fpath, row in media_index.load_kind(f'mangalib:{dir_flag}').items():
+        if os.path.dirname(fpath) == target_dir_path and str(row.get('meta', {}).get('id', '')) == aid_str:
             if os.path.isfile(fpath):
                 _ALBUM_ID_TO_FILE[aid_str] = fpath
                 return fpath
@@ -962,10 +983,9 @@ def _download_thread(task_id: str, album_id: str, chapter_ids: Optional[List[str
                 pack_folder_to_cbz(album_temp_dir, final_cbz_path, metadata=meta_dict)
 
             try:
-                st = os.stat(final_cbz_path)
                 with zipfile.ZipFile(final_cbz_path, 'r') as zf:
                     page_c = sum(1 for n in zf.namelist() if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')))
-                _LIBRARY_META_CACHE[(final_cbz_path, st.st_mtime)] = {
+                _seed_media_index(final_cbz_path, {
                     'id': str(album_id),
                     'page_count': page_c,
                     'has_cover': page_c > 0,
@@ -974,7 +994,7 @@ def _download_thread(task_id: str, album_id: str, chapter_ids: Optional[List[str
                     'is_complete': is_complete,
                     'online_chapters': total_online,
                     'local_chapters': final_local_chapters,
-                }
+                })
                 _ALBUM_ID_TO_FILE[str(album_id)] = final_cbz_path
             except Exception:
                 pass
@@ -1154,16 +1174,24 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
             try:
                 # 1. 尝试获取详情与标题 (带容错重试)
                 detail = None
-                for d_try in range(3):
+                last_de = None
+                # 大批量下载到尾部经常被 JM 限流（403/429），1.5s×3 撑不过限流窗口 ——
+                # 改成指数退避 5 次：3s / 9s / 21s / 39s / 63s
+                for d_try in range(5):
                     try:
                         detail = client.get_album_detail(aid)
                         break
                     except Exception as de:
-                        logging.warning(f"Album {aid} detail attempt {d_try+1}/3 failed: {de}")
-                        time.sleep(1.5)
+                        last_de = de
+                        wait = min(75, 3 * (d_try + 1) ** 2)
+                        logging.warning(f"Album {aid} detail attempt {d_try+1}/5 failed: {de} (retry in {wait}s)")
+                        with state_lock:
+                            active_jobs[aid] = f"JM{aid} 被限流，{wait}s 后重试({d_try+1}/5)"
+                        update_task_progress()
+                        time.sleep(wait)
 
                 if not detail:
-                    raise RuntimeError(f"获取 JM{aid} 详情连续失败，请检查网络或该本已被下架")
+                    raise RuntimeError(f"获取 JM{aid} 详情连续 5 次失败（{last_de}）—— 多半是被限流或该本已下架")
 
                 photos = list(detail)
                 total_photos = len(photos)
@@ -1183,12 +1211,23 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
 
                 existing_chapter_count = 0
                 is_incremental = False
+                prev_stall = 0
                 if pack_cbz and existing_cbz_path and os.path.exists(existing_cbz_path) and os.path.getsize(existing_cbz_path) > 10240:
                     try:
                         with zipfile.ZipFile(existing_cbz_path, 'r') as zf:
                             nl = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
                             inner_dirs = sorted(list({n.split('/')[0] for n in nl if '/' in n}))
                             existing_chapter_count = len(inner_dirs) if inner_dirs else (1 if any(n.lower().endswith(('.jpg','.jpeg','.png','.webp','.bmp')) for n in nl) else 0)
+                            if 'metadata.json' in nl:
+                                try:
+                                    _pm = json.loads(zf.read('metadata.json').decode('utf-8'))
+                                    prev_stall = int(_pm.get('stall_count', 0))
+                                    # 之前跑过、已确认 local<online 又补不上的（verified 且未完结）：
+                                    # 视作已经卡过一次，这次再 0 收获就直接认账
+                                    if prev_stall == 0 and _pm.get('verified') and _pm.get('is_complete') is False:
+                                        prev_stall = 1
+                                except Exception:
+                                    prev_stall = 0
                     except Exception:
                         existing_chapter_count = 0
 
@@ -1198,7 +1237,11 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
                             completed_count[0] += 1
                             active_jobs.pop(aid, None)
                         update_task_progress()
-                        work_queue.task_done()
+                        # 注意：不要在这里调 work_queue.task_done() —— 下面的 finally
+                        # 已经会为**包括 continue 在内的每条出口**各调一次。以前这里多调
+                        # 了一次，凡是"本地已完结、跳过"的漫画都会 task_done 两次，累计到
+                        # 超过队列长度就 ValueError: task_done() called too many times，
+                        # worker 线程当场挂掉，批次剩下几本永远补不完。
                         continue
 
                     is_incremental = True
@@ -1240,8 +1283,20 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
                         active_jobs[aid] = f"《{safe_title[:10]}》{'增量封箱' if is_incremental else '封箱打包'}"
                     update_task_progress()
 
-                    final_local_chapters = existing_chapter_count + (len(target_photos) - len(failed_photos)) if is_incremental else (len(target_photos) - len(failed_photos))
+                    got_new = len(target_photos) - len(failed_photos)
+                    final_local_chapters = existing_chapter_count + got_new if is_incremental else got_new
                     is_complete = (final_local_chapters >= total_photos)
+
+                    # 卡住检测：增量补更新一章都没补到（要补的章 JM 上已经拉不下来 —— 下架/
+                    # 加锁/章节 ID 失效）。连续 2 次都是 0 收获，就认账收工，标 partial，
+                    # 从待下载列表移除，别再无限重试骚扰"未完结"标签。
+                    stall_count = 0
+                    accept_partial = False
+                    if is_incremental and got_new == 0 and existing_chapter_count > 0:
+                        stall_count = prev_stall + 1
+                        if stall_count >= 2:
+                            accept_partial = True
+                            is_complete = True
 
                     meta_dict = {
                         'id': str(aid),
@@ -1252,9 +1307,13 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
                         'online_chapters': total_photos,
                         'local_chapters': final_local_chapters,
                         'is_complete': is_complete,
+                        'stall_count': 0 if (got_new > 0 or accept_partial) else stall_count,
+                        'partial': accept_partial or None,
+                        'missing_chapters': (total_photos - final_local_chapters) if accept_partial else None,
                         'verified': True,
                         'updated_at': time.time()
                     }
+                    meta_dict = {k: v for k, v in meta_dict.items() if v is not None}
 
                     final_cbz_path = existing_cbz_path if (is_incremental and existing_cbz_path) else target_cbz_path
                     if is_incremental and existing_cbz_path:
@@ -1263,10 +1322,9 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
                         pack_folder_to_cbz(album_temp_dir, final_cbz_path, metadata=meta_dict)
 
                     try:
-                        st = os.stat(final_cbz_path)
                         with zipfile.ZipFile(final_cbz_path, 'r') as zf:
                             page_c = sum(1 for n in zf.namelist() if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')))
-                        _LIBRARY_META_CACHE[(final_cbz_path, st.st_mtime)] = {
+                        _seed_media_index(final_cbz_path, {
                             'id': str(aid),
                             'page_count': page_c,
                             'has_cover': page_c > 0,
@@ -1275,7 +1333,7 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
                             'is_complete': is_complete,
                             'online_chapters': total_photos,
                             'local_chapters': final_local_chapters,
-                        }
+                        })
                         _ALBUM_ID_TO_FILE[str(aid)] = final_cbz_path
                     except Exception:
                         pass
@@ -1290,10 +1348,15 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
                         'local_chapters': final_local_chapters,
                     })
 
-                    if clean_temp and not failed_photos:
+                    if accept_partial:
+                        logging.warning(f"Album {aid} 连续 {stall_count} 次补更新 0 收获，"
+                                        f"缺 {total_photos - final_local_chapters} 章（JM 上已拉不下来），"
+                                        f"标记 partial 并移出待下载列表")
+
+                    if clean_temp and (not failed_photos or accept_partial):
                         shutil.rmtree(album_temp_dir, ignore_errors=True)
 
-                    if not failed_photos:
+                    if not failed_photos or accept_partial:
                         remove_from_persistent_queue(aid, target_dir=dest_dir)
 
                 with state_lock:
@@ -1303,12 +1366,21 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
 
             except Exception as e:
                 logging.error(f"Error downloading album {aid}: {e}")
+                try:
+                    with open(os.path.join(SCRIPT_DIR, "cache", "manga_batch_failures.log"), "a", encoding="utf-8") as _lf:
+                        _lf.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  JM{aid}  {e}\n")
+                except Exception:
+                    pass
                 with state_lock:
                     active_jobs.pop(aid, None)
-                    failed_albums.append(aid)
+                    failed_albums.append({'id': str(aid), 'error': str(e)[:200]})
                 update_task_progress()
             finally:
-                work_queue.task_done()
+                # 每条出口都在这里销账一次；即便别处误多调一次也不能让 worker 整个挂掉
+                try:
+                    work_queue.task_done()
+                except ValueError:
+                    pass
 
     # 启动工作线程池 (1 路逐本顺序 或 3 路并发)
     concurrency = max(1, min(task_concurrency, len(task['clean_ids'])))
@@ -1341,7 +1413,15 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
         task['status'] = 'completed'
         task['percent'] = 100.0
         name_desc = "逐本顺序下载" if is_sequential else "并发批量下载"
-        task['message'] = f"🎉 {name_desc}已全部完成！已成功收录 {done_total}/{total_albums} 部作品！"
+        task['failed'] = failed_albums          # [{'id','error'}, ...] —— 前端可展示、日志见 cache/manga_batch_failures.log
+        if failed_albums:
+            ids = "、".join("JM" + f['id'] for f in failed_albums[:12])
+            more = f" 等 {len(failed_albums)} 部" if len(failed_albums) > 12 else ""
+            task['message'] = (f"下载结束：成功 {done_total}/{total_albums} 部。"
+                               f"失败 {len(failed_albums)} 部（{ids}{more}）—— "
+                               f"多为限流/下架，详见 cache/manga_batch_failures.log，可稍后重试。")
+        else:
+            task['message'] = f"🎉 {name_desc}已全部完成！已成功收录 {done_total}/{total_albums} 部作品！"
         broadcast_manga_event({'type': 'batch_completed', 'task': task})
 
 def stop_batch_download_task(task_id: Optional[str] = None) -> bool:
@@ -1637,8 +1717,7 @@ def match_and_repair_cbz_metadata(cbz_path: str, client=None) -> Optional[Dict[s
 </ComicInfo>"""
             zf.writestr("ComicInfo.xml", comic_info_xml)
 
-        stat = os.stat(cbz_path)
-        _LIBRARY_META_CACHE[(cbz_path, stat.st_mtime)] = {
+        _seed_media_index(cbz_path, {
             'id': str(album_id),
             'page_count': len(img_files),
             'has_cover': len(img_files) > 0,
@@ -1647,7 +1726,7 @@ def match_and_repair_cbz_metadata(cbz_path: str, client=None) -> Optional[Dict[s
             'is_complete': is_complete,
             'online_chapters': online_chapters,
             'local_chapters': local_chapters,
-        }
+        })
         if album_id:
             _ALBUM_ID_TO_FILE[str(album_id)] = cbz_path
 

@@ -19,17 +19,65 @@ import datetime
 from collections import deque
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+# ---------------------------------------------------------------------------
+# 启动追踪日志：写到 cache/boot.log（每行立即 flush），专门查"游戏模式下第二次
+# 打开卡死、切不到桌面、只能重启"这类问题 —— 硬重启后 stdout/stderr 全丢，只有
+# 落盘的文件能留下"这次启动走到哪一步就不动了"。
+# ---------------------------------------------------------------------------
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_BOOT_LOG = os.path.join(_SCRIPT_DIR, "cache", "boot.log")
+_BOOT_T0 = time.time()
+
+def _boot(msg: str) -> None:
+    line = f"{datetime.datetime.now().isoformat(timespec='milliseconds')} " \
+           f"pid={os.getpid()} +{time.time() - _BOOT_T0:6.2f}s  {msg}"
+    try:
+        os.makedirs(os.path.dirname(_BOOT_LOG), exist_ok=True)
+        # 开头修剪，别让文件无限长（保留最近 ~400 行，够覆盖好几次启动）
+        if os.path.exists(_BOOT_LOG) and os.path.getsize(_BOOT_LOG) > 200_000:
+            try:
+                with open(_BOOT_LOG, "r", errors="replace") as f:
+                    tail = f.readlines()[-300:]
+                with open(_BOOT_LOG, "w") as f:
+                    f.writelines(tail)
+            except Exception:
+                pass
+        with open(_BOOT_LOG, "a", buffering=1) as f:
+            f.write(line + "\n")
+            f.flush()
+    except Exception:
+        pass
+    try:
+        print("[boot]", msg, flush=True)
+    except Exception:
+        pass
+
+_boot("=" * 60)
+_boot(f"BOOT start  argv={sys.argv}")
+_boot("env: " + " ".join(
+    f"{k}={os.environ.get(k, '-')}" for k in (
+        "XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "GAMESCOPE_WAYLAND_DISPLAY",
+        "DISPLAY", "QT_QPA_PLATFORM", "SteamDeck", "SteamGamepadUI",
+        "STEAM_COMPAT_LAUNCHER_SERVICE", "SteamAppId",
+    )
+))
+_boot("stdlib imports done, importing services…")
+
 mimetypes.add_type('application/wasm', '.wasm')
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/x-shockwave-flash', '.swf')
 mimetypes.add_type('audio/mp4', '.m4b')
 mimetypes.add_type('audio/mp4', '.m4a')
 import manga_service
+_boot("imported manga_service")
 import novel_service
+_boot("imported novel_service")
 import audio_service
+_boot("imported audio_service")
 import mega_service
 import sc2_panel_service
 import privacy_service
+_boot("all service imports done")
 
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     "--enable-features=WebAssemblyThreads,SharedArrayBuffer "
@@ -40,6 +88,9 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
 
 ACTIVE_CHILD_PROCESSES = []
 RUNNING_GAME_IDS = set()  # 当前正在运行的游戏 ID 集合，防止重复启动同一游戏
+HTTPD = None              # 本地 HTTP 核心服务实例，供退出时主动关闭并释放 8998 端口
+_INSTANCE_MAGIC = "omni-deck-core/1"  # 单实例探测握手标识
+_SHUTTING_DOWN = False    # graceful_shutdown 幂等标记
 
 def set_pdeathsig():
     """在 Linux 下设置子进程随父进程一同销毁 (Parent Death Signal)"""
@@ -62,7 +113,72 @@ def kill_all_child_processes():
             pass
     ACTIVE_CHILD_PROCESSES.clear()
 
+def _release_http_server():
+    """主动关闭本地 HTTP 核心服务并释放 8998 监听套接字。
+    游戏模式下 Steam 用 SIGTERM 结束进程，不会走 Qt 的 closeEvent，
+    若不显式 server_close()，QtWebEngine 的 Chromium 子进程可能仍持有该
+    套接字副本，导致端口一直不释放、下次启动 bind 失败。"""
+    global HTTPD
+    srv = HTTPD
+    HTTPD = None
+    if srv is None:
+        return
+    try:
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+    except Exception:
+        pass
+    try:
+        srv.server_close()
+    except Exception:
+        pass
+
+def _reap_descendants(timeout=3):
+    """递归结束所有后代进程：QtWebEngineProcess / Chromium zygote·GPU·渲染进程、
+    cloudflared、本地 DNS 助手、以及已拉起的游戏进程。"""
+    try:
+        import psutil
+    except Exception:
+        try:
+            os.killpg(os.getpgid(0), signal.SIGTERM)
+        except Exception:
+            pass
+        return
+    try:
+        me = psutil.Process()
+        kids = me.children(recursive=True)
+    except Exception:
+        return
+    for p in kids:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    gone, alive = psutil.wait_procs(kids, timeout=timeout)
+    for p in alive:
+        try:
+            p.kill()
+        except Exception:
+            pass
+
+def graceful_shutdown(*_args):
+    """SIGTERM / SIGINT / aboutToQuit 统一入口：清子进程 → 释放端口 → 收后代 → 硬退出。
+    末尾 os._exit 确保即使 Qt 或后台线程卡住，进程也一定结束（游戏模式下这点最关键）。"""
+    global _SHUTTING_DOWN
+    if _SHUTTING_DOWN:
+        return
+    _SHUTTING_DOWN = True
+    _boot(f"graceful_shutdown (args={_args})")
+    try:
+        kill_all_child_processes()
+    except Exception:
+        pass
+    _release_http_server()
+    _reap_descendants()
+    _boot("graceful_shutdown: os._exit(0)")
+    os._exit(0)
+
 atexit.register(kill_all_child_processes)
+atexit.register(lambda: _boot("atexit: process exiting"))
 
 # 1. 彻底清除外部代理环境变量，强制直连
 for env_var in [
@@ -177,6 +293,25 @@ WAN_TUNNEL_PROC = None
 WAN_TUNNEL_LOCK = threading.Lock()
 LOCAL_DNS_HELPER_STARTED = False
 
+# Cloudflare 隧道边缘 IP（region1 = 198.41.192.0/24，region2 = 198.41.200.0/24，端口 7844）。
+# 大陆网络下踩的坑（2026-09 实测）：
+#   1. argotunnel.com 的 SRV 记录解析被污染 → cloudflared 发现不了边缘 IP，直接
+#      "failed to resolve any edge address" 退出；
+#   2. 到边缘 7844 的 TCP / HTTP2 握手会被 GFW 重置（"TLS handshake with edge error: EOF"）；
+#   3. 只有 QUIC(UDP:7844) 能连上。
+# 对策：写死边缘 IP 绕过 DNS 发现 + 强制 --protocol quic。实测这组能注册满 4 条隧道连接。
+CLOUDFLARE_EDGE_IPS = [
+    "198.41.192.7", "198.41.192.27", "198.41.192.37", "198.41.192.47",
+    "198.41.192.67", "198.41.192.107", "198.41.192.167", "198.41.192.227",
+    "198.41.200.13", "198.41.200.23", "198.41.200.33", "198.41.200.43",
+    "198.41.200.53", "198.41.200.113", "198.41.200.193", "198.41.200.233",
+]
+
+# 内存看门狗：主进程 + 所有 Chromium 子进程 RSS 合计超过这个值(MB)就干净自重启。
+# 长期跑的 hub + 从不整页刷新的单页应用，QtWebEngine 会慢慢涨，之前把内存和交换
+# 全吃光。可用环境变量 OMNI_MEM_RESTART_MB 覆盖。
+MEM_RESTART_MB = int(os.environ.get("OMNI_MEM_RESTART_MB", "4500"))
+
 def is_cloudflared_ready():
     """检测本地 bin/cloudflared 可执行文件是否存在且可正常运行"""
     if not os.path.exists(CLOUDFLARED_BIN):
@@ -259,12 +394,15 @@ def ensure_wan_daemon():
     def daemon_worker():
         global WAN_TUNNEL_PROC
         while True:
+            # 广域网开关关着就不起隧道（否则 config 存在时会空转 / 反复重连）
+            if not WAN_SHARING_ENABLED:
+                time.sleep(10)
+                continue
             try:
-                cmd = [
-                    CLOUDFLARED_BIN,
-                    "--config", config_file,
-                    "tunnel", "run"
-                ]
+                cmd = [CLOUDFLARED_BIN, "--config", config_file, "--protocol", "quic"]
+                for ip in CLOUDFLARE_EDGE_IPS:          # 写死边缘 IP，绕过被污染的 SRV 解析
+                    cmd += ["--edge", f"{ip}:7844"]
+                cmd += ["tunnel", "run"]
                 proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.DEVNULL,
@@ -1550,6 +1688,26 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         is_local = self.check_is_local()
         return privacy_service.is_request_authorized(self, is_local)
 
+    # 非本机（局域网/广域网）访客：只能翻本地已下好的媒体，不能联网搜/不能拉新下载。
+    # 下载类 POST 端点各自已有 is_local 拦截；这里补上联网"搜索/榜单/详情/在线封面"这些 GET。
+    _REMOTE_BLOCKED_ONLINE = (
+        '/api/manga/search', '/api/manga/rankings', '/api/manga/detail',
+        '/api/manga/online_cover', '/api/novels/search',
+    )
+
+    def deny_if_remote_online(self) -> bool:
+        """命中联网端点且非本机 → 回 403 并返回 True（调用方直接 return）。"""
+        if not self.path.startswith(self._REMOTE_BLOCKED_ONLINE):
+            return False
+        if self.check_is_local():
+            return False
+        self.send_response(403)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(b'{"error":"Forbidden: online search/download is local-only"}')
+        return True
+
     def log_error(self, format, *args):
         try:
             msg = format % args
@@ -1666,6 +1824,46 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         super().do_HEAD()
 
     def do_GET(self):
+        if self.deny_if_remote_online():
+            return
+        if self.path.startswith('/api/_alive'):
+            body = json.dumps({'magic': _INSTANCE_MAGIC, 'pid': os.getpid()}).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if self.path.startswith('/api/_mem'):
+            info = {'pid': os.getpid(), 'restart_threshold_mb': MEM_RESTART_MB, 'procs': []}
+            try:
+                import psutil
+                me = psutil.Process()
+                total = 0
+                for p in [me] + me.children(recursive=True):
+                    try:
+                        rss = p.memory_info().rss
+                        total += rss
+                        info['procs'].append({'pid': p.pid, 'name': (p.name() or '')[:40],
+                                              'rss_mb': round(rss / 1048576, 1),
+                                              'threads': p.num_threads()})
+                    except Exception:
+                        pass
+                info['total_rss_mb'] = round(total / 1048576, 1)
+                info['procs'].sort(key=lambda x: -x['rss_mb'])
+            except Exception as e:
+                info['error'] = str(e)
+            body = json.dumps(info, ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if self.path.startswith('/api/auth/status'):
             is_local = self.check_is_local()
             unlocked = privacy_service.is_request_authorized(self, is_local)
@@ -2273,6 +2471,21 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             name = qs.get('name', [''])[0]
             target_dir = qs.get('dir', [''])[0]
+            want_full = qs.get('full', ['0'])[0] in ('1', 'true')
+            # 默认发磁盘缓存的缩略图（网格用），源没变就不再开压缩包；?full=1 发原图
+            if not want_full:
+                tp = manga_service.get_cbz_cover_thumb(name, target_dir=target_dir)
+                if tp and os.path.exists(tp):
+                    with open(tp, 'rb') as f:
+                        data = f.read()
+                    self.send_response(200)
+                    self.send_header('Content-type', 'image/webp')
+                    self.send_header('Cache-Control', 'public, max-age=86400')
+                    self.send_header('Content-Length', str(len(data)))
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
             data = manga_service.get_cbz_cover_bytes(name, target_dir=target_dir)
             if data:
                 self.send_response(200)
@@ -3149,6 +3362,8 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 class QuietThreadingHTTPServer(ThreadingHTTPServer):
     """静默多线程 HTTP 服务器，抑制客户端中途主动断开连接引起的 BrokenPipe 异常噪音"""
+    daemon_threads = True        # 工作线程不阻塞进程退出
+    allow_reuse_address = True   # 允许 TIME_WAIT 状态下立即重新绑定
     def handle_error(self, request, client_address):
         exc_type, exc_value, exc_traceback = sys.exc_info()
         if exc_type in (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
@@ -3159,14 +3374,105 @@ scan_games()
 
 def start_local_server():
     """在后台子线程中绑定并启动 0.0.0.0:8998 高性能多线程 HTTP 核心服务"""
+    global HTTPD
     try:
-        httpd = QuietThreadingHTTPServer(('0.0.0.0', PORT), MultiGameRequestHandler)
-        httpd.serve_forever()
-    except OSError:
-        pass
+        HTTPD = QuietThreadingHTTPServer(('0.0.0.0', PORT), MultiGameRequestHandler)
+        HTTPD.daemon_threads = True
+        _boot(f"HTTP server bound 0.0.0.0:{PORT}, serve_forever")
+        HTTPD.serve_forever()
+    except OSError as e:
+        HTTPD = None
+        _boot(f"HTTP server bind FAILED: {e}")
+        log_omni("ERROR", f"本地核心服务无法绑定 0.0.0.0:{PORT}（可能已有实例或端口未释放）：{e}", tag="Core")
 
+
+def _port_holder_pids(port):
+    """返回正持有 <port> 的进程 PID（不含自己）。优先 psutil，回退 ss。"""
+    pids = set()
+    try:
+        import psutil
+        for c in psutil.net_connections(kind='inet'):
+            if c.laddr and c.laddr.port == port and c.pid and c.pid != os.getpid():
+                pids.add(c.pid)
+        if pids:
+            return pids
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(
+            ['ss', '-ltnpH', f'sport = :{port}'],
+            capture_output=True, text=True, timeout=3
+        ).stdout
+        for m in re.finditer(r'pid=(\d+)', out):
+            pid = int(m.group(1))
+            if pid != os.getpid():
+                pids.add(pid)
+    except Exception:
+        pass
+    return pids
+
+
+def _port_in_use(port) -> bool:
+    """8998 上有没有人在 listen（不判断是不是我们的）。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.5)
+    try:
+        return s.connect_ex(('127.0.0.1', port)) == 0
+    except Exception:
+        return False
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def ensure_single_instance():
+    """单实例保护 —— 必须在绑定端口、加载 QtWebEngine 之前调用。
+    游戏模式下第二次启动会让 gamescope 合成器死锁（两个 Chromium 内核抢 GPU/EGL），
+    所以第二个实例必须**干净退出**。
+
+    关键：这里**绝不去 kill 任何进程**。以前会在探测超时时把持有端口的进程当"僵尸"
+    杀掉 —— 但那有可能是**正常在跑的第一个实例**（磁盘慢/GC 卡了一下就探测超时），
+    在游戏模式里把前台 app 突然 SIGKILL 掉，正是把合成器搞死的原因之一。
+    现在的策略：端口被占 = 有实例（不管健康与否）= 本次直接退出，让用户/内存看门狗
+    去处理真卡住的那个。"""
+    import http.client
+    _boot("ensure_single_instance: probing /api/_alive …")
+    try:
+        conn = http.client.HTTPConnection('127.0.0.1', PORT, timeout=1.5)
+        conn.request('GET', '/api/_alive')
+        r = conn.getresponse()
+        data = json.loads(r.read() or b'{}')
+        conn.close()
+        if isinstance(data, dict) and data.get('magic') == _INSTANCE_MAGIC:
+            _boot(f"ensure_single_instance: healthy instance pid={data.get('pid')} → exit(0)")
+            print(f"[!] Omni Deck 已在运行 (PID {data.get('pid')})，退出本次启动。")
+            sys.exit(0)
+        _boot(f"ensure_single_instance: /api/_alive answered but no magic: {data!r}")
+    except SystemExit:
+        raise
+    except Exception as e:
+        _boot(f"ensure_single_instance: probe failed ({type(e).__name__}: {e})")
+
+    holders = _port_holder_pids(PORT)
+    in_use = _port_in_use(PORT)
+    _boot(f"ensure_single_instance: port {PORT} holders={sorted(holders)} in_use={in_use}")
+    if holders or in_use:
+        _boot("ensure_single_instance: port busy → assume an instance exists → exit(0) (NOT killing anything)")
+        print(f"[!] 端口 {PORT} 已被占用（可能有实例卡住了）——本次不启动，避免游戏模式合成器死锁。"
+              f" 如需强制：先结束 pid {sorted(holders) or '?'}。")
+        sys.exit(0)
+    _boot("ensure_single_instance: no other instance, proceeding to bind")
+
+
+_boot("calling ensure_single_instance()")
+ensure_single_instance()
+_boot("starting local HTTP server thread")
 threading.Thread(target=start_local_server, daemon=True).start()
+_boot("ensure_wan_daemon()")
 ensure_wan_daemon()
+_boot("module-level init: importing PyQt6 next")
 
 try:
     from PyQt6.QtCore import QUrl, Qt, QTimer, pyqtSignal
@@ -3313,6 +3619,7 @@ class CustomWebPage(QWebEnginePage):
         url_str = url.toString()
         if "hub.html" in url_str:
             self.main_window.is_in_game = False
+            self.main_window.is_external_game = False
             self.main_window.current_game_id = None
             self.main_window.overlay.hide()
             self.main_window.btn_pure.hide()
@@ -3358,15 +3665,81 @@ class RpgDeckMainWindow(QMainWindow):
         self.current_game_type = 'all'
 
         self.renpy_finished.connect(self.on_renpy_exit)
+        _boot("RpgDeckMainWindow: setup_webengine() …")
         self.setup_webengine()
+        _boot("RpgDeckMainWindow: setup_ui() …")
         self.setup_ui()
+        _boot("RpgDeckMainWindow: setup_shortcuts() …")
         self.setup_shortcuts()
 
+        _boot("RpgDeckMainWindow: load_hub() …")
         self.load_hub()
+        self.setup_mem_guard()
+        _boot("RpgDeckMainWindow: __init__ done")
+
+    # ---------- 内存看门狗 ----------
+    def setup_mem_guard(self):
+        """两个定时器：① 每 5 分钟查总 RSS，超阈值干净自重启；② 每 2 小时清一次 HTTP 缓存。"""
+        self._mem_timer = QTimer(self)
+        self._mem_timer.timeout.connect(self._mem_watchdog_tick)
+        self._mem_timer.start(5 * 60 * 1000)
+
+        self._cache_timer = QTimer(self)
+        self._cache_timer.timeout.connect(self._http_cache_flush)
+        self._cache_timer.start(2 * 60 * 60 * 1000)
+
+    def _total_rss_mb(self) -> float:
+        try:
+            import psutil
+            me = psutil.Process()
+            procs = [me] + me.children(recursive=True)
+            return sum(p.memory_info().rss for p in procs if p.is_running()) / (1024 * 1024)
+        except Exception:
+            return 0.0
+
+    def _http_cache_flush(self):
+        if getattr(self, 'is_in_game', False):
+            return
+        try:
+            self.profile.clearHttpCache()
+            log_omni("INFO", "已清 HTTP 缓存（定期维护）", tag="Mem")
+        except Exception:
+            pass
+
+    def _mem_watchdog_tick(self):
+        rss = self._total_rss_mb()
+        if rss <= 0 or rss < MEM_RESTART_MB:
+            return
+        if getattr(self, 'is_in_game', False):
+            log_omni("WARN", f"内存 {rss:.0f}MB 超阈值，但正在游戏中，暂缓重启", tag="Mem")
+            return
+        # 有下载在跑就先不重启（execv 会打断；漫画队列/ MEGA 都能续传，但能等就等）
+        try:
+            if manga_service.is_active_downloading():
+                log_omni("WARN", f"内存 {rss:.0f}MB 超阈值，但有下载在跑，暂缓重启", tag="Mem")
+                return
+        except Exception:
+            pass
+        log_omni("WARN", f"内存 {rss:.0f}MB > {MEM_RESTART_MB}MB，自重启 Omni Deck", tag="Mem")
+        _boot(f"mem watchdog: RSS {rss:.0f}MB over {MEM_RESTART_MB}MB → self-restart via execv")
+        try:
+            kill_all_child_processes()
+        except Exception:
+            pass
+        _release_http_server()
+        _reap_descendants()
+        script = os.path.join(SCRIPT_DIR, "main.py")
+        try:
+            os.execv(sys.executable, [sys.executable, script] + sys.argv[1:])
+        except Exception as e:
+            # execv 没成功 → 保持运行，下个 tick 再试（别把自己搞挂）
+            log_omni("ERROR", f"自重启 execv 失败，继续运行：{e}", tag="Mem")
 
     def setup_webengine(self):
         """配置 QtWebEngine 专用 Profile、持久化存储与核心 Runtime Polyfill 脚本注入"""
+        _boot("setup_webengine: QWebEngineProfile(...) …")
         self.profile = QWebEngineProfile("omni_deck_console_profile", self)
+        _boot("setup_webengine: profile created")
         self.profile.setHttpUserAgent(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36 QtWebEngine/1.0"
@@ -3379,6 +3752,18 @@ class RpgDeckMainWindow(QMainWindow):
         )
         self.profile.setPersistentCookiesPolicy(cookie_policy)
 
+        # HTTP 缓存默认不设上限——常年跑下来会一路涨。压到 96MB，并定期 clear（见
+        # _mem_maintenance_tick）。注意：这只影响"浏览器缓存已抓过的网页资源"，跟漫画/
+        # MEGA/小说的下载任务完全无关（那些在 Python 线程/子进程里跑），清缓存不会打断下载。
+        try:
+            disk = (QWebEngineProfile.HttpCacheType.DiskHttpCache if QT6
+                    else QWebEngineProfile.DiskHttpCache)
+            self.profile.setHttpCacheType(disk)
+            self.profile.setHttpCacheMaximumSize(96 * 1024 * 1024)
+        except Exception:
+            pass
+
+        _boot("setup_webengine: profile config done, settings…")
         p_settings = self.profile.settings()
         if QT6:
             Attr = QWebEngineSettings.WebAttribute
@@ -3434,7 +3819,9 @@ class RpgDeckMainWindow(QMainWindow):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
 
+        _boot("setup_ui: QWebEngineView(self) …  ← Chromium 在这里起，游戏模式卡死常卡这一步")
         self.webview = QWebEngineView(self)
+        _boot("setup_ui: QWebEngineView created")
         self.page = CustomWebPage(self.profile, self, parent=self.webview)
         self.webview.setPage(self.page)
 
@@ -3515,8 +3902,13 @@ class RpgDeckMainWindow(QMainWindow):
         self.overlay.hide()
 
     def on_load_finished(self, ok):
-        """网页加载完毕后，若处于游戏状态则自动计算并显示右上角控制胶囊"""
-        if getattr(self, 'is_in_game', False):
+        """网页加载完毕后，若处于游戏状态则自动计算并显示右上角控制胶囊。
+        外部游戏（web_flash 独立窗口 / Proton 独立进程）不算 —— 大厅这套胶囊按钮
+        作用的是大厅 webview，对外部窗口没意义，显示出来只会让人以为大厅还在游戏里。"""
+        if not getattr(self, '_first_load_logged', False):
+            self._first_load_logged = True
+            _boot(f"on_load_finished: first page loaded ok={ok}  ← 启动全程走完，界面已出")
+        if getattr(self, 'is_in_game', False) and not getattr(self, 'is_external_game', False):
             self.overlay.adjustSize()
             self.overlay.move(self.width() - self.overlay.width() - 16, 16)
             self.overlay.show()
@@ -3611,6 +4003,7 @@ class RpgDeckMainWindow(QMainWindow):
             log_omni("INFO", f"⬅ 退出游戏 [{prev_game}]，返回大厅", tag="Lifecycle")
             sys.stderr.write("=" * 70 + "\n")
         self.is_in_game = False
+        self.is_external_game = False
         self.current_game_id = None
         self.overlay.hide()
         self.btn_pure.hide()
@@ -3640,6 +4033,7 @@ class RpgDeckMainWindow(QMainWindow):
             log_omni("INFO", f"⬅ 退出游戏 [{prev_game}]，返回 [{cat}] 专区", tag="Lifecycle")
             sys.stderr.write("=" * 70 + "\n")
         self.is_in_game = False
+        self.is_external_game = False
         self.current_game_id = None
         self.overlay.hide()
         self.btn_pure.hide()
@@ -3727,6 +4121,11 @@ class RpgDeckMainWindow(QMainWindow):
             self.setWindowTitle(f"{title} — Omni Deck")
 
             if game_data.get('engine') == 'web_flash':
+                # web_flash 跑在独立的 flash_runner 窗口里，大厅 webview 仍是首页 ——
+                # 别让大厅顶上的悬浮胶囊冒出来
+                self.is_external_game = True
+                self.overlay.hide()
+                self.btn_pure.hide()
                 game_data_json = json.dumps(game_data)
                 flash_python = os.path.join(SCRIPT_DIR, ".venv_flash", "bin", "python")
                 if not os.path.exists(flash_python):
@@ -3741,24 +4140,34 @@ class RpgDeckMainWindow(QMainWindow):
                 
                 def runner():
                     log_file = open(os.path.join(SCRIPT_DIR, "flash_crash.log"), "w")
+                    rc = None
                     try:
                         proc = subprocess.Popen(
-                            cmd, 
-                            env=clean_env, 
+                            cmd,
+                            env=clean_env,
                             preexec_fn=set_pdeathsig,
                             start_new_session=True,
-                            stdout=log_file, 
+                            stdout=log_file,
                             stderr=subprocess.STDOUT
                         )
-                        proc.wait()
+                        rc = proc.wait()
                     except Exception as e:
                         log_file.write(f"\\nPython Error: {str(e)}\\n")
                     finally:
                         log_file.close()
-                
+                    # flash_runner 退出（正常关闭 或 崩溃）→ 通知 GUI 线程收尾：
+                    # 复位 is_in_game、藏掉悬浮胶囊、把大厅拉回前台
+                    log_omni("INFO" if rc == 0 else "WARN",
+                             f"Flash 窗口已退出 (rc={rc})", tag="Lifecycle")
+                    try:
+                        self.renpy_finished.emit()
+                    except Exception:
+                        pass
+
                 threading.Thread(target=runner, daemon=True).start()
                 return
             else:
+                self.is_external_game = False   # swf 走内置 Ruffle，在大厅 webview 里，胶囊要留着
                 self.btn_pure.hide()
                 swf_file = game_data.get('swf_file', '')
                 target_url = QUrl(f"http://127.0.0.1:{PORT}/player_flash.html?id={urllib.parse.quote(game_id)}&file={urllib.parse.quote(swf_file)}")
@@ -3794,6 +4203,11 @@ class RpgDeckMainWindow(QMainWindow):
         self.show()
         self.raise_()
         self.activateWindow()
+        # 游戏那段瞬时分配最大，退出后顺手清一次 HTTP 缓存
+        try:
+            self.profile.clearHttpCache()
+        except Exception:
+            pass
         # 仅当处于内置 Webview 游戏运行时才触发 load_category()。
         # 对于 Wine/Proton/Linux 外部独立游戏，Webview 在游戏运行期间始终停留在大厅页面，无需也不应重新加载，避免破坏用户的滚动位置、过滤条件与标签页状态！
         if getattr(self, 'is_in_game', False):
@@ -3822,13 +4236,35 @@ class RpgDeckMainWindow(QMainWindow):
     def closeEvent(self, event):
         """主窗口关闭拦截：彻底递归清理所有拉起的游戏与后台守护子进程"""
         kill_all_child_processes()
+        _release_http_server()
         super().closeEvent(event)
 
 def main():
     """Omni Deck 应用程序全局启动主入口"""
+    _boot("main(): entered")
+    # 游戏模式下 Steam 用 SIGTERM 结束应用，既不触发 Qt closeEvent 也不跑 atexit。
+    # 显式挂 SIGTERM/SIGINT → graceful_shutdown（清子进程、释放 8998、收 Chromium 后代、硬退出）。
+    for _sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        try:
+            signal.signal(_sig, graceful_shutdown)
+        except Exception:
+            pass
+
+    _boot("main(): QApplication(sys.argv) …")
     app = QApplication(sys.argv)
+    _boot("main(): QApplication created")
+    app.aboutToQuit.connect(graceful_shutdown)
+
+    # Qt 的 C++ 事件循环会压住 Python 信号处理，用一个空转定时器把控制权定期交回解释器。
+    _sig_timer = QTimer()
+    _sig_timer.start(300)
+    _sig_timer.timeout.connect(lambda: None)
+
+    _boot("main(): RpgDeckMainWindow() …")
     window = RpgDeckMainWindow()
+    _boot("main(): window created, show()")
     window.show()
+    _boot("main(): entering app.exec()  ← 如果 boot.log 停在这行，说明进了事件循环、Qt/合成器层面卡住")
     sys.exit(getattr(app, 'exec', getattr(app, 'exec_', None))())
 
 if __name__ == "__main__":
