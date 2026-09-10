@@ -21,7 +21,7 @@ import json
 from urllib.parse import quote as urllib_quote
 import jmcomic
 jmcomic.JmModuleConfig.FLAG_API_CLIENT_AUTO_UPDATE_DOMAIN = False
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MANGA_DIR = os.path.join(SCRIPT_DIR, "manga")
@@ -35,8 +35,16 @@ os.makedirs(NOVELS_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 import queue
+import html
 
-# 异步回调事件推送系统 (Server-Sent Events 广播总线)
+try:
+    from opencc import OpenCC
+    _T2S_CC = OpenCC('t2s')
+    def to_simplified_chinese(text: str) -> str:
+        return _T2S_CC.convert(text) if text else ""
+except Exception:
+    def to_simplified_chinese(text: str) -> str:
+        return text if text else ""
 EVENT_LISTENERS: set = set()
 LISTENERS_LOCK = threading.Lock()
 
@@ -50,18 +58,27 @@ def remove_event_listener(q: queue.Queue):
     with LISTENERS_LOCK:
         EVENT_LISTENERS.discard(q)
 
+def _sanitize_for_json(obj):
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items() if not k.startswith('_') and not isinstance(v, queue.Queue)}
+    elif isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
+
 def broadcast_manga_event(event_data: dict):
     """向所有连接的 SSE 客户端广播漫画/小说异步状态事件"""
+    clean_data = _sanitize_for_json(event_data)
     with LISTENERS_LOCK:
         for q in list(EVENT_LISTENERS):
             try:
-                q.put_nowait(event_data)
+                q.put_nowait(clean_data)
             except Exception:
                 pass
 
 # 活跃下载任务字典: task_id -> task_info
 DOWNLOAD_TASKS: Dict[str, Dict[str, Any]] = {}
 TASKS_LOCK = threading.Lock()
+BATCH_WORK_QUEUES: Dict[str, queue.Queue] = {}
 
 # 初始化 jmcomic 客户端 (懒加载)
 _jm_client = None
@@ -74,14 +91,91 @@ def get_jm_client():
         if _jm_client is None:
             import jmcomic
             jmcomic.JmModuleConfig.FLAG_API_CLIENT_AUTO_UPDATE_DOMAIN = False
+            jmcomic.JmModuleConfig.DOMAIN_API_LIST = ['www.cdngwc.club', 'www.cdngwc.net', 'www.cdngwc.cc', 'www.cdnhjk.net']
             opt = jmcomic.JmOption.default()
+            try:
+                opt.client.postman.meta_data['timeout'] = 10
+            except Exception:
+                pass
             _jm_client = opt.new_jm_client()
         return _jm_client
 
-def sanitize_filename(name: str) -> str:
-    """清理文件名中的非法字符，截断过长名称并防止路径穿越"""
-    clean = re.sub(r'[\/\\:\*\?"<>\|]', '_', name).strip()
-    return clean[:120] if len(clean) > 120 else clean
+def sanitize_filename(name: str, max_bytes: int = 180) -> str:
+    """清理文件名中的非法字符，严格按 UTF-8 字节长度截断，彻底防止 Linux ext4 [Errno 36] File name too long"""
+    clean = re.sub(r'[\/\\:\*\?"<>\|\r\n\t]', '_', str(name or '')).strip()
+    encoded = clean.encode('utf-8')
+    if len(encoded) > max_bytes:
+        clean = encoded[:max_bytes].decode('utf-8', errors='ignore').rstrip('_ .')
+    return clean or 'unnamed'
+
+def safe_chapter_dirname(photo) -> str:
+    """生成安全、规范、带 4 位零填充序号的章节目录名，杜绝章节名过长与同名覆盖"""
+    idx = getattr(photo, 'index', 1) or 1
+    name = getattr(photo, 'name', '') or ''
+    safe_name = sanitize_filename(name, max_bytes=50)
+    if safe_name and safe_name != 'unnamed':
+        return f"{idx:04d}_{safe_name}"
+    return f"{idx:04d}"
+
+# 全局注入 JMComic 章节文件夹命名策略与最长路径兜底
+try:
+    import jmcomic
+    jmcomic.JmModuleConfig.PFIELD_ADVICE['name'] = safe_chapter_dirname
+    jmcomic.JmModuleConfig.VAR_FILE_NAME_LENGTH_LIMIT = 50
+except Exception:
+    pass
+
+def normalize_album_temp_folders(album_temp_dir: str, photos: list):
+    """
+    检查并迁移 .temp/{aid}/ 下历史存在的长名称或旧格式章节目录，
+    将其对齐到 safe_chapter_dirname(photo) 规范名称，避免重复下载并打捞已下载切片。
+    """
+    if not os.path.exists(album_temp_dir):
+        return
+    try:
+        existing_dirs = [d for d in os.listdir(album_temp_dir) if os.path.isdir(os.path.join(album_temp_dir, d))]
+    except Exception:
+        return
+    if not existing_dirs:
+        return
+
+    # 单章节作品：直接将现有的单个目录重命名为目标规范名
+    if len(photos) == 1 and len(existing_dirs) == 1:
+        target_name = safe_chapter_dirname(photos[0])
+        old_p = os.path.join(album_temp_dir, existing_dirs[0])
+        new_p = os.path.join(album_temp_dir, target_name)
+        if old_p != new_p and not os.path.exists(new_p):
+            try:
+                os.rename(old_p, new_p)
+                logging.info(f"Normalized temp folder for album {photos[0].id}: {existing_dirs[0]} -> {target_name}")
+            except Exception as e:
+                logging.warning(f"Failed to rename temp folder {old_p} -> {new_p}: {e}")
+        return
+
+    # 多章节作品：按序号或章节名称精准匹配并重命名
+    for photo in photos:
+        target_name = safe_chapter_dirname(photo)
+        target_path = os.path.join(album_temp_dir, target_name)
+        if os.path.exists(target_path):
+            continue
+        p_name = getattr(photo, 'name', '') or ''
+        p_idx = getattr(photo, 'index', 0)
+        for old_dir in list(existing_dirs):
+            old_path = os.path.join(album_temp_dir, old_dir)
+            if not os.path.isdir(old_path):
+                continue
+            clean_old = sanitize_filename(old_dir, max_bytes=200)
+            clean_pname = sanitize_filename(p_name, max_bytes=200)
+            if (old_dir == p_name or clean_old == clean_pname or 
+                old_dir.startswith(f"{p_idx:04d}_") or old_dir == str(p_idx)):
+                try:
+                    os.rename(old_path, target_path)
+                    existing_dirs.remove(old_dir)
+                    logging.info(f"Normalized multi-chapter temp folder: {old_dir} -> {target_name}")
+                except Exception:
+                    pass
+                break
+
 
 # =========================================================================
 # 待下载队列磁盘持久化系统 (防掉电、防意外退出、断点续传，支持漫画/小说独立分流)
@@ -161,13 +255,29 @@ def resolve_file_path(filename: str, target_dir: str = "") -> Optional[str]:
         return p2
     return None
 
+def get_cover_path(target_path: str) -> Optional[str]:
+    """获取指定游戏目录下的封面路径 (优先 cover.jpg/png，次选 Steam 规范封面)"""
+    for name in ("cover.jpg", "cover.png", "cover.webp", "folder.jpg", "poster.jpg"):
+        p = os.path.join(target_path, name)
+        if os.path.exists(p):
+            return p
+    # Steam 规范兼容
+    p2 = os.path.join(target_path, "header.jpg")
+    if os.path.exists(p2):
+        return p2
+    return None
+
+_LIBRARY_META_CACHE: Dict[Tuple[str, float], Dict[str, Any]] = {}
+_ALBUM_ID_TO_FILE: Dict[str, str] = {}
+
 def get_local_library(q: str = "", target_dir: str = "manga") -> List[Dict[str, Any]]:
-    """扫描本地漫画(manga)或小说(novels)目录下的所有 .cbz 文件并解析元数据"""
+    """扫描本地漫画(manga)或小说(novels)目录下的所有 .cbz 文件并解析元数据 (支持繁简双向模糊匹配，配备毫秒级 mtime 内存缓存)"""
     base_dir = NOVELS_DIR if str(target_dir).lower() in ('novels', 'novel') else MANGA_DIR
     if not os.path.exists(base_dir):
         return []
 
     q = (q or "").lower().strip()
+    norm_q = to_simplified_chinese(q)
     items = []
 
     for fname in os.listdir(base_dir):
@@ -182,29 +292,86 @@ def get_local_library(q: str = "", target_dir: str = "manga") -> List[Dict[str, 
 
         base_name = os.path.splitext(fname)[0]
         ext = os.path.splitext(fname)[1].lower().lstrip('.')
-        if q and (q not in base_name.lower()):
-            continue
 
         stat = os.stat(full_path)
+        mtime = stat.st_mtime
         size_mb = round(stat.st_size / (1024 * 1024), 2)
-        mtime_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(stat.st_mtime))
+        mtime_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime))
 
-        page_count = 0
-        has_cover = False
-        if ext == 'cbz':
-            try:
-                with zipfile.ZipFile(full_path, 'r') as zf:
-                    namelist = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
-                    img_files = [n for n in namelist if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp'))]
-                    page_count = len(img_files)
-                    has_cover = page_count > 0
-            except Exception:
-                pass
+        cache_key = (full_path, mtime)
+        cached_meta = _LIBRARY_META_CACHE.get(cache_key)
+
+        if cached_meta:
+            album_id = cached_meta.get('id', '')
+            page_count = cached_meta['page_count']
+            has_cover = cached_meta['has_cover']
+            author = cached_meta['author']
+            tags = cached_meta['tags']
+            is_complete = cached_meta['is_complete']
+            online_chapters = cached_meta['online_chapters']
+            local_chapters = cached_meta['local_chapters']
+        else:
+            album_id = ''
+            page_count = 0
+            has_cover = False
+            author = ''
+            tags = []
+            is_complete = True
+            online_chapters = 0
+            local_chapters = 0
+            if ext == 'cbz':
+                try:
+                    with zipfile.ZipFile(full_path, 'r') as zf:
+                        namelist = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
+                        img_files = [n for n in namelist if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp'))]
+                        page_count = len(img_files)
+                        has_cover = page_count > 0
+                        if 'metadata.json' in namelist:
+                            try:
+                                meta = json.loads(zf.read('metadata.json').decode('utf-8'))
+                                album_id = str(meta.get('id', '') or '').strip()
+                                author = meta.get('author', '')
+                                tags = meta.get('tags', [])
+                                is_complete = meta.get('is_complete', True)
+                                online_chapters = meta.get('online_chapters', 0)
+                                local_chapters = meta.get('local_chapters', 0)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            _LIBRARY_META_CACHE[cache_key] = {
+                'id': album_id,
+                'page_count': page_count,
+                'has_cover': has_cover,
+                'author': author,
+                'tags': tags,
+                'is_complete': is_complete,
+                'online_chapters': online_chapters,
+                'local_chapters': local_chapters,
+            }
+
+        if album_id:
+            _ALBUM_ID_TO_FILE[album_id] = full_path
+
+        if norm_q:
+            norm_name = to_simplified_chinese(base_name).lower()
+            norm_author = to_simplified_chinese(author).lower()
+            norm_tags = [to_simplified_chinese(t).lower() for t in tags]
+            matched = (norm_q in norm_name) or (norm_q in norm_author) or any(norm_q in t for t in norm_tags) or (q in base_name.lower())
+            if not matched:
+                continue
 
         dir_flag = 'novels' if base_dir == NOVELS_DIR else 'manga'
         items.append({
+            'id': album_id,
             'filename': fname,
             'title': base_name,
+            'author': author,
+            'tags': tags,
+            'is_complete': is_complete,
+            'online_chapters': online_chapters,
+            'local_chapters': local_chapters,
             'ext': ext,
             'dir': dir_flag,
             'size_mb': size_mb,
@@ -502,20 +669,47 @@ def get_jm_album_detail(album_id: str) -> Dict[str, Any]:
 def create_jm_option_for_dir(base_dir: str):
     """创建定制 JmOption，保证切片解密并存入指定目录"""
     import jmcomic
+    jmcomic.JmModuleConfig.FLAG_API_CLIENT_AUTO_UPDATE_DOMAIN = False
+    jmcomic.JmModuleConfig.DOMAIN_API_LIST = ['www.cdngwc.club', 'www.cdnhjk.net', 'www.cdngwc.net', 'www.cdngwc.cc']
+    jmcomic.JmModuleConfig.PFIELD_ADVICE['name'] = safe_chapter_dirname
+    jmcomic.JmModuleConfig.VAR_FILE_NAME_LENGTH_LIMIT = 50
     opt = jmcomic.JmOption.default()
     opt.dir_rule.base_dir = base_dir
     opt.dir_rule.rule = 'Bd_Pname'
     opt.download_image_decode = True
     return opt
 
-def pack_folder_to_cbz(source_folder: str, target_cbz_path: str, cover_file: Optional[str] = None):
-    """将下载好的漫画文件夹整整齐齐地封装为单个 .cbz 容器"""
+def pack_folder_to_cbz(source_folder: str, target_cbz_path: str, cover_file: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+    """将下载好的漫画文件夹整整齐齐地封装为单个 .cbz 容器，自动注入 ComicInfo.xml 与 metadata.json 元数据"""
     os.makedirs(os.path.dirname(target_cbz_path), exist_ok=True)
     temp_zip = target_cbz_path + ".tmp"
 
     with zipfile.ZipFile(temp_zip, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         if cover_file and os.path.exists(cover_file):
             zf.write(cover_file, arcname="cover.jpg")
+
+        # 写入 ComicInfo.xml 与 metadata.json
+        if metadata:
+            meta_json = json.dumps(metadata, ensure_ascii=False, indent=2)
+            zf.writestr("metadata.json", meta_json)
+
+            title_xml = html.escape(str(metadata.get('title', '')))
+            writer_xml = html.escape(str(metadata.get('author', '')))
+            summary_xml = html.escape(str(metadata.get('description', '')))
+            tags_list = metadata.get('tags', [])
+            tags_xml = html.escape(','.join(tags_list) if isinstance(tags_list, list) else str(tags_list))
+            album_id = metadata.get('id', '')
+
+            comic_info_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+<ComicInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Title>{title_xml}</Title>
+  <Writer>{writer_xml}</Writer>
+  <Summary>{summary_xml}</Summary>
+  <Genre>{tags_xml}</Genre>
+  <Tags>{tags_xml}</Tags>
+  <Web>https://18comic.vip/album/{album_id}</Web>
+</ComicInfo>"""
+            zf.writestr("ComicInfo.xml", comic_info_xml)
 
         for root, dirs, files in os.walk(source_folder):
             dirs.sort()
@@ -525,12 +719,121 @@ def pack_folder_to_cbz(source_folder: str, target_cbz_path: str, cover_file: Opt
                     rel_p = os.path.relpath(full_p, source_folder)
                     zf.write(full_p, arcname=rel_p)
 
+    try:
+        if os.path.exists(target_cbz_path):
+            os.remove(target_cbz_path)
+        os.rename(temp_zip, target_cbz_path)
+    finally:
+        if os.path.exists(temp_zip):
+            try:
+                os.remove(temp_zip)
+            except Exception:
+                pass
+
+def append_folder_to_cbz(source_folder: str, target_cbz_path: str, metadata: Optional[Dict[str, Any]] = None):
+    """
+    极速将新下载的章节文件夹增量追加注入到已存在的 .cbz 压缩包中，
+    自动更新 metadata.json 与 ComicInfo.xml，杜绝全量重新打包的巨大 I/O 开销。
+    """
+    if not os.path.exists(target_cbz_path):
+        return pack_folder_to_cbz(source_folder, target_cbz_path, metadata=metadata)
+
+    use_cli_zip = False
+    try:
+        sub_check = subprocess.run(['zip', '-v'], capture_output=True)
+        if sub_check.returncode == 0:
+            use_cli_zip = True
+    except Exception:
+        use_cli_zip = False
+
+    if metadata:
+        meta_json = json.dumps(metadata, ensure_ascii=False, indent=2)
+        with open(os.path.join(source_folder, "metadata.json"), 'w', encoding='utf-8') as f:
+            f.write(meta_json)
+
+        title_xml = html.escape(str(metadata.get('title', '')))
+        writer_xml = html.escape(str(metadata.get('author', '')))
+        summary_xml = html.escape(str(metadata.get('description', '')))
+        tags_list = metadata.get('tags', [])
+        tags_xml = html.escape(','.join(tags_list) if isinstance(tags_list, list) else str(tags_list))
+        album_id = metadata.get('id', '')
+
+        comic_info_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+<ComicInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Title>{title_xml}</Title>
+  <Writer>{writer_xml}</Writer>
+  <Summary>{summary_xml}</Summary>
+  <Genre>{tags_xml}</Genre>
+  <Tags>{tags_xml}</Tags>
+  <Web>https://18comic.vip/album/{album_id}</Web>
+</ComicInfo>"""
+        with open(os.path.join(source_folder, "ComicInfo.xml"), 'w', encoding='utf-8') as f:
+            f.write(comic_info_xml)
+
+    if use_cli_zip:
+        try:
+            # 剔除旧元数据以保证唯一性
+            subprocess.run(['zip', '-d', target_cbz_path, 'metadata.json', 'ComicInfo.xml'], check=False, capture_output=True)
+            # 增量注入新章节与新元数据
+            res = subprocess.run(['zip', '-u', '-r', target_cbz_path, '.'], cwd=source_folder, capture_output=True)
+            if res.returncode == 0:
+                return True
+        except Exception as e:
+            logging.warning(f"cli zip failed, falling back to python zipfile: {e}")
+
+    # Fallback: Python zipfile 重打包
+    temp_zip = target_cbz_path + ".tmp"
+    with zipfile.ZipFile(target_cbz_path, 'r') as src_zf, zipfile.ZipFile(temp_zip, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=1) as dst_zf:
+        for zinfo in src_zf.infolist():
+            if zinfo.filename not in ('metadata.json', 'ComicInfo.xml'):
+                dst_zf.writestr(zinfo.filename, src_zf.read(zinfo.filename))
+        
+        for root, dirs, files in os.walk(source_folder):
+            dirs.sort()
+            for f in sorted(files):
+                full_p = os.path.join(root, f)
+                rel_p = os.path.relpath(full_p, source_folder)
+                dst_zf.write(full_p, arcname=rel_p)
+
     if os.path.exists(target_cbz_path):
         os.remove(target_cbz_path)
     os.rename(temp_zip, target_cbz_path)
+    return True
+
+def find_existing_cbz_by_aid(aid: str, target_dir_path: str = MANGA_DIR) -> Optional[str]:
+    """根据 JM 专辑 ID 快速查找本地已存在的 .cbz 文件路径"""
+    aid_str = str(aid).strip()
+    if not aid_str or not os.path.exists(target_dir_path):
+        return None
+
+    fast_path = _ALBUM_ID_TO_FILE.get(aid_str)
+    if fast_path and os.path.isfile(fast_path) and os.path.dirname(fast_path) == target_dir_path:
+        return fast_path
+
+    for (fpath, _), meta in list(_LIBRARY_META_CACHE.items()):
+        if os.path.dirname(fpath) == target_dir_path and str(meta.get('id', '')) == aid_str:
+            if os.path.isfile(fpath):
+                _ALBUM_ID_TO_FILE[aid_str] = fpath
+                return fpath
+
+    for fname in os.listdir(target_dir_path):
+        if fname.lower().endswith('.cbz') and not fname.startswith('.'):
+            full_p = os.path.join(target_dir_path, fname)
+            try:
+                with zipfile.ZipFile(full_p, 'r') as zf:
+                    if 'metadata.json' in zf.namelist():
+                        m = json.loads(zf.read('metadata.json').decode('utf-8'))
+                        m_id = str(m.get('id', '')).strip()
+                        if m_id:
+                            _ALBUM_ID_TO_FILE[m_id] = full_p
+                        if m_id == aid_str:
+                            return full_p
+            except Exception:
+                continue
+    return None
 
 def _download_thread(task_id: str, album_id: str, chapter_ids: Optional[List[str]], pack_cbz: bool, clean_temp: bool, dest_dir: str = 'manga'):
-    """后台下载执行线程"""
+    """后台下载执行线程 (全面支持增量追更与整本下载)"""
     import jmcomic
 
     task = DOWNLOAD_TASKS.get(task_id)
@@ -552,45 +855,141 @@ def _download_thread(task_id: str, album_id: str, chapter_ids: Optional[List[str
         safe_title = sanitize_filename(title)
         task['title'] = title
         target_cbz_name = f"{safe_title}.cbz"
-        task['target_cbz'] = target_cbz_name
         target_cbz_path = os.path.join(target_dir_path, target_cbz_name)
 
-        if pack_cbz and os.path.exists(target_cbz_path) and os.path.getsize(target_cbz_path) > 10240 and (not chapter_ids):
-            task['status'] = 'completed'
-            task['percent'] = 100.0
-            task['message'] = f"单文件《{target_cbz_name}》本地已收录，无需重复下载！"
-            return
+        existing_cbz_path = find_existing_cbz_by_aid(album_id, target_dir_path)
+        if not existing_cbz_path and os.path.exists(target_cbz_path) and os.path.getsize(target_cbz_path) > 10240:
+            existing_cbz_path = target_cbz_path
+
+        all_photos = list(detail)
+        total_online = len(all_photos)
+
+        existing_chapter_count = 0
+        is_incremental = False
+        if pack_cbz and existing_cbz_path and os.path.exists(existing_cbz_path) and os.path.getsize(existing_cbz_path) > 10240:
+            try:
+                with zipfile.ZipFile(existing_cbz_path, 'r') as zf:
+                    nl = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
+                    inner_dirs = sorted(list({n.split('/')[0] for n in nl if '/' in n}))
+                    existing_chapter_count = len(inner_dirs) if inner_dirs else (1 if any(n.lower().endswith(('.jpg','.jpeg','.png','.webp','.bmp')) for n in nl) else 0)
+            except Exception:
+                existing_chapter_count = 0
+
+            if existing_chapter_count >= total_online and (not chapter_ids):
+                task['status'] = 'completed'
+                task['percent'] = 100.0
+                task['message'] = f"单文件《{os.path.basename(existing_cbz_path)}》已是最新全本 ({existing_chapter_count}/{total_online}话)，无需重复下载！"
+                remove_from_persistent_queue(album_id, target_dir=dest_dir)
+                return
+
+            if existing_chapter_count < total_online and (not chapter_ids):
+                is_incremental = True
 
         if chapter_ids and len(chapter_ids) > 0:
-            target_photos = [p for p in list(detail) if str(getattr(p, 'photo_id', getattr(p, 'id', ''))) in chapter_ids]
+            target_photos = [p for p in all_photos if str(getattr(p, 'photo_id', getattr(p, 'id', ''))) in chapter_ids]
             if not target_photos:
-                target_photos = list(detail)
+                target_photos = all_photos
+        elif is_incremental:
+            target_photos = all_photos[existing_chapter_count:]
+            task['message'] = f"发现新章节更新！本地已有 {existing_chapter_count} 话，开始增量下载最新 {len(target_photos)} 话..."
         else:
-            target_photos = list(detail)
+            target_photos = all_photos
 
         total_chapters = len(target_photos)
         task['total_chapters'] = total_chapters
         task['downloaded_chapters'] = 0
 
+        # 自动对齐并规范化该作品在 temp 下的历史章节目录
+        normalize_album_temp_folders(album_temp_dir, target_photos)
+
+        failed_photos = []
         for idx, photo in enumerate(target_photos, 1):
             pid = getattr(photo, 'photo_id', getattr(photo, 'id', ''))
+            display_num = existing_chapter_count + idx if is_incremental else idx
             task['status'] = 'downloading'
-            task['current_chapter'] = f"第 {idx}/{total_chapters} 话"
+            task['current_chapter'] = f"第 {display_num}/{total_online} 话"
             task['percent'] = round((idx - 1) / total_chapters * 85, 1)
             task['message'] = f"正在下载解密: {task['current_chapter']} (ID: {pid})..."
 
-            jmcomic.download_photo(pid, option=opt)
-            task['downloaded_chapters'] = idx
+            success = False
+            for p_try in range(3):
+                try:
+                    jmcomic.download_photo(pid, option=opt)
+                    success = True
+                    break
+                except Exception as pe:
+                    logging.warning(f"Album {album_id} chapter {pid} attempt {p_try+1}/3 failed: {pe}")
+                    time.sleep(1.0)
+
+            if success:
+                task['downloaded_chapters'] = idx
+            else:
+                failed_photos.append(pid)
 
         if pack_cbz:
+            valid_imgs = sum(
+                len(fl) for _, _, fl in os.walk(album_temp_dir)
+                if any(f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')) for f in fl)
+            )
+            if valid_imgs == 0:
+                raise RuntimeError("下载自检失败：未在解密目录找到有效图片，放弃打包以防止损坏文件入库")
+
             task['status'] = 'packing'
             task['percent'] = 90.0
-            task['message'] = '正在合并全章节图片并封装为单文件 .cbz 容器...'
 
-            target_cbz_path = os.path.join(target_dir_path, target_cbz_name)
-            pack_folder_to_cbz(album_temp_dir, target_cbz_path)
+            final_local_chapters = existing_chapter_count + (len(target_photos) - len(failed_photos)) if is_incremental else (len(target_photos) - len(failed_photos))
+            is_complete = (final_local_chapters >= total_online)
 
-            if clean_temp:
+            meta_dict = {
+                'id': str(album_id),
+                'title': title,
+                'author': getattr(detail, 'author', '') or '',
+                'description': getattr(detail, 'description', '') or '',
+                'tags': getattr(detail, 'tags', []) or [],
+                'online_chapters': total_online,
+                'local_chapters': final_local_chapters,
+                'is_complete': is_complete,
+                'verified': True,
+                'updated_at': time.time(),
+            }
+
+            final_cbz_path = existing_cbz_path if (is_incremental and existing_cbz_path) else target_cbz_path
+            if is_incremental and existing_cbz_path:
+                task['message'] = '正在将新章节增量追加注入到现有 CBZ 封箱包...'
+                append_folder_to_cbz(album_temp_dir, final_cbz_path, metadata=meta_dict)
+            else:
+                task['message'] = '正在合并全章节图片并封装为单文件 .cbz 容器(附带 ComicInfo 标签元数据)...'
+                pack_folder_to_cbz(album_temp_dir, final_cbz_path, metadata=meta_dict)
+
+            try:
+                st = os.stat(final_cbz_path)
+                with zipfile.ZipFile(final_cbz_path, 'r') as zf:
+                    page_c = sum(1 for n in zf.namelist() if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')))
+                _LIBRARY_META_CACHE[(final_cbz_path, st.st_mtime)] = {
+                    'id': str(album_id),
+                    'page_count': page_c,
+                    'has_cover': page_c > 0,
+                    'author': meta_dict['author'],
+                    'tags': meta_dict['tags'],
+                    'is_complete': is_complete,
+                    'online_chapters': total_online,
+                    'local_chapters': final_local_chapters,
+                }
+                _ALBUM_ID_TO_FILE[str(album_id)] = final_cbz_path
+            except Exception:
+                pass
+
+            broadcast_manga_event({
+                'type': 'metadata_updated',
+                'filename': os.path.basename(final_cbz_path),
+                'title': meta_dict['title'],
+                'tags': meta_dict['tags'],
+                'is_complete': is_complete,
+                'online_chapters': total_online,
+                'local_chapters': final_local_chapters,
+            })
+
+            if clean_temp and not failed_photos:
                 task['status'] = 'cleaning'
                 task['percent'] = 98.0
                 task['message'] = '正在清理下载临时切片碎片...'
@@ -600,7 +999,8 @@ def _download_thread(task_id: str, album_id: str, chapter_ids: Optional[List[str
 
         task['status'] = 'completed'
         task['percent'] = 100.0
-        task['message'] = f"下载与打包已完成！单文件已就绪: {target_cbz_name}"
+        final_cbz_name = os.path.basename(final_cbz_path) if 'final_cbz_path' in locals() else target_cbz_name
+        task['message'] = f"下载与封装完成！《{final_cbz_name}》已就绪 (已收录 {final_local_chapters}/{total_online} 话)"
 
     except Exception as e:
         task['status'] = 'failed'
@@ -666,8 +1066,10 @@ def get_ranking_albums(rank_type: str = 'week', page: int = 1, count: int = 80) 
         logging.error(f"Failed to fetch ranking albums ({rank_type}): {e}")
         return []
 
+MAX_BATCH_CONCURRENCY = 3
+
 def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, clean_temp: bool, dest_dir: str = 'manga'):
-    """后台批量连轴转下载工作线程"""
+    """后台多线程并发连轴转下载工作线程 (支持 MAX_BATCH_CONCURRENCY 路并行并发)"""
     import jmcomic
     task = DOWNLOAD_TASKS.get(task_id)
     if not task:
@@ -694,104 +1096,305 @@ def _batch_download_worker(task_id: str, album_ids: List[str], pack_cbz: bool, c
         task['message'] = '待下载 ID 列表为空！'
         return
 
-    client = get_jm_client()
+    work_queue: queue.Queue = queue.Queue()
+    for aid in task['clean_ids']:
+        work_queue.put(aid)
+    BATCH_WORK_QUEUES[task_id] = work_queue
 
-    curr_idx = 0
-    while curr_idx < len(task['clean_ids']):
-        aid = task['clean_ids'][curr_idx]
-        i = curr_idx + 1
-        total_albums = len(task['clean_ids'])
-        task['total_albums'] = total_albums
+    active_jobs: Dict[str, str] = {}
+    state_lock = threading.RLock()
+    completed_count = [0]
+    failed_albums = []
+    task_concurrency = int(task.get('concurrency', MAX_BATCH_CONCURRENCY))
+    is_sequential = (task_concurrency == 1)
 
-        album_temp_dir = os.path.join(TEMP_DIR, aid)
-        os.makedirs(album_temp_dir, exist_ok=True)
-        opt = create_jm_option_for_dir(album_temp_dir)
+    def update_task_progress():
+        with state_lock:
+            done = completed_count[0]
+            total = max(task['total_albums'], 1)
+            pct = round((done / total) * 100, 1)
+            task['percent'] = min(pct, 99.9) if done < total else 100.0
+            task['completed_albums'] = done
+            if is_sequential:
+                task['title'] = f"📥 逐本顺序下载队列 ({done}/{total} 部)"
+                if active_jobs:
+                    current_active = list(active_jobs.values())[0]
+                    task['message'] = f"[{done}/{total}] 正在抓取: {current_active}"
+                else:
+                    task['message'] = f"已完成 {done}/{total} 部作品"
+            else:
+                task['title'] = f"⚡ 并发批量下载队列 ({done}/{total} 部)"
+                if active_jobs:
+                    current_actives = list(active_jobs.values())[:3]
+                    task['message'] = f"[{done}/{total}] 并行抓取中: " + " · ".join(current_actives)
+                else:
+                    task['message'] = f"已完成 {done}/{total} 部作品"
+        broadcast_manga_event({'type': 'progress', 'task': task})
 
-        try:
-            task['status'] = 'downloading'
-            task['current_album_index'] = i
-            base_percent = round(((i - 1) / total_albums) * 100, 1)
-            task['percent'] = base_percent
-            task['title'] = f"批量连轴转队列 ({i}/{total_albums})"
-            task['message'] = f"[{i}/{total_albums}] 正在获取 JM{aid} 章节目录与详情..."
+    def worker_loop(worker_num: int):
+        client = get_jm_client()
+        while True:
+            # 优雅停止检查：若已触发停止，不再领取新漫画，手头任务完工后平稳退出
+            if task.get('stopping'):
+                break
 
-            detail = client.get_album_detail(aid)
-            safe_title = sanitize_filename(detail.title)
-            target_cbz_name = f"{safe_title}.cbz"
-            target_cbz_path = os.path.join(target_dir_path, target_cbz_name)
-            task['current_album_title'] = detail.title
+            try:
+                aid = work_queue.get_nowait()
+            except queue.Empty:
+                break
 
-            if pack_cbz and os.path.exists(target_cbz_path) and os.path.getsize(target_cbz_path) > 10240:
-                task['message'] = f"[{i}/{total_albums}] 《{safe_title[:18]}》 本地已存在完整 CBZ，自动跳过..."
-                remove_from_persistent_queue(aid)
-                task['completed_albums'] = i
-                task['percent'] = round((i / total_albums) * 100, 1)
-                curr_idx += 1
-                continue
+            album_temp_dir = os.path.join(TEMP_DIR, aid)
+            os.makedirs(album_temp_dir, exist_ok=True)
+            opt = create_jm_option_for_dir(album_temp_dir)
 
-            photos = list(detail)
-            total_photos = len(photos)
+            with state_lock:
+                active_jobs[aid] = f"JM{aid} 准备中"
+            update_task_progress()
 
-            for p_idx, photo in enumerate(photos, 1):
-                pid = getattr(photo, 'photo_id', getattr(photo, 'id', ''))
-                inner_pct = (p_idx / max(total_photos, 1)) * (100.0 / total_albums)
-                task['percent'] = round(base_percent + inner_pct * 0.88, 1)
-                task['message'] = f"[{i}/{total_albums}] 《{safe_title[:18]}》 正在解密下载第 {p_idx}/{total_photos} 话..."
-                broadcast_manga_event({'type': 'progress', 'task': task})
-                jmcomic.download_photo(pid, option=opt)
+            try:
+                # 1. 尝试获取详情与标题 (带容错重试)
+                detail = None
+                for d_try in range(3):
+                    try:
+                        detail = client.get_album_detail(aid)
+                        break
+                    except Exception as de:
+                        logging.warning(f"Album {aid} detail attempt {d_try+1}/3 failed: {de}")
+                        time.sleep(1.5)
 
-            if pack_cbz:
-                task['message'] = f"[{i}/{total_albums}] 正在封箱打包 《{safe_title[:18]}》 为单文件 CBZ..."
+                if not detail:
+                    raise RuntimeError(f"获取 JM{aid} 详情连续失败，请检查网络或该本已被下架")
+
+                photos = list(detail)
+                total_photos = len(photos)
+                failed_photos = []
+
+                # 自动对齐并规范化该作品在 temp 下的历史章节目录
+                normalize_album_temp_folders(album_temp_dir, photos)
+
+                safe_title = sanitize_filename(detail.title, max_bytes=180)
+                target_cbz_name = f"{safe_title}.cbz"
                 target_cbz_path = os.path.join(target_dir_path, target_cbz_name)
-                pack_folder_to_cbz(album_temp_dir, target_cbz_path)
 
-            if clean_temp:
-                shutil.rmtree(album_temp_dir, ignore_errors=True)
+                # 检查本地是否已有该本的 CBZ 文件 (增量检测)
+                existing_cbz_path = find_existing_cbz_by_aid(aid, target_dir_path)
+                if not existing_cbz_path and os.path.exists(target_cbz_path) and os.path.getsize(target_cbz_path) > 10240:
+                    existing_cbz_path = target_cbz_path
 
-            remove_from_persistent_queue(aid, target_dir=dest_dir)
-            task['completed_albums'] = i
-            task['percent'] = round((i / total_albums) * 100, 1)
-            broadcast_manga_event({'type': 'progress', 'task': task})
+                existing_chapter_count = 0
+                is_incremental = False
+                if pack_cbz and existing_cbz_path and os.path.exists(existing_cbz_path) and os.path.getsize(existing_cbz_path) > 10240:
+                    try:
+                        with zipfile.ZipFile(existing_cbz_path, 'r') as zf:
+                            nl = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
+                            inner_dirs = sorted(list({n.split('/')[0] for n in nl if '/' in n}))
+                            existing_chapter_count = len(inner_dirs) if inner_dirs else (1 if any(n.lower().endswith(('.jpg','.jpeg','.png','.webp','.bmp')) for n in nl) else 0)
+                    except Exception:
+                        existing_chapter_count = 0
 
-        except Exception as e:
-            logging.error(f"Error downloading album {aid}: {e}")
-            task['message'] = f"[{i}/{total_albums}] JM{aid} 遇阻 ({e})，自动轮转下一部..."
-            broadcast_manga_event({'type': 'progress', 'task': task})
-            time.sleep(1)
+                    if existing_chapter_count >= total_photos:
+                        remove_from_persistent_queue(aid, target_dir=dest_dir)
+                        with state_lock:
+                            completed_count[0] += 1
+                            active_jobs.pop(aid, None)
+                        update_task_progress()
+                        work_queue.task_done()
+                        continue
 
-        curr_idx += 1
+                    is_incremental = True
 
-    total_albums = len(task['clean_ids'])
-    task['status'] = 'completed'
-    task['percent'] = 100.0
-    task['message'] = f"🎉 批量连轴转已全部完成！已成功收录 {task.get('completed_albums', 0)}/{total_albums} 部单文件！"
-    broadcast_manga_event({'type': 'batch_completed', 'task': task})
+                target_photos = photos[existing_chapter_count:] if is_incremental else photos
 
-def start_batch_download_task(album_ids: List[str], pack_cbz: bool = True, clean_temp: bool = True, dest_dir: str = 'manga') -> str:
-    """启动批量连轴转下载任务，若已有队列正在运行则无缝追加到末尾"""
+                # 2. 逐章节解密下载 (自带本地缓存检测跳过已下载图 + 3次容错重试)
+                for p_idx, photo in enumerate(target_photos, 1):
+                    pid = getattr(photo, 'photo_id', getattr(photo, 'id', ''))
+                    disp_idx = existing_chapter_count + p_idx if is_incremental else p_idx
+                    with state_lock:
+                        status_label = "补更新" if is_incremental else ""
+                        active_jobs[aid] = f"《{safe_title[:10]}》{status_label}({disp_idx}/{total_photos}话)"
+                    update_task_progress()
+
+                    success = False
+                    for p_try in range(3):
+                        try:
+                            jmcomic.download_photo(pid, option=opt)
+                            success = True
+                            break
+                        except Exception as pe:
+                            logging.warning(f"Album {aid} chapter {pid} attempt {p_try+1}/3 failed: {pe}")
+                            time.sleep(1.0)
+
+                    if not success:
+                        failed_photos.append(pid)
+
+                # 3. 封箱打包为 CBZ (只要有切片下载成功就打包装盒，保全进度)
+                if pack_cbz:
+                    valid_imgs = sum(
+                        len(fl) for _, _, fl in os.walk(album_temp_dir)
+                        if any(f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')) for f in fl)
+                    )
+                    if valid_imgs == 0:
+                        raise RuntimeError("下载自检失败：未在解密目录找到有效图片，放弃打包以防止损坏文件入库")
+
+                    with state_lock:
+                        active_jobs[aid] = f"《{safe_title[:10]}》{'增量封箱' if is_incremental else '封箱打包'}"
+                    update_task_progress()
+
+                    final_local_chapters = existing_chapter_count + (len(target_photos) - len(failed_photos)) if is_incremental else (len(target_photos) - len(failed_photos))
+                    is_complete = (final_local_chapters >= total_photos)
+
+                    meta_dict = {
+                        'id': str(aid),
+                        'title': detail.title,
+                        'author': getattr(detail, 'author', '') or '',
+                        'description': getattr(detail, 'description', '') or '',
+                        'tags': getattr(detail, 'tags', []) or [],
+                        'online_chapters': total_photos,
+                        'local_chapters': final_local_chapters,
+                        'is_complete': is_complete,
+                        'verified': True,
+                        'updated_at': time.time()
+                    }
+
+                    final_cbz_path = existing_cbz_path if (is_incremental and existing_cbz_path) else target_cbz_path
+                    if is_incremental and existing_cbz_path:
+                        append_folder_to_cbz(album_temp_dir, final_cbz_path, metadata=meta_dict)
+                    else:
+                        pack_folder_to_cbz(album_temp_dir, final_cbz_path, metadata=meta_dict)
+
+                    try:
+                        st = os.stat(final_cbz_path)
+                        with zipfile.ZipFile(final_cbz_path, 'r') as zf:
+                            page_c = sum(1 for n in zf.namelist() if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')))
+                        _LIBRARY_META_CACHE[(final_cbz_path, st.st_mtime)] = {
+                            'id': str(aid),
+                            'page_count': page_c,
+                            'has_cover': page_c > 0,
+                            'author': meta_dict['author'],
+                            'tags': meta_dict['tags'],
+                            'is_complete': is_complete,
+                            'online_chapters': total_photos,
+                            'local_chapters': final_local_chapters,
+                        }
+                        _ALBUM_ID_TO_FILE[str(aid)] = final_cbz_path
+                    except Exception:
+                        pass
+
+                    broadcast_manga_event({
+                        'type': 'metadata_updated',
+                        'filename': os.path.basename(final_cbz_path),
+                        'title': meta_dict['title'],
+                        'tags': meta_dict['tags'],
+                        'is_complete': is_complete,
+                        'online_chapters': total_photos,
+                        'local_chapters': final_local_chapters,
+                    })
+
+                    if clean_temp and not failed_photos:
+                        shutil.rmtree(album_temp_dir, ignore_errors=True)
+
+                    if not failed_photos:
+                        remove_from_persistent_queue(aid, target_dir=dest_dir)
+
+                with state_lock:
+                    completed_count[0] += 1
+                    active_jobs.pop(aid, None)
+                update_task_progress()
+
+            except Exception as e:
+                logging.error(f"Error downloading album {aid}: {e}")
+                with state_lock:
+                    active_jobs.pop(aid, None)
+                    failed_albums.append(aid)
+                update_task_progress()
+            finally:
+                work_queue.task_done()
+
+    # 启动工作线程池 (1 路逐本顺序 或 3 路并发)
+    concurrency = max(1, min(task_concurrency, len(task['clean_ids'])))
+    threads = []
+    task['status'] = 'downloading'
+    update_task_progress()
+
+    for w_idx in range(concurrency):
+        t = threading.Thread(target=worker_loop, args=(w_idx + 1,), daemon=True)
+        t.start()
+        threads.append(t)
+
+    # 等待队列中所有任务执行完毕
+    for t in threads:
+        t.join()
+
+    BATCH_WORK_QUEUES.pop(task_id, None)
+
+    total_albums = task['total_albums']
+    done_total = completed_count[0]
+    prefix = "📥 逐本顺序下载队列" if is_sequential else "⚡ 并发批量下载队列"
+    if task.get('stopping'):
+        task['status'] = 'stopped'
+        pct = round((done_total / max(total_albums, 1)) * 100, 1)
+        task['percent'] = min(pct, 100.0)
+        task['title'] = f"⏹️ {prefix} (已按要求停止: {done_total}/{total_albums} 部)"
+        task['message'] = f"已在当前作品下载打包完成后安全停止队列！共收录 {done_total}/{total_albums} 部，剩余作品保存在待下载列表中。"
+        broadcast_manga_event({'type': 'batch_stopped', 'task': task})
+    else:
+        task['status'] = 'completed'
+        task['percent'] = 100.0
+        name_desc = "逐本顺序下载" if is_sequential else "并发批量下载"
+        task['message'] = f"🎉 {name_desc}已全部完成！已成功收录 {done_total}/{total_albums} 部作品！"
+        broadcast_manga_event({'type': 'batch_completed', 'task': task})
+
+def stop_batch_download_task(task_id: Optional[str] = None) -> bool:
+    """
+    优雅停止批量并发下载队列：
+    标记 stopping 标志位。当前正在并发下载/打包的漫画完成后，工作线程不再领取新任务，
+    剩余未下载的作品完整保存在待下载列表中。
+    """
+    found = False
+    with TASKS_LOCK:
+        for tid, t_info in DOWNLOAD_TASKS.items():
+            if t_info.get('is_batch') and t_info.get('status') in ('queued', 'downloading'):
+                if task_id is None or tid == task_id:
+                    t_info['stopping'] = True
+                    t_info['message'] = "⏹️ 已请求停止：正在等待当前并发的漫画下载打包完毕，完成后将自动暂停队列..."
+                    broadcast_manga_event({'type': 'progress', 'task': t_info})
+                    found = True
+    return found
+
+def start_batch_download_task(album_ids: List[str], pack_cbz: bool = True, clean_temp: bool = True, dest_dir: str = 'manga', concurrency: int = 3) -> str:
+    """启动批量下载任务，支持 concurrency=1 (逐本顺序) 或 concurrency=3 (并发批量)"""
     with TASKS_LOCK:
         for tid, t_info in DOWNLOAD_TASKS.items():
             if t_info.get('is_batch') and t_info.get('status') in ('queued', 'downloading'):
                 existing = t_info.get('clean_ids', [])
+                q = BATCH_WORK_QUEUES.get(tid)
                 added_count = 0
                 for aid in album_ids:
                     aid_str = str(aid).strip()
                     if aid_str and aid_str not in existing:
                         existing.append(aid_str)
+                        if q is not None:
+                            q.put(aid_str)
                         added_count += 1
                 t_info['total_albums'] = len(existing)
-                t_info['title'] = f"批量连轴转队列 (当前第 {t_info.get('current_album_index', 1)}/{len(existing)} 部)"
+                is_seq = (t_info.get('concurrency', 3) == 1)
+                prefix = "📥 逐本顺序下载队列" if is_seq else "⚡ 并发批量下载队列"
+                t_info['title'] = f"{prefix} ({t_info.get('completed_albums', 0)}/{len(existing)} 部)"
                 t_info['message'] = f"已将新加入的 {added_count} 部追加至当前下载队伍末尾 (总计 {len(existing)} 部)！"
                 return tid
 
         task_id = f"batch_{int(time.time())}"
+        is_seq = (concurrency == 1)
+        prefix = "📥 逐本顺序下载队列" if is_seq else f"⚡ {concurrency}路并发批量下载队列"
+        msg = f"准备逐本顺序下载 {len(album_ids)} 部作品..." if is_seq else f"准备以 {concurrency} 路并发下载 {len(album_ids)} 部作品..."
         DOWNLOAD_TASKS[task_id] = {
             'task_id': task_id,
             'is_batch': True,
-            'title': f"批量连轴转队列 (共 {len(album_ids)} 部)",
+            'concurrency': concurrency,
+            'title': f"{prefix} (共 {len(album_ids)} 部)",
             'status': 'queued',
             'percent': 0.0,
-            'message': f'准备连轴转下载 {len(album_ids)} 部作品...',
+            'message': msg,
             'total_albums': len(album_ids),
             'completed_albums': 0,
             'dest_dir': dest_dir,
@@ -806,10 +1409,64 @@ def start_batch_download_task(album_ids: List[str], pack_cbz: bool = True, clean
     t.start()
     return task_id
 
+def scan_and_recover_temp_manga(target_dir: str = 'manga') -> Dict[str, Any]:
+    """
+    扫描 .temp 目录下未完成下载且未打包入库的漫画碎片，
+    若不在待下载列表中，自动找回并追加回持久化待下载列表。
+    """
+    if not os.path.exists(TEMP_DIR):
+        return {'recovered_count': 0, 'recovered_items': []}
+
+    target_dir_path = NOVELS_DIR if str(target_dir).lower() in ('novels', 'novel') else MANGA_DIR
+    q_items = get_persistent_queue(target_dir)
+    q_ids = {str(it.get('id')) for it in q_items if it.get('id')}
+
+    recovered = []
+    client = get_jm_client()
+
+    for item in sorted(os.listdir(TEMP_DIR)):
+        item_path = os.path.join(TEMP_DIR, item)
+        if not os.path.isdir(item_path):
+            continue
+        aid = str(item).strip()
+        if not aid.isdigit():
+            continue
+
+        file_count = sum(len(fl) for _, _, fl in os.walk(item_path))
+        if file_count == 0:
+            continue
+
+        # 检查如果当前不在队列中，找回并加入
+        if aid not in q_ids:
+            title = f"JM{aid}"
+            cover_url = f"/api/manga/online_cover?id={aid}"
+            try:
+                detail = client.get_album_detail(aid)
+                if detail and detail.title:
+                    title = detail.title
+            except Exception:
+                pass
+
+            recovered_item = {'id': aid, 'title': title, 'cover_url': cover_url}
+            q_items.append(recovered_item)
+            q_ids.add(aid)
+            recovered.append(recovered_item)
+
+    if recovered:
+        save_persistent_queue(q_items, target_dir=target_dir)
+
+    return {
+        'recovered_count': len(recovered),
+        'recovered_items': recovered
+    }
+
 def get_all_tasks() -> List[Dict[str, Any]]:
-    """获取所有下载任务状态"""
+    """获取所有下载任务状态 (纯净化确保完全可 JSON 序列化)"""
     with TASKS_LOCK:
-        return sorted(list(DOWNLOAD_TASKS.values()), key=lambda x: x.get('created_at', 0), reverse=True)
+        res = []
+        for t in DOWNLOAD_TASKS.values():
+            res.append({k: v for k, v in t.items() if not k.startswith('_') and not isinstance(v, queue.Queue)})
+        return sorted(res, key=lambda x: x.get('created_at', 0), reverse=True)
 
 def manual_pack_manga(folder_name: str, target_name: Optional[str] = None, dest_dir: str = 'manga') -> bool:
     """将 .temp 下的一个目录手动打包为 .cbz"""
@@ -846,3 +1503,249 @@ def trash_manga_file(filename: str, target_dir: str = "") -> bool:
         return False
     res = subprocess.run(['gio', 'trash', cbz_path], capture_output=True)
     return res.returncode == 0
+
+def is_active_downloading() -> bool:
+    """检查当前是否有活跃的由用户发起的下载任务正在进行"""
+    with TASKS_LOCK:
+        return any(
+            t.get('status') in ('downloading', 'queued') and not t.get('is_background_audit')
+            for t in DOWNLOAD_TASKS.values()
+        )
+
+def match_and_repair_cbz_metadata(cbz_path: str, client=None) -> Optional[Dict[str, Any]]:
+    """
+    自动为缺失元数据的旧 CBZ 文件在线匹配漫画、核验完整性，并将 metadata.json 与 ComicInfo.xml 写入压缩包
+    """
+    if not os.path.exists(cbz_path) or os.path.getsize(cbz_path) < 1024:
+        return None
+
+    try:
+        with zipfile.ZipFile(cbz_path, 'r') as zf:
+            namelist = [n for n in zf.namelist() if not n.endswith('/') and not os.path.basename(n).startswith('.')]
+            if 'metadata.json' in namelist:
+                try:
+                    meta = json.loads(zf.read('metadata.json').decode('utf-8'))
+                    if meta.get('verified') or (meta.get('tags') and meta.get('is_complete') is not None):
+                        return meta
+                except Exception:
+                    pass
+
+            inner_dirs = sorted(list({n.split('/')[0] for n in namelist if '/' in n}))
+            img_files = [n for n in namelist if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp'))]
+            if len(img_files) == 0:
+                return None
+    except Exception as e:
+        logging.warning(f"Error reading cbz {cbz_path}: {e}")
+        return None
+
+    if client is None:
+        client = get_jm_client()
+
+    fname = os.path.basename(cbz_path)
+    base_name = os.path.splitext(fname)[0]
+
+    clean_name = re.sub(r'\[.*?\]', '', base_name).strip()
+    clean_core = re.sub(r'(\(.*?\)|\[.*?\])', '', base_name).strip()
+    clean_sub = clean_name.replace('_', ' ').strip()
+    parts = [p.strip() for p in clean_name.split('_') if p.strip()]
+
+    # 从括号中提取作者名或社团名作为检索候选
+    bracket_authors = []
+    for b in re.findall(r'\[(.*?)\]', base_name):
+        b_clean = b.strip()
+        if b_clean:
+            bracket_authors.append(b_clean)
+            sub_parens = re.findall(r'\((.*?)\)', b_clean)
+            bracket_authors.extend([sp.strip() for sp in sub_parens if sp.strip()])
+
+    queries = []
+    for q in [clean_core, clean_name, clean_sub] + parts + bracket_authors + inner_dirs + [base_name]:
+        q = q.strip()
+        if q and len(q) >= 2 and q not in queries:
+            queries.append(q)
+
+    matched_aid = None
+    matched_title = None
+
+    for q in queries[:6]:
+        try:
+            page = client.search_site(search_query=q)
+            if not page:
+                continue
+            for aid, atitle in page:
+                raw_name = atitle.get('name', '') if isinstance(atitle, dict) else (getattr(atitle, 'name', None) or str(atitle))
+                c_clean = sanitize_filename(raw_name)
+                # 精确匹配全名、清理名或核心名
+                if (c_clean == base_name or raw_name == base_name or
+                    re.sub(r'\[.*?\]', '', c_clean).strip() == clean_name or
+                    (clean_core and clean_core in raw_name and len(clean_core) >= 4)):
+                    matched_aid = aid
+                    matched_title = raw_name
+                    break
+            if matched_aid:
+                break
+            if len(page) == 1:
+                first_aid, first_title = page[0]
+                first_raw = first_title.get('name', '') if isinstance(first_title, dict) else (getattr(first_title, 'name', None) or str(first_title))
+                matched_aid = first_aid
+                matched_title = first_raw
+                break
+        except Exception:
+            continue
+
+    if not matched_aid:
+        return None
+
+    try:
+        detail = client.get_album_detail(str(matched_aid))
+        online_chapters = len(detail)
+        local_chapters = len(inner_dirs) if inner_dirs else 1
+        is_complete = (local_chapters >= online_chapters) if online_chapters > 1 else (len(img_files) > 0)
+
+        meta_dict = {
+            'id': str(matched_aid),
+            'title': detail.title,
+            'author': getattr(detail, 'author', '') or '',
+            'description': getattr(detail, 'description', '') or '',
+            'tags': getattr(detail, 'tags', []) or [],
+            'online_chapters': online_chapters,
+            'local_chapters': local_chapters,
+            'is_complete': is_complete,
+            'verified': True,
+            'verified_at': int(time.time()),
+        }
+
+        with zipfile.ZipFile(cbz_path, 'a') as zf:
+            meta_json = json.dumps(meta_dict, ensure_ascii=False, indent=2)
+            zf.writestr("metadata.json", meta_json)
+
+            title_xml = html.escape(str(meta_dict.get('title', '')))
+            writer_xml = html.escape(str(meta_dict.get('author', '')))
+            summary_xml = html.escape(str(meta_dict.get('description', '')))
+            tags_list = meta_dict.get('tags', [])
+            tags_xml = html.escape(','.join(tags_list) if isinstance(tags_list, list) else str(tags_list))
+            album_id = meta_dict.get('id', '')
+
+            comic_info_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+<ComicInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Title>{title_xml}</Title>
+  <Writer>{writer_xml}</Writer>
+  <Summary>{summary_xml}</Summary>
+  <Genre>{tags_xml}</Genre>
+  <Tags>{tags_xml}</Tags>
+  <Web>https://18comic.vip/album/{album_id}</Web>
+</ComicInfo>"""
+            zf.writestr("ComicInfo.xml", comic_info_xml)
+
+        stat = os.stat(cbz_path)
+        _LIBRARY_META_CACHE[(cbz_path, stat.st_mtime)] = {
+            'id': str(album_id),
+            'page_count': len(img_files),
+            'has_cover': len(img_files) > 0,
+            'author': meta_dict['author'],
+            'tags': meta_dict['tags'],
+            'is_complete': is_complete,
+            'online_chapters': online_chapters,
+            'local_chapters': local_chapters,
+        }
+        if album_id:
+            _ALBUM_ID_TO_FILE[str(album_id)] = cbz_path
+
+        return meta_dict
+    except Exception as e:
+        logging.error(f"Error repairing metadata for {cbz_path}: {e}")
+        return None
+
+def _auto_metadata_audit_worker():
+    """
+    后台静默巡检守护线程：
+    1. 启动延迟 12 秒，不干扰系统启动和首屏体验；
+    2. 发现缺少标签与元数据的旧 CBZ，自动通过标题在线匹配补齐标签与元数据；
+    3. 自行检查漫画各章节完整性，校验是否完整收录；
+    4. 遇用户正在主动下载时，自动挂起避让；
+    5. 每本处理平稳间隔 2.5 秒，低调防限频。
+    """
+    time.sleep(12.0)
+    audit_state_file = os.path.join(MANGA_DIR, '.metadata_audit.json')
+
+    while True:
+        try:
+            audit_state = {}
+            if os.path.exists(audit_state_file):
+                try:
+                    with open(audit_state_file, 'r', encoding='utf-8') as f:
+                        audit_state = json.load(f)
+                except Exception:
+                    pass
+
+            unmatched = set(audit_state.get('unmatched', []))
+            client = get_jm_client()
+
+            if os.path.exists(MANGA_DIR):
+                cbz_files = [f for f in sorted(os.listdir(MANGA_DIR)) if f.lower().endswith('.cbz') and not f.startswith('.')]
+                for fname in cbz_files:
+                    if fname in unmatched:
+                        continue
+
+                    full_path = os.path.join(MANGA_DIR, fname)
+                    if not os.path.isfile(full_path):
+                        continue
+
+                    # 探测是否需要补全
+                    needs_repair = False
+                    try:
+                        with zipfile.ZipFile(full_path, 'r') as zf:
+                            namelist = zf.namelist()
+                            if 'metadata.json' not in namelist:
+                                needs_repair = True
+                            else:
+                                meta = json.loads(zf.read('metadata.json').decode('utf-8'))
+                                if not meta.get('tags') or meta.get('is_complete') is None:
+                                    needs_repair = True
+                    except Exception:
+                        needs_repair = False
+
+                    if not needs_repair:
+                        continue
+
+                    # 用户正在主动下载时，优雅避让挂起
+                    while is_active_downloading():
+                        time.sleep(5.0)
+
+                    # 执行元数据补全与完整性核验
+                    res = match_and_repair_cbz_metadata(full_path, client=client)
+                    if res:
+                        broadcast_manga_event({
+                            'type': 'metadata_updated',
+                            'filename': fname,
+                            'title': res.get('title', ''),
+                            'tags': res.get('tags', []),
+                            'is_complete': res.get('is_complete', True),
+                            'online_chapters': res.get('online_chapters', 0),
+                            'local_chapters': res.get('local_chapters', 0),
+                        })
+                    else:
+                        unmatched.add(fname)
+                        audit_state['unmatched'] = list(unmatched)
+                        try:
+                            with open(audit_state_file, 'w', encoding='utf-8') as f:
+                                json.dump(audit_state, f, ensure_ascii=False, indent=2)
+                        except Exception:
+                            pass
+
+                    # 间隔 2.5 秒，平稳静默运行
+                    time.sleep(2.5)
+
+        except Exception as e:
+            logging.error(f"Error in auto_metadata_audit_worker: {e}")
+
+        # 一轮巡检完成，休眠 2 小时后进行下一轮巡检
+        time.sleep(7200)
+
+def start_auto_metadata_audit():
+    """启动后台静默元数据补全与完整性核验守护服务"""
+    t = threading.Thread(target=_auto_metadata_audit_worker, daemon=True, name="AutoMangaAuditor")
+    t.start()
+
+# 模块加载时自动启动后台静默守护进程
+start_auto_metadata_audit()

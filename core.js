@@ -10,6 +10,11 @@
                 return;
             }
 
+            // Ren'Py Web (Emscripten WASM) 等非 NW.js 网页游戏严禁挂载 RPG Maker Polyfill，防止环境污染
+            if (window.location.search.indexOf('engine=renpy') !== -1 || window.location.search.indexOf('type=slg') !== -1) {
+                return;
+            }
+
             // Safe Function constructor wrapper for obfuscated plugins with malformed eval
             var _orig_Function = window.Function;
             window.Function = function() {
@@ -155,7 +160,9 @@
                 require: function(mod) { return window.require(mod); }
             };
 
-            // 3. process 全局运行环境模拟
+            // 3. process 全局运行环境模拟 (为 NW.js 环境适配，绝不伪装 node 键以防 Emscripten/WASM 误判为 Node.js CLI 环境)
+            window.__dirname = '.';
+            window.__filename = 'index.html';
             window.process = {
                 platform: 'win32',
                 arch: 'x64',
@@ -163,7 +170,6 @@
                 versions: {
                     'node-webkit': '0.45.0',
                     'nw': '0.45.0',
-                    'node': '14.0.0',
                     'chromium': '80.0.0'
                 },
                 env: { APPDATA: '', LOCALAPPDATA: '', USERPROFILE: '' },

@@ -4,16 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Omni Deck — 全能游戏控制中心</title>
+    <link rel="stylesheet" href="/assets/katex.min.css">
+    <script src="/assets/katex.min.js"></script>
     <script src="/marked.min.js"></script>
     <script src="/mermaid.min.js"></script>
     <script>
         (function() {
             var params = new URLSearchParams(window.location.search);
             var cat = params.get('category');
-            if (cat && cat !== 'portal') {
+            var savedSec = 'games';
+            try { savedSec = localStorage.getItem('omni_primary_section') || 'games'; } catch(e) {}
+            if (savedSec !== 'media' && cat && cat !== 'portal') {
                 var style = document.createElement('style');
+                style.className = 'cat-init-style';
                 style.id = 'cat-init-style';
-                style.textContent = '#portal-view { display: none !important; } #list-view { display: block !important; } #list-controls { display: flex !important; } #nav-back-btn { display: flex !important; }';
+                var extra = '';
+                if (cat !== 'rpg') {
+                    extra = ' body:not(.section-media) .tab-btn[data-tab="rpg"] { background: transparent !important; color: #8b949e !important; border-color: #30363d !important; } body:not(.section-media) .tab-btn[data-tab="' + cat + '"] { background: #21262d !important; color: #58a6ff !important; border-color: #58a6ff !important; }';
+                }
+                style.textContent = 'body:not(.section-media) #portal-view { display: none !important; } body:not(.section-media) #list-view { display: block !important; } body:not(.section-media) #list-controls { display: flex !important; } body:not(.section-media) #nav-back-btn { display: flex !important; }' + extra;
                 document.head.appendChild(style);
             }
         })();
@@ -239,6 +248,59 @@
             border-color: #58a6ff;
             color: #58a6ff;
         }
+
+        /* 星际2 面板：种族选择 chip / 地图卡片 */
+        .sc2-race-btn {
+            background: #21262d; border: 1px solid #30363d; color: #8b949e;
+            padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+            cursor: pointer; margin-right: 4px; transition: all .15s ease;
+        }
+        .sc2-race-btn:hover { color: #f0f6fc; border-color: #58a6ff; }
+        .sc2-race-btn.active { background: #1f3a5f; border-color: #58a6ff; color: #58a6ff; }
+        .sc2-mod-chip { display:flex; align-items:center; gap:5px; color:#c9d1d9; font-size:13px; cursor:pointer; }
+        .sc2-map-card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+            padding: 8px; cursor: pointer; transition: all .15s ease; text-align: center;
+        }
+        .sc2-map-card:hover { border-color: #58a6ff; background: #1c2129; transform: translateY(-2px); }
+        .sc2-map-card img { width: 100%; border-radius: 6px; display: block; background: #0d1117; }
+        .sc2-map-card .sc2-map-name { color: #8b949e; font-size: 12px; margin-top: 6px; }
+        .sc2-map-card.playing { opacity: .5; pointer-events: none; }
+        .sc2-modal-overlay {
+            position: fixed; inset: 0; background: rgba(1,4,9,.72);
+            z-index: 500; display: flex; align-items: center; justify-content: center; padding: 16px;
+        }
+        .sc2-modal {
+            background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+            padding: 20px; width: 560px; max-width: 100%; max-height: 85vh; overflow-y: auto;
+        }
+        .sc2-modal-x {
+            background: none; border: none; color: #8b949e; font-size: 22px; line-height: 1;
+            cursor: pointer; padding: 2px 6px;
+        }
+        .sc2-modal-x:hover { color: #f0f6fc; }
+        .sc2-stepper-btn {
+            width: 26px; height: 26px; border-radius: 6px; border: 1px solid #30363d;
+            background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 15px; line-height: 1;
+        }
+        .sc2-stepper-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+        .sc2-opp-row {
+            display: flex; align-items: center; gap: 10px; padding: 8px 0;
+            border-bottom: 1px solid #21262d;
+        }
+        .sc2-opp-row:last-child { border-bottom: none; }
+        .sc2-opp-row .sc2-opp-label { color: #8b949e; font-size: 13px; min-width: 56px; }
+        .sc2-opp-row select {
+            background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+            border-radius: 6px; padding: 5px 8px; font-size: 13px;
+        }
+        .sc2-btn {
+            border-radius: 6px; padding: 7px 16px; font-size: 13px; cursor: pointer; border: 1px solid transparent;
+        }
+        .sc2-btn-secondary { background: #21262d; border-color: #30363d; color: #c9d1d9; }
+        .sc2-btn-secondary:hover { border-color: #58a6ff; color: #58a6ff; }
+        .sc2-btn-primary { background: #238636; color: #fff; }
+        .sc2-btn-primary:hover { background: #2ea043; }
 
         .game-card.disabled {
             opacity: 0.42;
@@ -716,6 +778,34 @@
             transition: all 0.15s;
         }
         .manga-mini-btn:hover { background: #30363d; color: #fff; }
+        .manga-tag-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 1.5px 6px;
+            font-size: 10.5px;
+            background: rgba(188, 140, 255, 0.12);
+            color: #d2a8ff;
+            border: 1px solid rgba(188, 140, 255, 0.3);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+            user-select: none;
+        }
+        .manga-tag-pill:hover {
+            background: rgba(188, 140, 255, 0.28);
+            border-color: #bc8cff;
+            color: #ffffff;
+            transform: translateY(-1px);
+        }
+        .manga-tags-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 3px;
+            overflow: hidden;
+            max-height: 22px;
+        }
 
         /* 任务实时进度面板 */
         .manga-tasks-card {
@@ -889,19 +979,21 @@
         .novel-card {
             background: #161b22;
             border: 1px solid #30363d;
-            border-radius: 10px;
-            padding: 16px;
+            border-radius: 8px;
+            padding: 10px 14px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.18s ease;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            justify-content: space-between;
+            gap: 6px;
             position: relative;
         }
         .novel-card:hover {
-            transform: translateY(-3px);
+            transform: translateY(-2px);
             border-color: #58a6ff;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+            background: #1c2128;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
         }
         .novel-card-top {
             display: flex;
@@ -1044,8 +1136,54 @@
             word-break: break-word;
         }
         .novel-content-view p {
-            margin-bottom: 1.25em;
+            margin-bottom: 1.15em;
             text-indent: 2em;
+            text-align: justify;
+            line-height: 1.9;
+        }
+        .novel-cat-btn, .manga-tag-filter-btn {
+            padding: 4px 12px;
+            font-size: 12px;
+            border-radius: 14px;
+            border: 1px solid #30363d;
+            background: #161b22;
+            color: #c9d1d9;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            user-select: none;
+        }
+        .novel-cat-btn:hover, .manga-tag-filter-btn:hover {
+            background: #21262d;
+            color: #58a6ff;
+            border-color: #58a6ff;
+        }
+        .novel-cat-btn.active, .manga-tag-filter-btn.active {
+            background: #1f6feb33;
+            border-color: #388bfd;
+            color: #58a6ff;
+            font-weight: 600;
+        }
+        .novel-cat-pill {
+            font-size: 11px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            background: rgba(110, 118, 129, 0.2);
+            color: #8b949e;
+            margin-right: 4px;
+        }
+        .novel-inline-img-placeholder {
+            text-align: center;
+            padding: 12px;
+            color: #8b949e;
+            font-size: 13px;
+        }
+        .novel-divider {
+            border: none;
+            border-top: 1px solid rgba(88, 166, 255, 0.25);
+            margin: 2em 0;
         }
         .novel-content-view h1, .novel-content-view h2, .novel-content-view h3, .novel-content-view h4 {
             margin-top: 1.5em;
@@ -1090,47 +1228,49 @@
         }
         .novel-content-view th { background: rgba(128,128,128,0.1); }
 
-        /* 深度 Markdown 与 Mermaid 渲染样式 (GitHub / Notion 级高质感排版) */
+        /* 深度 Markdown 与 RST 渲染样式 (GitHub / Notion / VitePress 旗舰级高质感排版) */
         .doc-markdown-body {
-            line-height: 1.75;
+            line-height: 1.8;
             color: var(--novel-text, #c9d1d9);
             font-size: var(--novel-font-size, 16px);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
         }
         .doc-markdown-body p {
             margin-top: 0;
             margin-bottom: 16px;
             text-indent: 0 !important;
-            line-height: 1.75;
+            line-height: 1.8;
         }
         .doc-markdown-body h1 {
-            font-size: 2em;
+            font-size: 2.1em;
             font-weight: 700;
-            padding-bottom: 0.3em;
-            margin-top: 24px;
-            margin-bottom: 16px;
+            padding-bottom: 0.35em;
+            margin-top: 28px;
+            margin-bottom: 18px;
             border-bottom: 1px solid var(--novel-border, #30363d);
             color: var(--novel-heading, #f0f6fc);
+            letter-spacing: -0.02em;
         }
         .doc-markdown-body h2 {
-            font-size: 1.5em;
+            font-size: 1.55em;
             font-weight: 700;
-            padding-bottom: 0.25em;
-            margin-top: 24px;
-            margin-bottom: 14px;
-            border-bottom: 1px solid rgba(48, 54, 61, 0.6);
+            padding-bottom: 0.28em;
+            margin-top: 26px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(48, 54, 61, 0.65);
             color: var(--novel-heading, #f0f6fc);
         }
         .doc-markdown-body h3 {
-            font-size: 1.25em;
+            font-size: 1.3em;
             font-weight: 600;
-            margin-top: 20px;
-            margin-bottom: 10px;
+            margin-top: 22px;
+            margin-bottom: 12px;
             color: var(--novel-heading, #e6edf3);
         }
         .doc-markdown-body h4, .doc-markdown-body h5, .doc-markdown-body h6 {
-            font-size: 1.05em;
+            font-size: 1.08em;
             font-weight: 600;
-            margin-top: 16px;
+            margin-top: 18px;
             margin-bottom: 8px;
             color: var(--novel-heading, #c9d1d9);
         }
@@ -1149,120 +1289,373 @@
         .doc-markdown-body a.doc-internal-link {
             color: #79c0ff;
             background: rgba(56, 139, 253, 0.12);
-            padding: 2px 6px;
-            border-radius: 4px;
+            padding: 2px 8px;
+            border-radius: 5px;
             border-bottom: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
         .doc-markdown-body a.doc-internal-link:hover {
             background: rgba(56, 139, 253, 0.25);
             color: #a5d6ff;
         }
-        .doc-markdown-body pre {
+        
+        /* 旗舰级代码卡片容器 (Mac 终端顶栏 + 语言徽章 + 一键复制) */
+        .doc-code-card {
+            margin: 20px 0;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        }
+        .doc-code-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 14px;
             background: #161b22;
-            border: 1px solid var(--novel-border, #30363d);
-            border-radius: 8px;
-            padding: 16px;
+            border-bottom: 1px solid #30363d;
+            user-select: none;
+        }
+        .doc-code-dots {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        .doc-code-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        .doc-dot-red { background: #ff5f56; }
+        .doc-dot-yellow { background: #ffbd2e; }
+        .doc-dot-green { background: #27c93f; }
+        
+        .doc-code-lang {
+            font-size: 11px;
+            font-weight: 700;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: rgba(110, 118, 129, 0.2);
+            padding: 2px 7px;
+            border-radius: 4px;
+        }
+        .doc-code-copy-btn {
+            background: transparent;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .doc-code-copy-btn:hover {
+            background: #21262d;
+            color: #58a6ff;
+            border-color: #58a6ff;
+        }
+        .doc-code-copy-btn.copied {
+            color: #3fb950 !important;
+            border-color: #3fb950 !important;
+            background: rgba(46, 160, 67, 0.15) !important;
+        }
+        
+        .doc-markdown-body pre {
+            background: transparent !important;
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 16px 18px !important;
+            margin: 0 !important;
             overflow-x: auto;
-            margin: 18px 0;
             font-size: 13.5px;
-            line-height: 1.5;
+            line-height: 1.6;
         }
         .doc-markdown-body pre code {
             background: transparent !important;
             padding: 0 !important;
-            font-family: "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, monospace;
+            font-family: "JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, Menlo, monospace;
             font-size: 13.5px;
             color: #e6edf3;
             border-radius: 0;
+            display: block;
         }
-        .doc-markdown-body code {
+        .doc-markdown-body code:not(pre code) {
             background: rgba(110, 118, 129, 0.25);
-            color: #e6edf3;
-            padding: 0.2em 0.45em;
+            color: #ff7b72;
+            padding: 0.2em 0.5em;
             border-radius: 5px;
             font-family: "JetBrains Mono", "Fira Code", monospace;
             font-size: 88%;
+            border: 1px solid rgba(255, 123, 114, 0.15);
         }
-        .doc-markdown-body blockquote {
-            border-left: 4px solid #388bfd;
-            background: rgba(56, 139, 253, 0.08);
-            padding: 12px 18px;
-            margin: 16px 0;
-            border-radius: 0 8px 8px 0;
-            color: #8b949e;
+        
+        /* ASCII / Unicode 文本字符流架构图与流程框图 (ASCII Diagram Card) */
+        .doc-diagram-card {
+            margin: 22px 0;
+            background: #090d13;
+            border: 1px solid rgba(56, 139, 253, 0.35);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), inset 0 0 20px rgba(56, 139, 253, 0.04);
         }
-        .doc-markdown-body blockquote p {
-            margin-bottom: 0;
-            color: #c9d1d9;
+        .doc-diagram-card .doc-code-header {
+            background: #101620;
+            border-bottom: 1px solid rgba(56, 139, 253, 0.3);
         }
-        .doc-markdown-body table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 18px 0;
-            display: table;
+        .doc-diagram-card .doc-code-lang {
+            color: #58a6ff;
+            background: rgba(56, 139, 253, 0.18);
+            border: 1px solid rgba(56, 139, 253, 0.35);
+        }
+        .doc-diagram-card pre {
+            background: transparent !important;
+            padding: 18px 20px !important;
             overflow-x: auto;
-            border: 1px solid var(--novel-border, #30363d);
+            white-space: pre !important;
+            word-break: normal !important;
+            word-wrap: normal !important;
+            line-height: 1.35 !important;
+            letter-spacing: 0px !important;
+        }
+        .doc-diagram-card pre code {
+            font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", "Courier New", monospace !important;
+            font-size: 13px !important;
+            color: #79c0ff !important;
+            text-shadow: 0 0 1px rgba(121, 192, 255, 0.4);
+            display: inline-block;
+            min-width: 100%;
+        }
+        .doc-diagram-box { color: #58a6ff; font-weight: 700; }
+        .doc-diagram-arrow { color: #3fb950; font-weight: 700; }
+        .doc-diagram-text { color: #f0f6fc; }
+
+        /* LaTeX 数学公式专属样式 (KaTeX) */
+        .katex-display {
+            margin: 20px 0 !important;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 12px 16px;
+            background: rgba(110, 118, 129, 0.06);
             border-radius: 8px;
+            border: 1px solid rgba(48, 54, 61, 0.6);
+            text-align: center;
         }
-        .doc-markdown-body th {
-            background: #161b22;
-            color: var(--novel-heading, #f0f6fc);
-            font-weight: 600;
-            padding: 10px 14px;
-            border: 1px solid var(--novel-border, #30363d);
-            text-align: left;
+        .katex {
+            font-size: 1.15em;
+            color: #f0f6fc;
         }
-        .doc-markdown-body td {
-            padding: 10px 14px;
-            border: 1px solid var(--novel-border, #30363d);
-            color: var(--novel-text, #c9d1d9);
-        }
-        .doc-markdown-body tr:nth-child(even) {
-            background: rgba(110, 118, 129, 0.04);
-        }
-        .doc-markdown-body tr:hover {
-            background: rgba(56, 139, 253, 0.06);
-        }
-        .doc-markdown-body ul, .doc-markdown-body ol {
-            padding-left: 2em;
-            margin: 14px 0;
-        }
-        .doc-markdown-body li {
-            margin: 5px 0;
-            line-height: 1.7;
-        }
-        .doc-markdown-body hr {
-            border: none;
-            border-top: 1px solid var(--novel-border, #30363d);
+        
+        /* 语法高亮色 Token */
+        .token-keyword { color: #ff7b72; font-weight: 600; }
+        .token-string { color: #a5d6ff; }
+        .token-comment { color: #8b949e; font-style: italic; }
+        .token-number { color: #79c0ff; }
+        .token-fn { color: #d2a8ff; }
+        .token-punct { color: #7ee787; }
+        
+        /* 现代图片与插图悬浮卡片 */
+        .doc-image-card {
             margin: 24px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
-        .doc-markdown-body img {
+        .doc-image-frame {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 6px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            cursor: zoom-in;
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+            max-width: 100%;
+            display: inline-block;
+        }
+        .doc-image-frame:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+            border-color: #58a6ff;
+        }
+        .doc-image-frame img {
             max-width: 100%;
             height: auto;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-            margin: 14px 0;
+            display: block;
         }
-        /* Mermaid 图表专属容器 */
-        .mermaid-block-wrapper {
-            margin: 22px 0;
-            padding: 20px 16px;
-            background: #161b22;
-            border: 1px solid var(--novel-border, #30363d);
-            border-radius: 10px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow-x: auto;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-        }
-        .mermaid-block-wrapper .mermaid {
-            width: 100%;
+        .doc-image-caption {
+            font-size: 13px;
+            color: #8b949e;
+            margin-top: 8px;
+            font-style: italic;
             text-align: center;
         }
-        .mermaid-block-wrapper svg {
-            max-width: 100% !important;
-            height: auto !important;
+        
+        /* 现代提示/警告 Admonitions (Note / Tip / Warning / Danger) */
+        .doc-markdown-body blockquote,
+        .doc-rst-body .admonition {
+            border-left: 4px solid #388bfd;
+            background: rgba(56, 139, 253, 0.08);
+            padding: 14px 18px;
+            margin: 20px 0;
+            border-radius: 0 10px 10px 0;
+            color: #c9d1d9;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .doc-rst-body .admonition.tip {
+            border-left-color: #2ea043;
+            background: rgba(46, 160, 67, 0.08);
+        }
+        .doc-rst-body .admonition.warning {
+            border-left-color: #d29922;
+            background: rgba(210, 153, 34, 0.08);
+        }
+        .doc-rst-body .admonition.danger,
+        .doc-rst-body .admonition.caution {
+            border-left-color: #f85149;
+            background: rgba(248, 81, 73, 0.08);
+        }
+        .doc-rst-body .admonition.important {
+            border-left-color: #bc8cff;
+            background: rgba(188, 140, 255, 0.08);
+        }
+        .doc-rst-body .admonition-title {
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--novel-heading, #f0f6fc);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .doc-markdown-body blockquote p,
+        .doc-rst-body .admonition p {
+            margin-bottom: 0;
+        }
+        
+        /* 表格排版 (暗黑交替条纹 + 圆角边框) */
+        .doc-markdown-body table,
+        .doc-rst-body table.docutils {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 22px 0;
+            display: table;
+            overflow-x: auto;
+            border: 1px solid var(--novel-border, #30363d);
+            border-radius: 10px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+        }
+        .doc-markdown-body th,
+        .doc-rst-body table.docutils th {
+            background: #161b22;
+            color: var(--novel-heading, #f0f6fc);
+            font-weight: 600;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--novel-border, #30363d);
+            border-right: 1px solid rgba(48, 54, 61, 0.4);
+            text-align: left;
+            font-size: 14px;
+        }
+        .doc-markdown-body th:last-child,
+        .doc-rst-body table.docutils th:last-child {
+            border-right: none;
+        }
+        .doc-markdown-body td,
+        .doc-rst-body table.docutils td {
+            padding: 11px 16px;
+            border-bottom: 1px solid rgba(48, 54, 61, 0.4);
+            border-right: 1px solid rgba(48, 54, 61, 0.4);
+            color: var(--novel-text, #c9d1d9);
+            font-size: 14px;
+        }
+        .doc-markdown-body td:last-child,
+        .doc-rst-body table.docutils td:last-child {
+            border-right: none;
+        }
+        .doc-markdown-body tr:last-child td,
+        .doc-rst-body table.docutils tr:last-child td {
+            border-bottom: none;
+        }
+        .doc-markdown-body tr:nth-child(even),
+        .doc-rst-body table.docutils tr:nth-child(even) {
+            background: rgba(110, 118, 129, 0.04);
+        }
+        .doc-markdown-body tr:hover,
+        .doc-rst-body table.docutils tr:hover {
+            background: rgba(56, 139, 253, 0.06);
+        }
+        .doc-markdown-body ul, .doc-markdown-body ol,
+        .doc-rst-body ul, .doc-rst-body ol {
+            padding-left: 2em;
+            margin: 14px 0;
+        }
+        .doc-markdown-body li, .doc-rst-body li {
+            margin: 6px 0;
+            line-height: 1.75;
+        }
+        .doc-markdown-body hr, .doc-rst-body hr {
+            border: none;
+            border-top: 1px solid var(--novel-border, #30363d);
+            margin: 28px 0;
+        }
+
+        /* 全屏图片灯箱 (Lightbox) */
+        #doc-image-lightbox {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(10, 12, 16, 0.92);
+            backdrop-filter: blur(12px);
+            z-index: 99999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 30px;
+            cursor: zoom-out;
+            animation: fadeInLightbox 0.2s ease;
+        }
+        @keyframes fadeInLightbox {
+            from { opacity: 0; transform: scale(0.97); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        #doc-image-lightbox img {
+            max-width: 92vw;
+            max-height: 90vh;
+            border-radius: 10px;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+            border: 1px solid #30363d;
+            object-fit: contain;
+        }
+        #doc-lightbox-close {
+            position: absolute;
+            top: 20px;
+            right: 25px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #fff;
+            font-size: 20px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #doc-lightbox-close:hover {
+            background: rgba(248, 81, 73, 0.8);
+            border-color: #f85149;
+            transform: scale(1.1);
         }
 
         .novel-chapter-bottom-nav {
@@ -1571,6 +1964,18 @@
             .player-center {
                 width: 50%;
             }
+            .scroll-to-top-btn {
+                right: 16px;
+                bottom: 20px;
+                width: 44px;
+                height: 44px;
+            }
+            .scroll-to-top-btn.elevated {
+                bottom: 82px;
+            }
+            .scroll-to-top-btn .scroll-top-text {
+                font-size: 10px;
+            }
         }
 
         /* 音声画廊与全局音频播放底栏样式 */
@@ -1867,6 +2272,123 @@
             background: rgba(248, 81, 73, 0.12);
         }
 
+        /* 音频章节选集抽屉列表样式 */
+        .audio-chapter-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            color: #c9d1d9;
+        }
+        .audio-chapter-item:hover {
+            background: #21262d;
+            border-color: #58a6ff;
+            color: #58a6ff;
+            transform: translateX(3px);
+        }
+        .audio-chapter-item.active {
+            background: rgba(31, 111, 235, 0.18);
+            border-color: #388bfd;
+            color: #58a6ff;
+            font-weight: 600;
+        }
+        .audio-chapter-idx {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            line-height: 24px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 50%;
+            font-size: 11px;
+            color: #8b949e;
+        }
+        .audio-chapter-item.active .audio-chapter-idx {
+            background: #1f6feb;
+            color: #ffffff;
+        }
+        .audio-chapter-name {
+            font-size: 13.5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .audio-chapter-time {
+            font-size: 11.5px;
+            color: #8b949e;
+            font-family: SFMono-Regular, Consolas, monospace;
+            flex-shrink: 0;
+        }
+
+        /* 全局浮动回到顶部按钮 (Scroll to Top) */
+        .scroll-to-top-btn {
+            position: fixed;
+            right: 28px;
+            bottom: 28px;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(22, 27, 34, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(240, 246, 252, 0.18);
+            color: #c9d1d9;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 9998;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(16px) scale(0.92);
+            transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                        transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                        bottom 0.25s ease,
+                        background 0.2s,
+                        border-color 0.2s,
+                        color 0.2s,
+                        box-shadow 0.2s;
+            user-select: none;
+        }
+        .scroll-to-top-btn.visible {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0) scale(1);
+        }
+        .scroll-to-top-btn.elevated {
+            bottom: 96px;
+        }
+        .scroll-to-top-btn:hover {
+            color: #58a6ff;
+            border-color: #58a6ff;
+            background: rgba(33, 38, 45, 0.96);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 16px rgba(88, 166, 255, 0.35);
+            transform: translateY(-3px) scale(1.06);
+        }
+        .scroll-to-top-btn:active {
+            transform: translateY(0) scale(0.95);
+            background: rgba(31, 111, 235, 0.2);
+        }
+        .scroll-to-top-btn svg {
+            transition: transform 0.2s ease;
+        }
+        .scroll-to-top-btn:hover svg {
+            transform: translateY(-2px);
+        }
+        .scroll-to-top-btn .scroll-top-text {
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1;
+            margin-top: 2px;
+        }
+
         /* 章节多选下载弹窗 */
         .manga-modal-backdrop {
             position: fixed;
@@ -1911,18 +2433,73 @@
             align-items: center;
             gap: 10px;
         }
+        /* 媒体专区处于激活状态时，绝对屏蔽游戏二级页面控制栏与返回大厅按钮 */
+        body.section-media #list-controls,
+        body.section-media #nav-back-btn,
+        body.section-media .sub-filter-bar {
+            display: none !important;
+        }
+        /* NSFW 隐私模式：敏感专区卡片与导航标签完全隐形 */
+        body.nsfw-locked .rpg-card,
+        body.nsfw-locked .slg-card,
+        body.nsfw-locked .tab-btn[data-tab="rpg"],
+        body.nsfw-locked .tab-btn[data-tab="slg"],
+        body.nsfw-locked #media-tab-manga,
+        body.nsfw-locked #media-tab-novels,
+        body.nsfw-locked #media-tab-audio,
+        html.nsfw-locked .rpg-card,
+        html.nsfw-locked .slg-card,
+        html.nsfw-locked .tab-btn[data-tab="rpg"],
+        html.nsfw-locked .tab-btn[data-tab="slg"],
+        html.nsfw-locked #media-tab-manga,
+        html.nsfw-locked #media-tab-novels,
+        html.nsfw-locked #media-tab-audio {
+            display: none !important;
+        }
+        /* MEGA 网盘集成专属样式 */
+        .mega-file-row {
+            display: grid;
+            grid-template-columns: minmax(200px, 1fr) 110px 150px 240px;
+            align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid #21262d;
+            font-size: 13px;
+            color: #c9d1d9;
+            transition: background 0.15s ease;
+        }
+        .mega-file-row:hover {
+            background: #1c2128;
+        }
+        .mega-file-name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .mega-file-clickable {
+            cursor: pointer;
+            color: #58a6ff;
+            font-weight: 600;
+        }
+        .mega-file-clickable:hover {
+            text-decoration: underline;
+        }
     </style>
     <script>
         (function() {
-            var urlParams = new URLSearchParams(window.location.search);
-            var initCat = urlParams.get('category');
-            if (initCat && initCat !== 'portal') {
-                document.write('<style id="cat-init-style">#portal-view { display: none !important; } #list-view { display: block !important; } #list-controls { display: flex !important; } #nav-back-btn { display: flex !important; }</style>');
-            }
             try {
                 var savedSec = localStorage.getItem('omni_primary_section');
-                if (savedSec === 'manga') {
-                    document.write('<style id="sec-init-style">#games-section { display: none !important; } #manga-section { display: block !important; } #manga-queue-btn { display: inline-flex !important; }</style>');
+                if (savedSec === 'media' || savedSec === 'manga') {
+                    document.body ? document.body.classList.add('section-media') : document.documentElement.classList.add('section-media');
+                    document.write('<style id="sec-init-style">#games-section { display: none !important; } #media-section { display: block !important; } #list-controls { display: none !important; } #nav-back-btn { display: none !important; }</style>');
+                }
+                var isDeckLocal = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost');
+                var token = localStorage.getItem('omni_nsfw_token');
+                if (!isDeckLocal && !token) {
+                    document.documentElement.classList.add('nsfw-locked');
+                    document.write('<style id="nsfw-init-style">.rpg-card, .slg-card, .tab-btn[data-tab="rpg"], .tab-btn[data-tab="slg"], #media-tab-manga, #media-tab-novels, #media-tab-audio { display: none !important; }</style>');
                 }
             } catch(e) {}
         })();
@@ -1938,6 +2515,12 @@
                     <span class="badge-total" id="total-badge">0 款游戏</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;">
+                    <!-- NSFW 隐私模式按钮 (右上角靠左) -->
+                    <button id="game-nsfw-lock-btn" class="nav-net-btn" onclick="openNsfwModal()" title="NSFW 隐私访问控制">
+                        <span id="game-nsfw-lock-icon">🔒</span>
+                        <span id="game-nsfw-lock-text">隐私锁定</span>
+                    </button>
+
                     <!-- 局域网共享控制组件 (悬停展示气泡与可复制网址) -->
                     <div class="nav-net-control" id="lan-control-wrapper">
                         <button id="lan-share-btn" class="nav-net-btn" onclick="toggleLanSharing()" title="点击开启或关闭局域网共享">
@@ -1980,6 +2563,7 @@
                         </div>
                     </div>
 
+                    <button id="system-log-btn" class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#f0f6fc;font-size:12px;padding:6px 12px;" onclick="openLogModal()">📋 日志</button>
                     <button id="primary-section-btn" class="primary-section-btn" onclick="togglePrimarySection()">📖 媒体专区</button>
                     <button class="back-btn" id="nav-back-btn" style="display:none;" onclick="showPortalView()">🏠 返回大厅</button>
                 </div>
@@ -1990,7 +2574,7 @@
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                     <div class="filter-tabs">
                         <button class="tab-btn" data-tab="fav" onclick="switchTab('fav', this)">⭐ 我的喜欢</button>
-                        <button class="tab-btn active" data-tab="rpg" onclick="switchTab('rpg', this)">🗡️ RPG Maker</button>
+                        <button class="tab-btn" data-tab="rpg" onclick="switchTab('rpg', this)">🗡️ RPG Maker</button>
                         <button class="tab-btn" data-tab="standalone" onclick="switchTab('standalone', this)">🚀 独立游戏</button>
                         <button class="tab-btn" data-tab="retro" onclick="switchTab('retro', this)">🕹️ 街机与卡带</button>
                         <button class="tab-btn" data-tab="slg" onclick="switchTab('slg', this)">♟️ SLG 策略</button>
@@ -2063,6 +2647,18 @@
                         <div class="cat-action">进入专区 ➔</div>
                     </div>
 
+                    <!-- 星际争霸2 —— 离线打残酷电脑 + 自制 mod，独立大卡片 -->
+                    <div class="cat-card sc2-card" onclick="openCategory('sc2')">
+                        <div class="cat-header">
+                            <div class="cat-title">⭐ 星际争霸2</div>
+                            <span class="cat-count" id="sc2-count-badge">离线对战</span>
+                        </div>
+                        <div class="cat-desc">
+                            离线打残酷电脑 · 免登录战网 · 自制 mod（5倍采集等）· 1v1 / 2v2 / 3v3 / 4+v4+ 分队地图
+                        </div>
+                        <div class="cat-action">进入专区 ➔</div>
+                    </div>
+
                     <!-- 街机与复古掌机专区 -->
                     <div class="cat-card retro-card" onclick="openCategory('retro')">
                         <div class="cat-header">
@@ -2104,24 +2700,61 @@
             <!-- 二级页面: 游戏网格列表 -->
             <div id="list-view">
                 <div class="game-grid" id="game-grid"></div>
+
+                <!-- 星际争霸2 对战专属面板：不是游戏卡片网格，是选图/选mod/开局的操作台 -->
+                <div id="sc2-panel" style="display:none;">
+                    <div id="sc2-settings" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+                         background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+                        <div class="sc2-race-group" data-role="race">
+                            <span style="color:#8b949e;font-size:13px;margin-right:6px;">你的种族</span>
+                        </div>
+                        <div id="sc2-mods-row" style="display:flex;gap:12px;align-items:center;"></div>
+                        <button class="sc2-btn sc2-btn-secondary" onclick="sc2OpenEditor()">🛠️ 打开银河编辑器</button>
+                        <div style="margin-left:auto;font-size:13px;color:#8b949e;">↓ 点地图卡片配置对手，全是电脑，玩家只有你一个</div>
+                    </div>
+                    <div id="sc2-team-tabs" style="display:flex;gap:8px;margin-bottom:14px;"></div>
+                    <div id="sc2-status-banner" style="display:none;margin-bottom:14px;padding:12px 16px;border-radius:8px;font-size:14px;"></div>
+                    <div id="sc2-map-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;"></div>
+                    <div id="sc2-match-modal" class="sc2-modal-overlay" style="display:none;">
+                        <div class="sc2-modal">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                                <div id="sc2-modal-title" style="font-size:16px;font-weight:600;color:#f0f6fc;"></div>
+                                <button class="sc2-modal-x" onclick="sc2CloseModal()">×</button>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                                <span style="color:#8b949e;font-size:13px;">电脑对手数量</span>
+                                <button class="sc2-stepper-btn" onclick="sc2ChangeOppCount(-1)">−</button>
+                                <span id="sc2-opp-count-label" style="min-width:1.2em;text-align:center;color:#f0f6fc;"></span>
+                                <button class="sc2-stepper-btn" onclick="sc2ChangeOppCount(1)">+</button>
+                                <span id="sc2-opp-count-hint" style="color:#8b949e;font-size:12px;"></span>
+                            </div>
+                            <div id="sc2-opp-rows"></div>
+                            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
+                                <button class="sc2-btn sc2-btn-secondary" onclick="sc2CloseModal()">取消</button>
+                                <button class="sc2-btn sc2-btn-primary" onclick="sc2ConfirmPlay()">开始对局</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- ================= 一级板块 B: 媒体阅读中枢 (Media Hub) ================= -->
         <div id="media-section" style="display:none;">
-            <!-- 二级媒体导航栏 (漫画画廊 / 小说画廊 / 技术文档 / 音声画廊) -->
+            <!-- 二级媒体导航栏 (技术文档 / 漫画画廊 / 小说画廊 / 音声画廊 / MEGA) -->
             <div class="media-nav-bar" id="media-nav-bar">
                 <div class="filter-tabs">
-                    <button class="tab-btn active" id="media-tab-manga" onclick="switchMediaTab('manga', this)">🖼️ 漫画画廊</button>
+                    <button class="tab-btn active" id="media-tab-docs" onclick="switchMediaTab('docs', this)">💻 技术文档</button>
+                    <button class="tab-btn" id="media-tab-manga" onclick="switchMediaTab('manga', this)">🖼️ 漫画画廊</button>
                     <button class="tab-btn" id="media-tab-novels" onclick="switchMediaTab('novels', this)">📖 小说画廊</button>
-                    <button class="tab-btn" id="media-tab-docs" onclick="switchMediaTab('docs', this)">💻 技术文档 (MD / RST)</button>
                     <button class="tab-btn" id="media-tab-audio" onclick="switchMediaTab('audio', this)">🎧 音声画廊</button>
+                    <button class="tab-btn" id="media-tab-mega" onclick="switchMediaTab('mega', this)">☁️ MEGA</button>
                 </div>
                 <div style="font-size:13px;color:#8b949e;" id="media-sub-stats">共 0 部作品</div>
             </div>
 
             <!-- 二级页面 1: 漫画画廊 (Manga View) -->
-            <div id="media-manga-view">
+            <div id="media-manga-view" style="display:none;">
                 <!-- 异步任务进度面板 (有下载任务时自动展现) -->
                 <div id="manga-tasks-container" style="display:none;margin-bottom:16px;">
                     <div class="manga-tasks-card" id="manga-tasks-card"></div>
@@ -2130,7 +2763,7 @@
                 <!-- 漫画区专属顶栏：子标签 (本地已收录 / 每周必看 / 每月必看) + 右侧搜索框与待下载列表 -->
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
                     <div class="filter-tabs" id="manga-sub-tabs">
-                        <button class="tab-btn active" id="manga-subtab-shelf" onclick="switchMangaSubTab('shelf', this)">📚 本地已收录</button>
+                        <button class="tab-btn active" id="manga-subtab-shelf" onclick="switchMangaSubTab('shelf', this)">📚 本地已收录 <span id="manga-local-count" style="font-size:12px;opacity:0.85;font-weight:normal;">(...)</span></button>
                         <button class="tab-btn" id="manga-subtab-week" onclick="switchMangaSubTab('week', this)">🔥 每周必看</button>
                         <button class="tab-btn" id="manga-subtab-month" onclick="switchMangaSubTab('month', this)">🏆 每月必看</button>
                     </div>
@@ -2144,6 +2777,10 @@
                 <div id="manga-main-container">
                     <!-- 1. 本地漫画书架 -->
                     <div id="manga-local-section">
+                        <!-- 本地漫画分类标签快速筛选条 -->
+                        <div id="manga-tag-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+                        <!-- 连载更新与未完漫画一键补充下载提示工具栏 -->
+                        <div id="manga-incomplete-banner" style="display:none;margin-bottom:16px;"></div>
                         <div class="manga-grid" id="manga-shelf-grid"></div>
                         <div id="manga-shelf-empty" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
                             <div style="font-size:36px;margin-bottom:10px;">📖</div>
@@ -2213,20 +2850,22 @@
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
                     <div style="display:flex;align-items:center;gap:12px;">
                         <span id="novel-shelf-heading" style="font-size:15px;font-weight:700;color:#f0f6fc;">📚 本地已收录小说</span>
-                        <span id="novel-local-count" style="font-size:12px;color:#8b949e;">(0 部)</span>
+                        <span id="novel-local-count" style="font-size:12px;color:#8b949e;">(...)</span>
                         <button class="tab-btn" id="novel-nsfw-toggle-btn" onclick="toggleNovelNsfw()" title="开启/关闭 NSFW 绅士专区" style="padding:4px 12px;font-size:13px;border-radius:16px;cursor:pointer;transition:all 0.2s;">🔞 NSFW</button>
                     </div>
                     <div style="display:flex;gap:8px;align-items:center;">
-                        <input type="text" id="novel-search-input" class="search-input" style="width:280px;" placeholder="🔍 搜索小说书名、作者或关键词..." oninput="onNovelSearchInput(this.value)" onkeydown="if(event.key==='Enter')onNovelSearchEnter()">
+                        <input type="text" id="novel-search-input" class="search-input" style="width:280px;" placeholder="🔍 搜索小说书名、作者或关键词 (回车检索)..." oninput="onNovelSearchInput(this.value)" onkeydown="if(event.key==='Enter')onNovelSearchEnter()">
                         <button class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#f0f6fc;font-size:12px;padding:6px 12px;" onclick="openNovelQueueModal()">📋 待下载列表 (<span id="novel-queue-badge-count">0</span>)</button>
                     </div>
                 </div>
+                <!-- NSFW 专属分类快速筛选条 -->
+                <div id="novel-category-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
 
                 <!-- 小说展示区 (本地书架 + 线上检索结果) -->
                 <div id="novel-main-container">
                     <!-- 1. 本地已收录书架 -->
                     <div id="novel-local-section" style="margin-bottom:24px;">
-                        <div class="manga-grid" id="novels-shelf-grid"></div>
+                        <div class="novel-grid" id="novels-shelf-grid"></div>
                         <div id="novels-shelf-empty" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
                             <div style="font-size:32px;margin-bottom:8px;">📖</div>
                             <div style="font-size:14px;font-weight:600;color:#f0f6fc;">暂无本地已收录小说</div>
@@ -2247,16 +2886,16 @@
                         <div id="novel-online-source-bar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#8b949e;margin-bottom:12px;background:#161b22;padding:8px 12px;border-radius:8px;border:1px solid #30363d;flex-wrap:wrap;">
                             <div style="display:flex;align-items:center;gap:6px;">
                                 <span>📡 检索数据源:</span>
-                                <span id="novel-source-indicator" style="color:#58a6ff;font-weight:600;">🏛️ 中华古典名著公版库 · 全网精选文学源 (修真/科幻/都市/家庭)</span>
+                                <a id="novel-source-indicator" href="https://www.gutenberg.org" target="_blank" rel="noopener noreferrer" style="color:#58a6ff;font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer;" title="点击在浏览器中打开: https://www.gutenberg.org">www.gutenberg.org ↗</a>
                             </div>
-                            <div id="novel-source-tip" style="font-size:11px;color:#7d8590;">支持书名/作者/标签/题材多维联想</div>
+                            <div id="novel-source-tip" style="font-size:11px;color:#7d8590;">支持书名/作者/分类/题材多维检索 (回车检索)</div>
                         </div>
 
                         <div id="novel-online-loading" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
                             <div style="font-size:28px;animation:spin 1s linear infinite;display:inline-block;margin-bottom:8px;">⏳</div>
                             <div>正在检索小说书库，请稍候...</div>
                         </div>
-                        <div class="manga-grid" id="novels-online-grid"></div>
+                        <div class="novel-grid" id="novels-online-grid"></div>
                         <div id="novel-online-end-tip" style="display:none;text-align:center;padding:30px 20px;color:#484f58;font-size:13px;">
                             —— 已展示全部匹配结果 ——
                         </div>
@@ -2265,7 +2904,7 @@
             </div>
 
             <!-- 二级页面 3: 技术文档 (Docs Explorer - 资源管理器式分类层级浏览) -->
-            <div id="media-docs-view" style="display:none;">
+            <div id="media-docs-view">
                 <div class="docs-explorer-toolbar">
                     <div class="docs-breadcrumbs-bar" id="docs-breadcrumbs-bar">
                         <span class="docs-crumb-item active" onclick="navigateDocsDir('')">🏠 技术文档根目录</span>
@@ -2295,14 +2934,18 @@
                 <!-- 顶栏统计与控制 -->
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
                     <div style="display:flex;align-items:center;gap:12px;">
-                        <span style="font-size:15px;font-weight:700;color:#f0f6fc;">🎧 音声画廊</span>
-                        <span id="audio-total-count-badge" style="font-size:12px;color:#58a6ff;background:#1f6feb22;padding:2px 8px;border-radius:12px;border:1px solid #388bfd44;">共 0 部</span>
+                        <span id="audio-heading" style="font-size:15px;font-weight:700;color:#f0f6fc;">📻 有声书与广播剧</span>
+                        <span id="audio-total-count-badge" style="font-size:12px;color:#58a6ff;background:#1f6feb22;padding:2px 8px;border-radius:12px;border:1px solid #388bfd44;">共 ... 部</span>
+                        <button class="tab-btn" id="audio-nsfw-toggle-btn" onclick="toggleAudioNsfw()" title="开启/关闭 NSFW 音声专区" style="padding:4px 12px;font-size:13px;border-radius:16px;cursor:pointer;transition:all 0.2s;">🔞 NSFW</button>
                     </div>
                     <div style="display:flex;gap:8px;align-items:center;">
-                        <input type="text" id="audio-search-input" class="search-input" style="width:230px;" placeholder="🔍 搜索音声作品..." oninput="onAudioSearchInput(this.value)">
+                        <input type="text" id="audio-search-input" class="search-input" style="width:240px;" placeholder="🔍 搜索有声书或专辑..." oninput="onAudioSearchInput(this.value)">
                         <button class="manga-mini-btn" onclick="playRandomAudio()" title="随机播放一首">🔀 随机播放</button>
                     </div>
                 </div>
+
+                <!-- 专辑与系列快速分类条 -->
+                <div id="audio-album-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
 
                 <!-- 音频曲目列表 -->
                 <div class="audio-track-list" id="audio-track-list"></div>
@@ -2314,9 +2957,128 @@
 
                 <!-- 空状态提示 -->
                 <div id="audio-empty-msg" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
-                    <div style="font-size:36px;margin-bottom:10px;">🎧</div>
+                    <div style="font-size:36px;margin-bottom:10px;">📻</div>
                     <div style="font-size:15px;font-weight:600;color:#f0f6fc;">未扫描到音频文件</div>
-                    <div style="font-size:13px;margin-top:6px;">请确保 SD 卡已挂载于 <code>/run/media/deck/FUCKDECK/telegramFile/</code> 或本地 <code>audio/</code> 目录。</div>
+                    <div id="audio-empty-desc" style="font-size:13px;margin-top:6px;">常规有声书存放在 <code>audio/standard/</code> 目录，支持子文件夹按专辑归档。点击 🔞 NSFW 按钮可切换至 SD 卡绅士音声库。</div>
+                </div>
+            </div>
+
+            <!-- 二级页面 5: MEGA -->
+            <div id="media-mega-view" style="display:none;">
+                <!-- 顶栏状态与工具栏 -->
+                <div class="mega-header-card" style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px 20px;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+                        <div style="display:flex;align-items:center;gap:14px;">
+                            <div style="font-size:28px;">☁️</div>
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="font-size:18px;font-weight:700;color:#f0f6fc;">MEGA</span>
+                                <span id="mega-auth-badge" class="badge" style="background:#30363d;color:#8b949e;padding:2px 8px;border-radius:10px;font-size:12px;">正在连接服务...</span>
+                            </div>
+                        </div>
+                        <div id="mega-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <!-- 动态注入按钮: 刷新同步、回收站、登出等 -->
+                        </div>
+                    </div>
+
+                    <!-- 存储容量条 (登录后显示) -->
+                    <div id="mega-storage-section" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid #21262d;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#8b949e;margin-bottom:6px;">
+                            <span>云端存储已用空间</span>
+                            <span id="mega-storage-text" style="color:#58a6ff;font-weight:600;">-- / --</span>
+                        </div>
+                        <div style="width:100%;height:6px;background:#21262d;border-radius:3px;overflow:hidden;">
+                            <div id="mega-storage-bar" style="width:0%;height:100%;background:linear-gradient(90deg, #58a6ff, #2ea043);border-radius:3px;transition:width 0.3s ease;"></div>
+                        </div>
+                    </div>
+
+                    <!-- 流量配额与解除倒计时栏 (登录后显示，刷新时同步更新) -->
+                    <div id="mega-quota-section" style="display:none;margin-top:12px;padding:10px 14px;background:#0d1117;border:1px solid #21262d;border-radius:8px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;">
+                                <span id="mega-quota-icon" style="font-size:15px;">⚡</span>
+                                <span style="color:#8b949e;">免费下载带宽配额:</span>
+                                <span id="mega-quota-badge" class="badge" style="background:#238636;color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;">正常充足</span>
+                            </div>
+                            <div id="mega-quota-detail" style="font-size:12px;color:#8b949e;">
+                                预计恢复时间: <span id="mega-quota-timer" style="color:#f0883e;font-weight:700;">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 未登录视图：提示登录以访问个人网盘与回收站 -->
+                <div id="mega-login-panel" style="background:#161b22;border:1px dashed #30363d;border-radius:12px;padding:32px 24px;text-align:center;margin-bottom:16px;">
+                    <div style="font-size:42px;margin-bottom:12px;">🔒</div>
+                    <div style="font-size:16px;font-weight:700;color:#f0f6fc;margin-bottom:6px;">登录 MEGA 账户访问个人云盘</div>
+                    <div style="font-size:13px;color:#8b949e;max-width:520px;margin:0 auto 20px auto;line-height:1.6;">
+                        登录后即可浏览您的网盘资源、在浏览器转存资源后一键刷新秒级同步、一键批量下载到本地，以及管理云端回收站。
+                    </div>
+                    <div style="max-width:360px;margin:0 auto;display:flex;flex-direction:column;gap:12px;">
+                        <input type="email" id="mega-login-email" class="search-input" placeholder="MEGA 邮箱账号 (如 user@example.com)" style="width:100%;">
+                        <input type="password" id="mega-login-password" class="search-input" placeholder="MEGA 登录密码" style="width:100%;">
+                        <input type="text" id="mega-login-2fa" class="search-input" placeholder="2FA 双重验证码 (未开启可留空)" style="width:100%;">
+                        <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;padding:9px 16px;font-weight:600;" onclick="doMegaLogin()" id="mega-login-submit-btn">🔐 登录 MEGA 账户</button>
+                        <div id="mega-login-msg" style="font-size:12px;color:#f85149;display:none;margin-top:4px;"></div>
+                    </div>
+                </div>
+
+                <!-- 已登录视图：云端文件浏览器 (Cloud File Explorer) -->
+                <div id="mega-explorer-panel" style="display:none;margin-bottom:16px;">
+                    <!-- 路径导航栏与快捷操作 -->
+                    <div style="display:flex;justify-content:space-between;align-items:center;background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 16px;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:240px;overflow:hidden;">
+                            <button class="manga-mini-btn" onclick="megaNavigateUp()" id="mega-nav-up-btn" title="返回上一级目录">⬆️ 上一级</button>
+                            <div style="font-size:13px;color:#8b949e;white-space:nowrap;">当前路径:</div>
+                            <div id="mega-breadcrumb-path" style="font-size:13px;font-weight:600;color:#58a6ff;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">/</div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <input type="text" id="mega-filter-input" class="search-input" style="width:180px;padding:5px 10px;font-size:12px;" placeholder="🔍 过滤当前列表..." oninput="filterMegaList(this.value)">
+                            <button class="manga-mini-btn" onclick="refreshCurrentMegaFolder()" title="重新读取当前云端目录">🔄 刷新列表</button>
+                        </div>
+                    </div>
+
+                    <!-- 云端文件表格 -->
+                    <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden;">
+                        <div style="display:grid;grid-template-columns:minmax(200px, 1fr) 110px 150px 240px;padding:10px 16px;background:#21262d;font-size:12px;color:#8b949e;font-weight:600;border-bottom:1px solid #30363d;">
+                            <div>文件 / 目录名</div>
+                            <div>大小</div>
+                            <div>修改时间</div>
+                            <div style="text-align:right;">操作</div>
+                        </div>
+                        <div id="mega-file-list" style="min-height:160px;max-height:600px;overflow-y:auto;">
+                            <!-- 文件项目行 -->
+                        </div>
+                        <div id="mega-explorer-empty" style="display:none;text-align:center;padding:48px 20px;color:#8b949e;">
+                            <div style="font-size:36px;margin-bottom:8px;">📂</div>
+                            <div style="font-size:14px;color:#f0f6fc;font-weight:600;">当前目录下没有文件或文件夹</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 倒数第二个：快速下载公开链接卡片 (支持免登录直下) -->
+                <div id="mega-public-downloader-card" style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+                    <div style="font-size:13px;font-weight:600;color:#c9d1d9;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+                        <span>🔗 公开分享链接极速直下 (支持直接解析外部 mega.nz 链接高速下载到 Downloads 目录)</span>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <input type="text" id="mega-public-url-input" class="search-input" style="flex:1;min-width:260px;" placeholder="粘贴 MEGA 分享链接，例如 https://mega.nz/file/... 或 https://mega.nz/folder/...">
+                        <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:8px 18px;font-weight:600;" onclick="downloadMegaPublicUrl()">📥 开始高速下载</button>
+                    </div>
+                </div>
+
+                <!-- 最下面：活跃下载传输卡片 (有活跃任务时自动显示) -->
+                <div id="mega-transfers-card" style="display:none;background:#161b22;border:1px solid #1f6feb66;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <div style="font-size:14px;font-weight:700;color:#58a6ff;display:flex;align-items:center;gap:8px;">
+                            <span style="display:inline-block;">⚡</span>
+                            <span>传输队列 (<span id="mega-transfers-count">0</span> 个进行中)</span>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="manga-mini-btn" onclick="cancelMegaTransfer('all')" style="color:#f85149;border-color:#f8514955;">✕ 全部取消</button>
+                            <button class="manga-mini-btn" onclick="refreshMegaTransfers()">🔄 刷新进度</button>
+                        </div>
+                    </div>
+                    <div id="mega-transfers-list" style="display:flex;flex-direction:column;gap:8px;"></div>
                 </div>
             </div>
         </div>
@@ -2339,11 +3101,16 @@
                     </div>
                     <div id="manga-queue-items-list" style="display:flex;flex-direction:column;gap:8px;"></div>
                 </div>
-                <div class="manga-modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
-                    <button class="manga-btn" onclick="clearMangaDownloadQueue()" id="manga-queue-clear-btn">🧹 清空列表</button>
-                    <div style="display:flex;gap:10px;">
+                <div class="manga-modal-footer" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <div style="display:flex;gap:8px;">
+                        <button class="manga-btn" onclick="recoverUncompletedMangaDownloads()" id="manga-queue-recover-btn" title="扫描并找回 temp 中未完成或曾被移出的漫画">🔄 找回未完成下载</button>
+                        <button class="manga-btn" onclick="clearMangaDownloadQueue()" id="manga-queue-clear-btn">🧹 清空列表</button>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                         <button class="manga-btn" onclick="closeMangaQueueModal()">关闭</button>
-                        <button class="manga-btn manga-btn-primary" id="manga-queue-start-download-btn" onclick="startMangaQueueBatchDownload()">📥 开始批量下载 (<span id="manga-queue-btn-count">0</span>)</button>
+                        <button class="manga-btn" id="manga-queue-stop-btn" style="display:none;background:#21262d;border:1px solid #f8514988;color:#f85149;" onclick="stopMangaBatchDownload()">⏹️ 完工当前后停止</button>
+                        <button class="manga-btn" id="manga-queue-seq-download-btn" style="background:#21262d;color:#58a6ff;border:1px solid #388bfd55;" onclick="startMangaQueueBatchDownload(1)" title="逐本顺序下载，稳定低开销">📥 逐本顺序下载</button>
+                        <button class="manga-btn manga-btn-primary" id="manga-queue-start-download-btn" onclick="startMangaQueueBatchDownload(3)" title="3路并发同时下载，速度更快">⚡ 3路并发下载 (<span id="manga-queue-btn-count">0</span>)</button>
                     </div>
                 </div>
             </div>
@@ -2373,6 +3140,31 @@
                         <button class="manga-btn" onclick="closeNovelQueueModal()">关闭</button>
                         <button class="manga-btn manga-btn-primary" id="novel-queue-start-download-btn" onclick="startNovelQueueBatchDownload()">📥 开始批量打包 EPUB (<span id="novel-queue-btn-count">0</span>)</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MEGA 云端回收站模态弹窗 -->
+        <div class="manga-modal-backdrop" id="mega-trash-modal">
+            <div class="manga-modal-content" style="max-width:720px;">
+                <div class="manga-modal-header">
+                    <div style="font-size:15px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                        <span>🗑️ MEGA 云端回收站 (Rubbish Bin)</span>
+                        <span id="mega-trash-modal-badge" style="font-size:12px;color:#58a6ff;font-weight:600;">(0 个项目)</span>
+                    </div>
+                    <button class="manga-mini-btn" onclick="closeMegaTrashModal()" style="font-size:14px;padding:4px 8px;">✕</button>
+                </div>
+                <div class="manga-modal-body" style="max-height:450px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+                    <div id="mega-trash-empty-msg" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                        <div style="font-size:32px;margin-bottom:8px;">✨</div>
+                        <div style="font-size:14px;color:#c9d1d9;font-weight:600;">回收站空空如也</div>
+                        <div style="font-size:12px;color:#8b949e;margin-top:6px;">当您在云盘中删除文件时，文件会被安全移至此处。</div>
+                    </div>
+                    <div id="mega-trash-items-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+                </div>
+                <div class="manga-modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+                    <button class="manga-btn" onclick="doEmptyMegaTrash()" id="mega-trash-empty-btn" style="background:#b62324;border-color:#da3633;color:#fff;">🧹 一键彻底清空回收站</button>
+                    <button class="manga-btn" onclick="closeMegaTrashModal()">关闭</button>
                 </div>
             </div>
         </div>
@@ -2463,7 +3255,7 @@
         </div>
     <!-- 全局常驻浮动音频播放底栏 (音声画廊播放器) -->
     <div id="global-audio-player-bar">
-        <audio id="main-audio-element" preload="none"></audio>
+        <audio id="main-audio-element" preload="auto"></audio>
         
         <!-- 左侧：唱片 + 标题 + 格式标签 (已移除冗余时间) -->
         <div class="player-left">
@@ -2492,16 +3284,192 @@
             </div>
         </div>
 
-        <!-- 右侧：定时/音量/关闭 -->
+        <!-- 右侧：定时/音量/选集/关闭 -->
         <div class="player-right">
+            <button class="player-pill-btn" id="player-chapters-btn" onclick="toggleAudioChaptersModal()" title="查看各回章节目录" style="display:none;background:#23863622;color:#3fb950;border-color:#2ea04366;">📑 选集 (<span id="player-chapter-badge">0</span>)</button>
             <button class="player-pill-btn" id="player-sleep-btn" onclick="cycleSleepTimer()" title="定时关闭">⏳ 定时</button>
             <div class="player-volume-box">
                 <span style="font-size:14px;color:#8b949e;">🔊</span>
                 <input type="range" id="player-vol-slider" class="player-slider player-vol-slider" min="0" max="1" step="0.05" value="1" oninput="setAudioVolume(this.value)" title="音量调节">
             </div>
-            <button class="player-close-btn" onclick="hideGlobalAudioPlayer()" title="最小化底栏">✕</button>
+            <button class="player-close-btn" onclick="hideGlobalAudioPlayer()" title="关闭播放器">✕</button>
         </div>
     </div>
+
+    <!-- ================= 音频选集与章节目录浮动抽屉 (Audio Chapters Drawer) ================= -->
+    <div class="manga-modal-backdrop" id="audio-chapters-modal" onclick="closeAudioChaptersModal(event)">
+        <div class="manga-modal-content" style="max-width:540px;max-height:82vh;" onclick="event.stopPropagation()">
+            <div class="manga-modal-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-size:16px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                    <span>📑</span>
+                    <span id="audio-chapters-modal-title">章节选集目录</span>
+                </div>
+                <button class="close-btn" onclick="closeAudioChaptersModal()" style="font-size:20px;line-height:1;background:none;border:none;color:#8b949e;cursor:pointer;">×</button>
+            </div>
+            <div class="manga-modal-body" style="padding:16px 20px;overflow-y:auto;max-height:65vh;">
+                <div style="font-size:12px;color:#8b949e;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+                    <span id="audio-chapters-summary">共 0 回</span>
+                    <span style="color:#58a6ff;">💡 点击任意回目即刻瞬移定位播放</span>
+                </div>
+                <div id="audio-chapters-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 技术文档全局图片悬浮全屏放大灯箱 (Lightbox) -->
+    <div id="doc-image-lightbox" onclick="closeDocImageLightbox()">
+        <div id="doc-lightbox-close" onclick="closeDocImageLightbox()" title="关闭 (ESC)">✕</div>
+        <img id="doc-lightbox-img" src="" alt="全屏预览" onclick="event.stopPropagation()">
+    </div>
+
+    <!-- MEGA 专用原生 Toast 消息提示组件 (无阻塞、防闪退) -->
+    <div id="mega-toast" style="position:fixed;top:24px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:12px 24px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.7);font-size:14px;font-weight:600;z-index:99999;display:none;align-items:center;gap:10px;transition:opacity 0.25s ease;pointer-events:none;border:1px solid rgba(255,255,255,0.15);">
+        <span id="mega-toast-icon" style="font-size:18px;">✅</span>
+        <span id="mega-toast-msg">消息内容</span>
+    </div>
+
+    <!-- ================= NSFW 隐私密码与访问控制弹窗 ================= -->
+    <div class="manga-modal-backdrop" id="nsfw-lock-modal">
+        <div class="manga-modal-content" style="max-width:440px;">
+            <div class="manga-modal-header">
+                <div style="font-size:16px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                    <span id="nsfw-modal-icon">🔐</span>
+                    <span id="nsfw-modal-title">NSFW 隐私安全验证</span>
+                </div>
+                <button class="close-btn" onclick="closeNsfwModal()" style="font-size:20px;line-height:1;background:none;border:none;color:#8b949e;cursor:pointer;">×</button>
+            </div>
+            <div class="manga-modal-body" id="nsfw-modal-body">
+                <!-- 视图 1: 解锁输入视图 (当处于锁定状态时) -->
+                <div id="nsfw-view-unlock">
+                    <div style="color:#8b949e;font-size:13px;line-height:1.5;">
+                        当前专区包含敏感/成人 NSFW 资源（RPG Maker、SLG、漫画画廊、小说画廊、音声画廊）。为防止局域网设备无意展示，非本机访问已自动隐形。
+                    </div>
+                    <div style="margin-top:14px;">
+                        <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:6px;">请输入访问密码：</label>
+                        <input type="password" id="nsfw-password-input" class="search-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:9px 12px;" placeholder="初始默认密码: deck888" onkeydown="if(event.key==='Enter')submitNsfwUnlock()" />
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#8b949e;cursor:pointer;">
+                            <input type="checkbox" id="nsfw-remember-checkbox" checked />
+                            记住此设备 (7天内免输密码)
+                        </label>
+                        <a href="javascript:void(0)" onclick="switchNsfwModalView('change')" style="font-size:12px;color:#58a6ff;text-decoration:none;">修改密码 ➔</a>
+                    </div>
+                    <div id="nsfw-unlock-msg" style="margin-top:10px;font-size:12px;display:none;"></div>
+                </div>
+
+                <!-- 视图 2: 已解锁管理视图 (当已解锁或处于本机时) -->
+                <div id="nsfw-view-unlocked" style="display:none;">
+                    <div style="display:flex;align-items:center;gap:8px;color:#3fb950;font-weight:600;font-size:15px;margin-bottom:6px;">
+                        <span>✅</span>
+                        <span id="nsfw-unlocked-title">当前专区已完全解锁</span>
+                    </div>
+                    <div style="color:#8b949e;font-size:13px;line-height:1.5;" id="nsfw-unlocked-desc">
+                        敏感专区（RPG Maker、SLG、漫画、小说、音声）已全部展示。如需离开或避免他人借用设备，可随时在此重新上锁。
+                    </div>
+                    <div style="margin-top:16px;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <div style="font-size:13px;font-weight:600;color:#f0f6fc;">访问凭证控制</div>
+                            <div style="font-size:12px;color:#8b949e;margin-top:2px;">支持快速重新隐形或重置密码</div>
+                        </div>
+                        <button class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#58a6ff;font-size:12px;padding:5px 10px;" onclick="switchNsfwModalView('change')">🔑 修改密码</button>
+                    </div>
+                    <div id="nsfw-unlocked-msg" style="margin-top:10px;font-size:12px;display:none;"></div>
+                </div>
+
+                <!-- 视图 3: 修改密码视图 -->
+                <div id="nsfw-view-change" style="display:none;">
+                    <div style="color:#8b949e;font-size:13px;line-height:1.5;margin-bottom:12px;">
+                        修改全局访问密码后，所有非本机局域网/广域网设备解锁时均需输入新密码（初始默认密码为 deck888）。
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:5px;">原访问密码：</label>
+                        <input type="password" id="nsfw-old-pwd-input" class="search-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 12px;" placeholder="初始默认: deck888" />
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:5px;">新访问密码：</label>
+                        <input type="password" id="nsfw-new-pwd-input" class="search-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 12px;" placeholder="输入新密码 (至少4位字符)" />
+                    </div>
+                    <div id="nsfw-change-msg" style="margin-top:10px;font-size:12px;display:none;"></div>
+                </div>
+            </div>
+            <div class="manga-modal-footer">
+                <div id="nsfw-footer-left">
+                    <button id="nsfw-btn-back" class="nav-net-btn" style="display:none;" onclick="switchNsfwModalView('back')">← 返回</button>
+                </div>
+                <div style="display:flex;gap:8px;" id="nsfw-footer-right">
+                    <button id="nsfw-btn-cancel" class="nav-net-btn" onclick="closeNsfwModal()">取消</button>
+                    <button id="nsfw-btn-action" class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:6px 16px;" onclick="submitNsfwAction()">解锁</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 全局系统与运行日志弹窗 -->
+    <div id="log-modal" class="manga-modal-backdrop" onclick="if(event.target===this) closeLogModal()">
+        <div class="manga-modal-content" style="max-width: 960px; width: 95%; height: 85vh; max-height: 85vh;">
+            <div class="manga-modal-header" style="padding: 12px 18px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:16px;font-weight:700;color:#f0f6fc;">📋 Omni-Deck 运行日志监控</span>
+                    <span id="log-status-badge" style="font-size:11px;background:#21262d;color:#58a6ff;padding:2px 8px;border-radius:10px;border:1px solid #30363d;">实时监控</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <button class="nav-net-btn" style="padding:4px 10px;font-size:12px;" onclick="refreshLogs()">🔄 刷新</button>
+                    <button class="nav-net-btn" style="padding:4px 10px;font-size:12px;" onclick="closeLogModal()">✕ 关闭</button>
+                </div>
+            </div>
+            
+            <!-- 过滤器工具栏 -->
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 18px;background:#0d1117;border-bottom:1px solid #21262d;font-size:12px;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <label style="color:#8b949e;">日志源:</label>
+                    <select id="log-source-select" class="search-input" style="padding:3px 8px;font-size:12px;width:auto;height:28px;" onchange="onLogSourceChange()">
+                        <option value="global">全系统核心日志 (omni_deck.log)</option>
+                    </select>
+
+                    <label style="color:#8b949e;margin-left:6px;">等级:</label>
+                    <select id="log-level-select" class="search-input" style="padding:3px 8px;font-size:12px;width:auto;height:28px;" onchange="refreshLogs()">
+                        <option value="ALL">全部 (ALL)</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARN">WARN</option>
+                        <option value="ERROR">ERROR</option>
+                        <option value="DEBUG">DEBUG</option>
+                    </select>
+
+                    <input type="text" id="log-search-input" class="search-input" style="padding:3px 8px;font-size:12px;width:150px;height:28px;" placeholder="🔍 过滤关键字..." oninput="filterDisplayedLogs()">
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <label style="display:flex;align-items:center;gap:4px;color:#8b949e;cursor:pointer;">
+                        <input type="checkbox" id="log-auto-refresh" onchange="toggleLogAutoRefresh(this.checked)" checked> 自动刷新 (2s)
+                    </label>
+                    <button class="nav-net-btn" style="padding:3px 8px;font-size:12px;" onclick="copyAllLogs()">📄 复制全部</button>
+                    <button class="nav-net-btn" style="padding:3px 8px;font-size:12px;color:#f85149;" onclick="clearLogs()">🗑️ 清空</button>
+                </div>
+            </div>
+
+            <!-- 日志显示区 (终端黑底风格) -->
+            <div id="log-console-container" style="flex:1;background:#05070a;padding:12px 16px;overflow-y:auto;font-family:'Courier New',Consolas,monospace;font-size:12px;line-height:1.5;color:#c9d1d9;white-space:pre-wrap;word-break:break-all;">
+                <div style="color:#8b949e;">正在加载运行日志...</div>
+            </div>
+
+            <!-- 底部状态条 -->
+            <div class="manga-modal-footer" style="padding:8px 18px;font-size:12px;color:#8b949e;">
+                <div id="log-summary-text">共 0 条日志</div>
+                <div style="display:flex;gap:12px;">
+                    <span>日志文件: <code style="color:#58a6ff;">omni_deck.log</code></span>
+                    <span>进程输出: <code style="color:#58a6ff;">cache/game_*.log</code></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 全局浮动回到顶部按钮 (Scroll to Top) -->
+    <button id="scroll-to-top-btn" class="scroll-to-top-btn" onclick="scrollToTop()" title="回到顶部 (Scroll to Top)" aria-label="回到顶部">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"></polyline>
+        </svg>
+        <span class="scroll-top-text">顶部</span>
+    </button>
 
     <script src="/hub.js"></script>
 </body>
