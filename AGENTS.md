@@ -42,10 +42,34 @@ omni-deck/
 ├── LICENSE                   # MIT 开源许可证
 ├── .gitignore                # 运行时目录过滤与骨架规则
 ├── run.sh                    # Linux / SteamOS 全自动自愈启动脚本
-├── main.py                   # Omni Deck 核心调度主程序与 Direct FS 路由
-├── core.js                   # 核心 Polyfill 与环境仿真层 (NW.js / Node.js 模拟)
+├── main.py                   # Omni Deck 核心调度主程序与 Direct FS 路由 (唯一入口点)
+├── flash_runner.py           # Flash 独立子进程运行时 (main.py 以子进程方式拉起)
+├── sc2_runner.py             # 星际争霸2 对局子进程运行时 (main.py 以子进程方式拉起)
+├── services/                 # 可导入的核心业务逻辑模块 (main.py 统一 sys.path 注入后 import)
+│   ├── app_config.py         # 统一常量入口：资源库根路径/广域网域名/NSFW默认密码, 全模块共用
+│   ├── local_settings.py     # ↑ 真实值 (本机专属，已 gitignore，不进 git)
+│   ├── local_settings.example.py # ↑ 模板 (随代码分发，无真实值)
+│   ├── audio_service.py      # 有声书/音声库
+│   ├── manga_service.py      # 漫画库
+│   ├── novel_service.py      # 小说库 (含在线检索目录)
+│   ├── shortvideo_service.py # 快手/抖音/TikTok 短视频库
+│   ├── mega_service.py       # MEGA 个人网盘集成
+│   ├── sc2_panel_service.py  # 星际争霸2 控制面板后端
+│   ├── privacy_service.py    # NSFW 密码保护与鉴权
+│   ├── crawler_service.py    # 下载中心后台任务队列 (包装 crawlers/ 脚本)
+│   ├── media_index.py        # 媒体库 SQLite 索引缓存
+│   └── native_player.py      # QtMultimedia 原生音视频播放组件
+├── config/                   # 运行时配置 (敏感/本机状态，已 gitignore)
+│   ├── privacy_config.json   # NSFW 密码哈希与登录 Token
+│   ├── .lan_config.json      # 局域网共享开关
+│   └── .wan_config.json      # 公网隧道配置
+├── crawlers/                 # 贴链接/一键下载归档脚本集 (下载中心 UI 的后端实现)
+├── catalogs/                 # 在线小说检索用的静态目录清单 (Gutenberg 中文库、xbookcn)
+├── docs/                     # 内置"技术文档"画廊内容 + 项目自身文档
+├── bin/                      # 内置二进制 (cloudflared 隧道客户端等)
 ├── assets/                   # 前端大厅 UI 与独立播放器视口
 │   ├── hub.html              # Omni Deck 五大专区分类控制中心
+│   ├── core.js               # 核心 Polyfill 与环境仿真层 (NW.js / Node.js 模拟)
 │   ├── player_retro.html     # 复古游戏 WASM 全屏视口
 │   └── player_flash.html     # Flash 独立视口
 ├── emulatorjs/               # EmulatorJS WASM 核心底座 (含 data/ 核心文件)
@@ -56,6 +80,15 @@ omni-deck/
 └── flash_games/              # ⚡ Flash 殿堂神作专区 (全量入库跟踪)
     └── plugins/              # Linux/Windows 原生 Pepper Flash PPAPI 插件
 ```
+
+> `services/` 里的模块用 `import xxx_service` / `from app_config import ...` 这种扁平写法互相引用——main.py 在最开头把 `services/` 加进
+> `sys.path`，之后全项目（包括 `crawlers/` 下的脚本）都能直接 `import audio_service` 而不用关心它具体存放在哪个子目录，新增模块也一样放进
+> `services/` 即可，不需要改 import 写法。
+>
+> 路径、域名、密码这类"跟这台机器/这个人绑定、不该公开"的设置统一走 `app_config.py` + `local_settings.py`
+> 这一套：`app_config.py` 随代码公开分发，只有读取逻辑和通用默认值；真实值写在 `local_settings.py`
+> 里（已 gitignore），改这个文件不用重启（`app_config.py` 会检测它的 mtime 自动重新加载）。新增一项
+> 配置的流程见 `app_config.py` 顶部的文档字符串。
 
 ---
 

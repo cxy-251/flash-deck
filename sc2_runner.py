@@ -10,7 +10,7 @@ SC2 对局核心（原 sc2Mod/runner.py，按用户要求搬到 omni-deck：sc2M
 repeated，天生支持任意人数。实测直接给 `players = [Human(...), Computer(...), Computer(...), ...]`
 就能开出真正的多人对战，不用自己重写 AI-API 建局逻辑。
 
-烘焙 mod 进地图（bake.py + _bake_inner.py + lib/libstorm.so）还留在 ~/Games/claude/sc2Mod/ —
+烘焙 mod 进地图（bake.py + _bake_inner.py + lib/libstorm.so）还留在 ~/Games/claude/omniMod/sc2Mod/ —
 那是"做 mod"的活儿，这里只是 import 它来用。
 
 单独跑一局（在 omni-deck 目录下）：
@@ -26,12 +26,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SC2_ROOT = Path(os.environ.get("SC2_DIR", os.path.expanduser("~/Games/StarCraft II")))
-SC2MOD_DIR = os.environ.get("SC2MOD_DIR", os.path.expanduser("~/Games/claude/sc2Mod"))
+SC2MOD_DIR = os.environ.get("SC2MOD_DIR", os.path.expanduser("~/Games/claude/omniMod/sc2Mod"))
 
 # —— 让 burnysc2 走 Wine 分支，并用我们的 proton 垫片（现在也在 omni-deck 里）——
 os.environ.setdefault("SC2PF", "WineLinux")
 os.environ.setdefault("SC2PATH", str(SC2_ROOT))
-os.environ.setdefault("WINE", str(HERE / "proton-wine"))
+os.environ.setdefault("WINE", str(HERE / "bin" / "proton-wine"))
 os.environ.setdefault("SC2MOD_COMPAT_DATA", str(Path.home() / ".local/share/omni_deck_pfx"))
 os.environ.setdefault("SC2_TIMEOUT", "180")   # 起 SC2 给足时间
 
@@ -80,6 +80,15 @@ def _force_kill_lingering_sc2() -> None:
 
 
 def play_one(sel: dict) -> Result | list | None:
+    """按前端选好的地图/种族/对手/mod 组一局并通过 burnysc2 拉起游戏。
+
+    Args:
+        sel: 选局参数字典，含 map/race/opponents（对手列表，每项含 race/difficulty/
+            ai_build）/mods（可选）/cheat（可选，历史兼容字段）。
+
+    Returns:
+        Result | list | None: burnysc2 run_game() 的原始返回值（对局结果）。
+    """
     bake = _import_bake()
     mods = sel.get("mods") or (["5xHarvest"] if sel.get("cheat") else [])
     map_name = bake.bake(sel["map"], mods) if mods else sel["map"]
@@ -102,6 +111,11 @@ def play_one(sel: dict) -> Result | list | None:
 
 
 def main() -> None:
+    """命令行入口：解析 sc2_panel_service.py 传来的参数，跑一局并打印结果。
+
+    由 sc2_panel_service.py 通过 `uv run python sc2_runner.py --map ... --json`
+    以子进程方式调用；`--json` 打开时结束时会额外打印一行机器可读的结果供父进程解析。
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--map", required=True)
     ap.add_argument("--race", default="P")

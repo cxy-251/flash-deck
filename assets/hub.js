@@ -906,7 +906,9 @@ let currentGameSearchQuery = '';
                 const normTitle = normalizeZh(item.title || item.filename || '');
                 const normAuthor = normalizeZh(item.author || '');
                 const normTags = Array.isArray(item.tags) ? item.tags.map(t => normalizeZh(t)).join(' ') : normalizeZh(item.tags || '');
-                return normTitle.includes(normQ) || normAuthor.includes(normQ) || normTags.includes(normQ);
+                const normId = item.id ? String(item.id).toLowerCase() : '';
+                const normFile = normalizeZh(item.filename || '');
+                return normTitle.includes(normQ) || normAuthor.includes(normQ) || normTags.includes(normQ) || normId.includes(normQ) || normFile.includes(normQ);
             });
         }
 
@@ -1708,14 +1710,22 @@ let currentGameSearchQuery = '';
             const novelsView = document.getElementById('media-novels-view');
             const docsView = document.getElementById('media-docs-view');
             const audioView = document.getElementById('media-audio-view');
+            const shortVideoKwaiView = document.getElementById('media-shortvideo-view');
+            const shortVideoDouyinView = document.getElementById('media-shortvideo-douyin-view');
+            const shortVideoTiktokView = document.getElementById('media-shortvideo-tiktok-view');
             const megaView = document.getElementById('media-mega-view');
+            const crawlerView = document.getElementById('media-crawler-view');
             const subStats = document.getElementById('media-sub-stats');
 
             if (mangaView) mangaView.style.display = activeMediaTab === 'manga' ? 'block' : 'none';
             if (novelsView) novelsView.style.display = activeMediaTab === 'novels' ? 'block' : 'none';
             if (docsView) docsView.style.display = activeMediaTab === 'docs' ? 'block' : 'none';
             if (audioView) audioView.style.display = activeMediaTab === 'audio' ? 'block' : 'none';
+            if (shortVideoKwaiView) shortVideoKwaiView.style.display = activeMediaTab === 'shortvideo' ? 'block' : 'none';
+            if (shortVideoDouyinView) shortVideoDouyinView.style.display = activeMediaTab === 'shortvideo-douyin' ? 'block' : 'none';
+            if (shortVideoTiktokView) shortVideoTiktokView.style.display = activeMediaTab === 'shortvideo-tiktok' ? 'block' : 'none';
             if (megaView) megaView.style.display = activeMediaTab === 'mega' ? 'block' : 'none';
+            if (crawlerView) crawlerView.style.display = activeMediaTab === 'crawler' ? 'block' : 'none';
 
             if (activeMediaTab === 'manga') {
                 const count = localMangaList && localMangaList.length > 0 ? localMangaList.length : null;
@@ -1776,6 +1786,19 @@ let currentGameSearchQuery = '';
                     if (subStats) subStats.textContent = '正在读取有声书曲库...';
                 }
                 loadAudioLibrary(true);
+            } else if (activeMediaTab === 'shortvideo' || activeMediaTab === 'shortvideo-douyin' || activeMediaTab === 'shortvideo-tiktok') {
+                const svPlatform = svPlatformFromTab(activeMediaTab);
+                const svSt = SV[svPlatform];
+                const svLabel = SV_LABEL[svPlatform];
+                if (svSt.total > 0) {
+                    document.getElementById('total-badge').textContent = `${svSt.total} 条 ${svLabel} 视频`;
+                    if (subStats) subStats.textContent = `共 ${svSt.total} 条 ${svLabel} 视频`;
+                    if (svSt.list.length > 0) renderShortVideoGrid(svPlatform, true);
+                } else {
+                    document.getElementById('total-badge').textContent = `📱 ${svLabel}`;
+                    if (subStats) subStats.textContent = `正在扫描 Downloads/${{ kuaishou: '快手', douyin: '抖音', tiktok: 'TikTok' }[svPlatform] || svPlatform}...`;
+                }
+                loadShortVideoLibrary(svPlatform, true);
             } else if (activeMediaTab === 'mega') {
                 document.getElementById('total-badge').textContent = 'MEGA';
                 if (subStats) {
@@ -1783,7 +1806,109 @@ let currentGameSearchQuery = '';
                 }
                 loadMegaStatus();
                 refreshMegaTransfers();
+            } else if (activeMediaTab === 'crawler') {
+                document.getElementById('total-badge').textContent = '下载中心';
+                if (subStats) subStats.textContent = '把 crawlers/ 脚本包装成贴链接下载的按钮';
+                refreshCrawlerJobs();
             }
+        }
+
+        let crawlerJobsPollTimer = null;
+
+        function startCrawlerJob(jobType) {
+            let params = {};
+            if (jobType === 'bilibili_audiobook') {
+                params = {
+                    bvid: document.getElementById('crawler-bili-bvid').value.trim(),
+                    album: document.getElementById('crawler-bili-album').value.trim(),
+                    start: document.getElementById('crawler-bili-start').value.trim(),
+                    end: document.getElementById('crawler-bili-end').value.trim(),
+                    output: document.getElementById('crawler-bili-output').value.trim(),
+                };
+                if (!params.bvid) { alert('请填写 BV 号'); return; }
+            } else if (jobType === 'youtube_audiobook') {
+                params = {
+                    url: document.getElementById('crawler-yt-url').value.trim(),
+                    album: document.getElementById('crawler-yt-album').value.trim(),
+                    cookies: document.getElementById('crawler-yt-cookies').value.trim(),
+                    output: document.getElementById('crawler-yt-output').value.trim(),
+                };
+                if (!params.url) { alert('请填写视频链接'); return; }
+            } else {
+                return;
+            }
+
+            fetch('/api/crawler/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: jobType, params })
+            })
+                .then(r => r.json())
+                .then(res => {
+                    if (!res.success) {
+                        alert('启动失败: ' + (res.error || '未知错误'));
+                        return;
+                    }
+                    refreshCrawlerJobs();
+                    ensureCrawlerJobsPolling();
+                })
+                .catch(err => alert('启动失败: ' + err));
+        }
+
+        function refreshCrawlerJobs() {
+            fetch('/api/crawler/jobs?t=' + Date.now())
+                .then(r => r.json())
+                .then(jobs => {
+                    renderCrawlerJobs(jobs || []);
+                    const hasRunning = (jobs || []).some(j => j.status === 'running');
+                    if (hasRunning) {
+                        ensureCrawlerJobsPolling();
+                    } else if (crawlerJobsPollTimer) {
+                        clearInterval(crawlerJobsPollTimer);
+                        crawlerJobsPollTimer = null;
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function ensureCrawlerJobsPolling() {
+            if (crawlerJobsPollTimer) return;
+            crawlerJobsPollTimer = setInterval(() => {
+                if (activePrimarySection === 'media' && activeMediaTab === 'crawler') {
+                    refreshCrawlerJobs();
+                } else {
+                    clearInterval(crawlerJobsPollTimer);
+                    crawlerJobsPollTimer = null;
+                }
+            }, 3000);
+        }
+
+        function renderCrawlerJobs(jobs) {
+            const list = document.getElementById('crawler-jobs-list');
+            if (!list) return;
+            if (!jobs.length) {
+                list.innerHTML = '<div style="text-align:center;padding:20px;color:#8b949e;font-size:13px;">暂无下载任务</div>';
+                return;
+            }
+            const statusMeta = {
+                running: { icon: '⏳', color: '#f0883e', label: '下载中' },
+                done: { icon: '✅', color: '#2ea043', label: '已完成' },
+                failed: { icon: '❌', color: '#f85149', label: '失败' },
+            };
+            list.innerHTML = jobs.map(job => {
+                const meta = statusMeta[job.status] || statusMeta.running;
+                const tail = (job.log || []).slice(-8).map(escapeHtml).join('\n');
+                const startedTime = job.started_at ? new Date(job.started_at * 1000).toLocaleTimeString() : '';
+                return `
+                    <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <div style="font-size:13px;font-weight:600;color:#f0f6fc;">${meta.icon} ${escapeHtml(job.label || job.type)}</div>
+                            <div style="font-size:12px;color:${meta.color};font-weight:600;">${meta.label} · ${startedTime}</div>
+                        </div>
+                        <pre style="margin:8px 0 0 0;padding:8px 10px;background:#010409;border-radius:6px;font-size:11.5px;line-height:1.5;color:#8b949e;max-height:140px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;">${tail || '正在启动...'}</pre>
+                    </div>
+                `;
+            }).join('');
         }
 
         function prewarmMediaLibraries() {
@@ -1837,7 +1962,7 @@ let currentGameSearchQuery = '';
                     .then(res => {
                         let items = res.items || [];
                         if (!isAudioNsfw) {
-                            items = items.filter(it => !it.is_nsfw && !it.path?.includes('/run/media/') && !it.path?.includes('telegramFile'));
+                            items = items.filter(it => !it.is_nsfw);   // 只看 is_nsfw，不再额外按路径二次过滤，理由见 loadAudioLibrary()
                         }
                         items.sort((a, b) => {
                             const albA = a.album || '';
@@ -2101,10 +2226,8 @@ let currentGameSearchQuery = '';
                 }
             });
             if (addedCount > 0) {
-                saveMangaQueueToStorage();
-                syncMangaQueueToBackend();
-                updateMangaQueueBadge();
-                renderMangaQueueList();
+                saveMangaDownloadQueue();
+                renderMangaQueueModalItems();
                 alert(`已成功将 ${addedCount} 部待更新的连载漫画加入待下载列表！`);
             } else {
                 alert('所有待更新的连载漫画已在待下载列表中。');
@@ -2260,10 +2383,12 @@ let currentGameSearchQuery = '';
             const rankLoading = document.getElementById('manga-ranking-loading');
             const rankGrid = document.getElementById('manga-ranking-grid');
             const subStats = document.getElementById('media-sub-stats');
+            const onlineSec = document.getElementById('manga-online-section');
 
             if (subTab === 'shelf') {
                 if (localSec) localSec.style.display = 'block';
                 if (rankingSec) rankingSec.style.display = 'none';
+                if (onlineSec && !currentMangaSearchQuery) onlineSec.style.display = 'none';
                 const count = localMangaList ? localMangaList.length : 0;
                 if (subStats) subStats.textContent = '共 ' + count + ' 部漫画';
                 renderMangaTagBar();
@@ -2271,6 +2396,7 @@ let currentGameSearchQuery = '';
             } else {
                 if (localSec) localSec.style.display = 'none';
                 if (rankingSec) rankingSec.style.display = 'block';
+                if (onlineSec) onlineSec.style.display = 'none';
 
                 const rankTitles = {
                     week: '🔥 每周必看榜单 (禁漫官方本周热度 TOP 80 · 点击封面沉浸阅读或一键下载)',
@@ -2604,6 +2730,8 @@ let currentGameSearchQuery = '';
 
 
 
+        let currentUnifiedLocalMatches = [];
+
         function executeUnifiedSearch(overrideQuery) {
             const input = document.getElementById('manga-search-input');
             const q = (overrideQuery !== undefined ? overrideQuery : (input ? input.value : '') || '').trim();
@@ -2618,16 +2746,18 @@ let currentGameSearchQuery = '';
             isLoadingMoreManga = false;
             totalOnlineMangaCount = 0;
 
-            // 1. 本地匹配 (支持繁简双向与标签模糊匹配)
-            const matchedLocal = filterLocalManga(q);
+            // 1. 本地匹配 (包含标题、作者、标签、以及编号 ID)
+            currentUnifiedLocalMatches = [...filterLocalManga(q)];
             const localSection = document.getElementById('manga-local-section');
             const localHeading = document.getElementById('manga-local-heading');
             const emptyEl = document.getElementById('manga-shelf-empty');
+            const rankingSection = document.getElementById('manga-ranking-section');
 
+            if (rankingSection) rankingSection.style.display = 'none';
             if (localSection) localSection.style.display = 'block';
-            if (localHeading) localHeading.textContent = `🟢 本地已收录 (匹配到 ${matchedLocal.length} 部 · 点击封面直接阅读)`;
-            renderMangaShelf(matchedLocal);
-            if (emptyEl) emptyEl.style.display = matchedLocal.length === 0 ? 'block' : 'none';
+            if (localHeading) localHeading.textContent = `🟢 本地已收录 (匹配到 ${currentUnifiedLocalMatches.length} 部 · 点击封面直接阅读)`;
+            renderMangaShelf(currentUnifiedLocalMatches);
+            if (emptyEl) emptyEl.style.display = currentUnifiedLocalMatches.length === 0 ? 'block' : 'none';
 
             // 2. 同时检索禁漫全网（支持单 ID、多 ID 或标题关键字）
             const onlineSection = document.getElementById('manga-online-section');
@@ -2661,7 +2791,32 @@ let currentGameSearchQuery = '';
                         }
                     }
 
-                    renderOnlineResults(currentOnlineResults, matchedLocal.length === 0, false);
+                    // ⭐ 关键同步：将全网搜索结果中已被标记为“✓ 已在书架”的本地收录作品，自动动态合并进上方的“本地已收录”结果列表！
+                    // 彻底解决：网络搜索能基于官方角色/系列词找到已下载作品，而本地简单文本模糊匹配漏掉，导致本地展示数少于网络已下载数的问题
+                    let mergedNew = false;
+                    currentOnlineResults.forEach(onlineItem => {
+                        const localMatch = findLocalMangaMatch(onlineItem);
+                        if (localMatch) {
+                            const alreadyInLocal = currentUnifiedLocalMatches.some(m => 
+                                (m.filename && localMatch.filename && m.filename === localMatch.filename) ||
+                                (m.id && localMatch.id && String(m.id) === String(localMatch.id))
+                            );
+                            if (!alreadyInLocal) {
+                                currentUnifiedLocalMatches.push(localMatch);
+                                mergedNew = true;
+                            }
+                        }
+                    });
+
+                    if (mergedNew) {
+                        renderMangaShelf(currentUnifiedLocalMatches);
+                        if (localHeading) {
+                            localHeading.textContent = `🟢 本地已收录 (匹配到 ${currentUnifiedLocalMatches.length} 部 · 点击封面直接阅读)`;
+                        }
+                        if (emptyEl) emptyEl.style.display = 'none';
+                    }
+
+                    renderOnlineResults(currentOnlineResults, currentUnifiedLocalMatches.length === 0, false);
 
                     if (!hasMoreMangaPages && currentOnlineResults.length > 0 && endTip) {
                         endTip.style.display = 'block';
@@ -2678,6 +2833,7 @@ let currentGameSearchQuery = '';
             const oId = String(onlineItem.id);
             const oTitle = (onlineItem.title || '').trim().toLowerCase();
             return localMangaList.find(local => {
+                if (local.id && String(local.id) === oId) return true;
                 const lTitle = (local.title || '').trim().toLowerCase();
                 const lFile = (local.filename || '').trim().toLowerCase();
                 return lFile.includes(oId) || lTitle.includes(oId) || (oTitle && lTitle === oTitle);
@@ -2705,6 +2861,31 @@ let currentGameSearchQuery = '';
                         hasMoreMangaPages = !!data.has_more;
                         totalOnlineMangaCount = data.total_online || totalOnlineMangaCount;
                         currentOnlineResults.push(...newItems);
+
+                        // ⭐ 翻页加载更多时，同样自动将新发现的已收录作品合并进本地列表
+                        let mergedNew = false;
+                        newItems.forEach(onlineItem => {
+                            const localMatch = findLocalMangaMatch(onlineItem);
+                            if (localMatch) {
+                                const alreadyInLocal = currentUnifiedLocalMatches.some(m => 
+                                    (m.filename && localMatch.filename && m.filename === localMatch.filename) ||
+                                    (m.id && localMatch.id && String(m.id) === String(localMatch.id))
+                                );
+                                if (!alreadyInLocal) {
+                                    currentUnifiedLocalMatches.push(localMatch);
+                                    mergedNew = true;
+                                }
+                            }
+                        });
+                        if (mergedNew) {
+                            renderMangaShelf(currentUnifiedLocalMatches);
+                            const localHeading = document.getElementById('manga-local-heading');
+                            if (localHeading) {
+                                localHeading.textContent = `🟢 本地已收录 (匹配到 ${currentUnifiedLocalMatches.length} 部 · 点击封面直接阅读)`;
+                            }
+                            const emptyEl = document.getElementById('manga-shelf-empty');
+                            if (emptyEl) emptyEl.style.display = 'none';
+                        }
 
                         const kwLabel = document.getElementById('manga-search-kw-label');
                         if (kwLabel) {
@@ -2744,6 +2925,7 @@ let currentGameSearchQuery = '';
             currentMangaPage = 1;
             hasMoreMangaPages = false;
             isLoadingMoreManga = false;
+            currentUnifiedLocalMatches = [];
         }
 
         function clearMangaSearch() {
@@ -3103,6 +3285,7 @@ let currentGameSearchQuery = '';
                             const finished = event.total && event.done >= event.total;
                             const doReload = () => {
                                 if (dir === 'novels') loadNovelsLibrary();
+                                else if (dir && dir.startsWith('shortvideo:')) liveRefreshShortVideoLibrary(dir.slice('shortvideo:'.length));
                                 else loadMangaLibrary();
                             };
                             if (finished) {
@@ -5232,7 +5415,7 @@ let currentGameSearchQuery = '';
                 }
                 if (heading) heading.textContent = '🔞 NSFW 音声画廊';
                 if (searchInput) searchInput.placeholder = '🔍 搜索绅士音声作品...';
-                if (emptyDesc) emptyDesc.innerHTML = '请确保 SD 卡已挂载于 <code>/run/media/deck/FUCKDECK/telegramFile/</code> 或本地 <code>audio/nsfw/</code> 目录。';
+                if (emptyDesc) emptyDesc.innerHTML = '请确保内容放在 <code>~/Games/media_library/audio/nsfw/</code> 或 SD 卡镜像的 <code>media_library/audio/nsfw/</code> 目录下。';
             } else {
                 if (btn) {
                     btn.classList.remove('active');
@@ -5304,7 +5487,12 @@ let currentGameSearchQuery = '';
                         if (loadingIndicator) loadingIndicator.style.display = 'none';
 
                         let allItems = res.items || [];
-                        allItems = allItems.filter(it => !it.is_nsfw && !it.path?.includes('/run/media/') && !it.path?.includes('telegramFile'));
+                        // 只按 is_nsfw 这一个字段判断，不再额外按路径里有没有 "/run/media/"（SD 卡挂载点）
+                        // 二次过滤——那条规则是标准音频还只存在 SSD 上那个年代加的"防 NSFW 音频混进来"
+                        // 保险，现在标准音频也合法地搬去 SD 卡了，继续按路径过滤会把这些正常内容也
+                        // 当成 NSFW 误杀掉。is_nsfw 本身在后端就是严格分开算的（standard/nsfw 走的是
+                        // 完全不同的扫描目录+索引 kind），单独这一个字段判断已经够了。
+                        allItems = allItems.filter(it => !it.is_nsfw);
 
                         // 核心：自然数字排序 (Natural Sorting: EP1-10 < EP11-20 < EP104-120)
                         allItems.sort((a, b) => {
@@ -5415,7 +5603,7 @@ let currentGameSearchQuery = '';
             const startIdx = reset ? 0 : listEl.children.length;
             for (let i = startIdx; i < localAudioList.length; i++) {
                 const item = localAudioList[i];
-                if (!isAudioNsfw && (item.is_nsfw || (item.path && (item.path.includes('/run/media/') || item.path.includes('telegramFile'))))) {
+                if (!isAudioNsfw && item.is_nsfw) {   // 只看 is_nsfw，不再额外按路径二次过滤，理由见 loadAudioLibrary()
                     continue;
                 }
                 const card = document.createElement('div');
@@ -5468,6 +5656,17 @@ let currentGameSearchQuery = '';
         let lastActiveChapter = null;
 
         function playAudioItem(item) {
+            // 本机：有 omniBridge 就走原生解码播放（QtWebEngine 解不了 AAC，同一套原生播放
+            // 通道，见 native_player.py）。原生播放器音频模式是贴在窗口底部的一条细控制条，
+            // 不挡网页——网页这个 HTML 音频条就不用显示了，章节/倍速/睡眠定时都挪到原生
+            // 控件里自己闭环。局域网/远程没有这个 bridge，走下面原来那套网页 <audio> 播放器。
+            if (window.omniBridge && typeof window.omniBridge.playAudio === 'function') {
+                nativePlaybackKind = 'audio';
+                const nsfwFlag = item.is_nsfw ? '1' : '0';
+                window.omniBridge.playAudio(item.rel_path || item.filename, nsfwFlag, item.title || '', JSON.stringify(item.chapters || []));
+                return;
+            }
+
             const playerBar = document.getElementById('global-audio-player-bar');
             const audioEl = document.getElementById('main-audio-element');
             const titleEl = document.getElementById('player-track-title');
@@ -5882,6 +6081,609 @@ let currentGameSearchQuery = '';
             }
         });
 
+        // ================= 短视频画廊 (Kwai=002插件抓的快手，Douyin=003插件抓的抖音) =================
+        // 两个平台各自一份状态，UI/接口按 platform 参数区分；kuaishou 沿用原来没有平台后缀的
+        // DOM id（避免动已经在用的那批元素），douyin 是新增的，id 前缀 shortvideo-douyin-*
+        const SV = {
+            kuaishou: { folder: 'all', list: [], total: 0, page: 1, pageSize: 60, hasMore: true, loading: false, curIndex: -1, searchTimer: null, pollTimer: null },
+            douyin:   { folder: 'all', list: [], total: 0, page: 1, pageSize: 60, hasMore: true, loading: false, curIndex: -1, searchTimer: null, pollTimer: null },
+            tiktok:   { folder: 'all', list: [], total: 0, page: 1, pageSize: 60, hasMore: true, loading: false, curIndex: -1, searchTimer: null, pollTimer: null }
+        };
+        const SV_LABEL = { kuaishou: 'Kwai', douyin: 'Douyin', tiktok: 'TikTok' };
+        let svPlayerPlatform = 'kuaishou';   // 播放器弹窗当前在播哪个平台的列表
+        let shortVideoLoopMode = 'list';     // 'list' | 'single'
+        try {
+            shortVideoLoopMode = localStorage.getItem('omni_shortvideo_loop_mode') || 'list';
+        } catch (e) {}
+
+        function updateShortVideoLoopBtnUI() {
+            const btn = document.getElementById('shortvideo-loop-btn');
+            if (!btn) return;
+            if (shortVideoLoopMode === 'single') {
+                btn.textContent = '🔂';
+                btn.title = '循环模式：单视频循环（点击切换为列表循环）';
+            } else {
+                btn.textContent = '🔁';
+                btn.title = '循环模式：列表循环（点击切换为单片循环）';
+            }
+        }
+
+        function toggleShortVideoLoopMode() {
+            shortVideoLoopMode = shortVideoLoopMode === 'list' ? 'single' : 'list';
+            try { localStorage.setItem('omni_shortvideo_loop_mode', shortVideoLoopMode); } catch (e) {}
+            updateShortVideoLoopBtnUI();
+        }
+
+        function toggleShortVideoLike(platform, relPath, event) {
+            if (event) event.stopPropagation();
+            const st = SV[platform];
+            const item = st ? st.list.find(x => x.rel_path === relPath) : null;
+            const targetLiked = item ? !item.liked : true;
+
+            fetch('/api/shortvideo/like', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ platform, path: relPath, liked: targetLiked })
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (res.status === 'ok') {
+                    const actualLiked = !!res.liked;
+                    if (item) item.liked = actualLiked;
+
+                    // 同步当前网格
+                    renderShortVideoGrid(platform, false);
+
+                    // 同步播放器按钮
+                    const likeBtn = document.getElementById('shortvideo-like-btn');
+                    if (likeBtn && svPlayerPlatform === platform && st && st.curIndex >= 0 && st.list[st.curIndex] && st.list[st.curIndex].rel_path === relPath) {
+                        likeBtn.textContent = actualLiked ? '❤️' : '🤍';
+                        likeBtn.title = actualLiked ? '取消点赞' : '点赞';
+                    }
+                    const galleryLikeBtn = document.getElementById('shortvideo-gallery-like-btn');
+                    if (galleryLikeBtn && svGalleryPlatform === platform && st && st.curIndex >= 0 && st.list[st.curIndex] && st.list[st.curIndex].rel_path === relPath) {
+                        galleryLikeBtn.textContent = actualLiked ? '❤️' : '🤍';
+                        galleryLikeBtn.title = actualLiked ? '取消点赞' : '点赞';
+                    }
+
+                    // 同步 Native 播放器端
+                    if (window.omniBridge && typeof window.omniBridge.setLikeStatus === 'function') {
+                        window.omniBridge.setLikeStatus(platform, relPath, actualLiked);
+                    }
+                }
+            })
+            .catch(err => console.error('Failed to toggle shortvideo like:', err));
+        }
+
+        function toggleShortVideoLikeFromPlayer() {
+            const st = SV[svPlayerPlatform];
+            if (!st || st.curIndex < 0 || st.curIndex >= st.list.length) return;
+            const item = st.list[st.curIndex];
+            toggleShortVideoLike(svPlayerPlatform, item.rel_path);
+        }
+
+        function toggleShortVideoLikeFromGallery() {
+            const st = SV[svGalleryPlatform];
+            if (!st || st.curIndex < 0 || st.curIndex >= st.list.length) return;
+            const item = st.list[st.curIndex];
+            toggleShortVideoLike(svGalleryPlatform, item.rel_path);
+        }
+
+        // 本机原生播放桥接（见 native_player.py）：omniBridge 只在本机嵌入的 QWebEngineView
+        // 里才存在（局域网/远程浏览器没有 qt.webChannelTransport），据此判断走原生解码还是
+        // 网页内置的 <video>/<audio>。nativePlaybackKind 记录原生播放器当前在播"短视频"还是
+        // "音频"，上一条/下一条/删除从 Python 转发回来时（见文件末尾 window.nativePlayerNext
+        // 等函数）靠这个分流。
+        let nativePlaybackKind = null;
+
+        function svId(platform, base) {
+            return platform === 'kuaishou' ? `shortvideo-${base}` : `shortvideo-${platform}-${base}`;
+        }
+        function svEl(platform, base) { return document.getElementById(svId(platform, base)); }
+        function svTabName(platform) { return platform === 'kuaishou' ? 'shortvideo' : `shortvideo-${platform}`; }
+        // svTabName 反过来：从标签名算平台——'shortvideo' -> kuaishou，'shortvideo-xxx' -> xxx
+        function svPlatformFromTab(tab) { return tab === 'shortvideo' ? 'kuaishou' : tab.replace(/^shortvideo-/, ''); }
+
+        function onShortVideoSearchInput(platform, val) {
+            const st = SV[platform];
+            if (st.searchTimer) clearTimeout(st.searchTimer);
+            st.searchTimer = setTimeout(() => loadShortVideoLibrary(platform, true), 250);
+        }
+
+        function rescanShortVideoLibrary(platform) {
+            loadShortVideoLibrary(platform, true);
+        }
+
+        // 转码功能已停用：本机播放改走 native_player.py 的原生解码（QtMultimedia），不用再
+        // 转码；局域网/远程本来就是给原始文件，也用不上。这两个函数留空壳，防止旧页面缓存
+        // 或者别处遗漏的调用点报错。
+        function refreshShortVideoTranscodeStatus(platform) {}
+        function transcodeAllShortVideos(platform) {}
+
+        function formatVideoDuration(secs) {
+            secs = Math.round(secs || 0);
+            const m = Math.floor(secs / 60), s = secs % 60;
+            return `${m}:${String(s).padStart(2, '0')}`;
+        }
+
+        function shortVideoImgFallback(imgEl) {
+            imgEl.outerHTML = '<div class="manga-cover-fallback">📱</div>';
+        }
+
+        // 一页按屏幕实际能摆下多少张卡片来算（列数 x 能看到的行数 + 多留一行），不再固定
+        // 60 条——60 条经常比首屏能看到的多好几倍，等于一次性把好多张压根还没滚到看不见的
+        // 缩略图也拉去生成，白白占用刚加的那个"最多 3 个并发"的名额，首屏能看到的反而排在后面。
+        //
+        // 注意：这里故意不读 grid.clientWidth——切标签刚把容器从 display:none 切成可见，
+        // 紧接着就去读某个元素的 clientWidth，会逼着浏览器立刻做一次同步强制重排（这张页面
+        // 是所有功能挤在一起的单页应用，DOM 树不小，这一下重排本身就有 CPU 开销，快速连续
+        // 切标签等于连续触发好几次，CPU 占用跟着飙，重排卡住主线程那一下也正是画面闪烁的
+        // 真正原因）。改用 window.innerWidth（随时能拿到，不触发重排）估算，body 左右各
+        // 留了 24px 内边距、这张页面没有侧边栏，减一下就是网格的可用宽度，够用。
+        function computeShortVideoPageSize(platform) {
+            const containerWidth = Math.max(320, window.innerWidth - 48);
+            const cardMinW = 185, gap = 18;
+            const cols = Math.max(1, Math.floor((containerWidth + gap) / (cardMinW + gap)));
+            const cardW = (containerWidth - (cols - 1) * gap) / cols;
+            const coverH = cardW * (16 / 9);           // 短视频封面是 9:16
+            const infoH = 74;                          // 标题+meta 那一小条，大致估个高度
+            const rowH = coverH + infoH + gap;
+            const viewportH = window.innerHeight || 800;
+            const rows = Math.max(1, Math.ceil(viewportH / rowH));
+            return Math.min(200, cols * (rows + 1));   // 多留一整行做缓冲，别频繁触发下一页
+        }
+
+        function loadShortVideoLibrary(platform, reset = false) {
+            const st = SV[platform];
+            if (reset) {
+                st.loading = false;
+                st.page = 1;
+                st.hasMore = true;
+                st.pageSize = computeShortVideoPageSize(platform);
+            } else if (st.loading) {
+                return;
+            }
+            if (!st.hasMore && !reset) return;
+
+            st.loading = true;
+            const loadingIndicator = svEl(platform, 'loading-more');
+            if (loadingIndicator) loadingIndicator.style.display = 'block';
+
+            const searchEl = svEl(platform, 'search-input');
+            const searchVal = (searchEl ? searchEl.value : '').trim();
+            const url = `/api/shortvideo/library?platform=${platform}&folder=${encodeURIComponent(st.folder)}&q=${encodeURIComponent(searchVal)}&page=${st.page}&page_size=${st.pageSize}&t=${Date.now()}`;
+
+            fetch(url)
+                .then(r => r.json())
+                .then(res => {
+                    st.loading = false;
+                    if (loadingIndicator) loadingIndicator.style.display = 'none';
+                    if (res && res.error) return;
+
+                    const items = res.items || [];
+                    st.total = res.total || 0;
+                    st.hasMore = res.has_more || false;
+                    st.list = reset ? items : st.list.concat(items);
+
+                    // 文件夹筛选条只在真正 reset（切筛选/搜索/首次进页）时才重建——翻页加载
+                    // 更多本来就是同一个查询的下一页，文件夹集合不会变，没必要每次都
+                    // innerHTML='' 再重建一遍；这条筛选条挂在瀑布流网格正上方，重建一次哪怕
+                    // 最终高度没变，也可能让浏览器在那一刻重新算一遍上面这块区域的布局，
+                    // 用户视觉上就会觉得"下面的内容跟着抖了一下/挪了地方"——触底加载更多时
+                    // 关掉这个重建，问题原样消失。
+                    if (reset) renderShortVideoFolderBar(platform, res.folders || []);
+
+                    const badge = svEl(platform, 'total-count-badge');
+                    if (badge) badge.textContent = `共 ${st.total} 条`;
+                    if (activePrimarySection === 'media' && activeMediaTab === svTabName(platform)) {
+                        const label = SV_LABEL[platform] || platform;
+                        document.getElementById('total-badge').textContent = `${st.total} 条 ${label} 视频`;
+                        const subStats = document.getElementById('media-sub-stats');
+                        if (subStats) subStats.textContent = `共 ${st.total} 条 ${label} 视频`;
+                    }
+
+                    renderShortVideoGrid(platform, reset);
+                    st.page++;
+                })
+                .catch(err => {
+                    st.loading = false;
+                    if (loadingIndicator) loadingIndicator.style.display = 'none';
+                    console.error('Failed to load shortvideo library:', platform, err);
+                });
+        }
+
+        // 后台文件监控发现新下载的短视频时（SSE library_indexed 事件）调这个，跟用户主动
+        // 切筛选/搜索触发的 loadShortVideoLibrary(platform, true) 不是一回事——那个 reset=true
+        // 会把整个网格 innerHTML 清空重建，几十张已经渲染好的封面图跟着全部重新加载一遍，
+        // 就是"每下载一条就闪一下"的原因。这里改成静默拉一遍最新数据，只把真正没见过的
+        // 几条（按 rel_path 判重）追加到列表末尾、只往 DOM 里插这几张新卡片，已经在屏幕上
+        // 的卡片原封不动，不会闪。代价是新视频不会立刻跳到瀑布流最前面（按时间重新排到最
+        // 前，要等用户下次真正切换筛选/进标签页触发一次 reset 才会体现），拿这点滞后换不
+        // 闪烁，划算。
+        function liveRefreshShortVideoLibrary(platform) {
+            const st = SV[platform];
+            if (!st || st.loading) return;
+            const searchEl = svEl(platform, 'search-input');
+            const searchVal = (searchEl ? searchEl.value : '').trim();
+            const url = `/api/shortvideo/library?platform=${platform}&folder=${encodeURIComponent(st.folder)}&q=${encodeURIComponent(searchVal)}&page=1&page_size=${Math.max(st.pageSize || 60, 60)}&t=${Date.now()}`;
+            fetch(url).then(r => r.json()).then(res => {
+                if (!res || res.error) return;
+                const known = new Set(st.list.map(x => x.rel_path));
+                const fresh = (res.items || []).filter(it => !known.has(it.rel_path));
+                st.total = res.total || st.total;
+                const badge = svEl(platform, 'total-count-badge');
+                if (badge) badge.textContent = `共 ${st.total} 条`;
+                if (activePrimarySection === 'media' && activeMediaTab === svTabName(platform)) {
+                    const label = SV_LABEL[platform] || platform;
+                    document.getElementById('total-badge').textContent = `${st.total} 条 ${label} 视频`;
+                    const subStats = document.getElementById('media-sub-stats');
+                    if (subStats) subStats.textContent = `共 ${st.total} 条 ${label} 视频`;
+                }
+                if (!fresh.length) return;   // 没有真正新增的（比如只是别的文件被删了），不动网格
+                st.list = st.list.concat(fresh);
+                renderShortVideoGrid(platform, false);   // reset=false → 只追加新增那几条，不清空重建
+            }).catch(() => {});
+        }
+
+        function renderShortVideoFolderBar(platform, folders) {
+            const bar = svEl(platform, 'folder-filter-bar');
+            if (!bar) return;
+            const st = SV[platform];
+            if (!folders || folders.length <= 1) {
+                bar.style.display = 'none';
+                bar.innerHTML = '';
+                return;
+            }
+            bar.style.display = 'flex';
+            bar.innerHTML = '';
+            folders.forEach(f => {
+                const btn = document.createElement('button');
+                const fKey = f.key || (f.name === '全部' ? 'all' : f.name);
+                const isSelected = st.folder === fKey;
+                btn.className = 'tab-btn' + (isSelected ? ' active' : '');
+                btn.style.padding = '4px 12px';
+                btn.style.fontSize = '12px';
+                btn.style.borderRadius = '16px';
+                btn.style.cursor = 'pointer';
+                if (fKey === 'liked') {
+                    btn.style.color = isSelected ? '#fff' : '#ff7b72';
+                    btn.style.borderColor = isSelected ? '#ff7b72' : '#ff7b7288';
+                }
+                btn.textContent = `${f.name} (${f.count})`;
+                btn.onclick = () => {
+                    st.folder = fKey;
+                    loadShortVideoLibrary(platform, true);
+                };
+                bar.appendChild(btn);
+            });
+        }
+
+        function renderShortVideoGrid(platform, reset = true) {
+            const grid = svEl(platform, 'grid');
+            const emptyEl = svEl(platform, 'empty-msg');
+            if (!grid) return;
+            const st = SV[platform];
+
+            if (reset) grid.innerHTML = '';
+
+            if (st.list.length === 0) {
+                if (emptyEl) emptyEl.style.display = 'block';
+                return;
+            }
+            if (emptyEl) emptyEl.style.display = 'none';
+
+            const startIdx = reset ? 0 : grid.children.length;
+            for (let i = startIdx; i < st.list.length; i++) {
+                const item = st.list[i];
+                const isGallery = item.kind === 'images';
+                const isLiked = !!item.liked;
+                const card = document.createElement('div');
+                card.className = 'manga-card';
+                card.onclick = () => isGallery ? openShortVideoGallery(platform, i) : openShortVideoPlayer(platform, i);
+                const cornerBadge = isGallery ? `🖼️ ${item.image_count || 1}` : formatVideoDuration(item.duration);
+                const centerIcon = isGallery ? '🖼️' : '▶';
+                card.innerHTML = `
+                    <div class="manga-cover-wrap" style="aspect-ratio:9/16;">
+                        <img src="${item.thumb_url}" class="manga-cover" loading="lazy" onerror="shortVideoImgFallback(this)">
+                        <span class="manga-badge-cbz" style="background:rgba(0,0,0,0.68);">${cornerBadge}</span>
+                        ${isLiked ? '<span style="position:absolute;top:6px;left:6px;font-size:13px;background:rgba(0,0,0,0.6);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;z-index:2;" title="已点赞">❤️</span>' : ''}
+                        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+                            <span style="width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,0.45);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;padding-left:${isGallery ? '0' : '3px'};">${centerIcon}</span>
+                        </div>
+                        <div class="manga-actions-hover" onclick="event.stopPropagation()">
+                            <button class="manga-mini-btn" title="${isLiked ? '取消点赞' : '点赞'}" onclick="toggleShortVideoLike('${platform}', '${escapeAttr(item.rel_path)}', event)">${isLiked ? '❤️' : '🤍'}</button>
+                            <button class="manga-mini-btn" title="移至回收站" onclick="deleteShortVideoFile('${platform}', '${escapeAttr(item.rel_path)}')">🗑️</button>
+                        </div>
+                    </div>
+                    <div class="manga-info">
+                        <div class="manga-title" title="${escapeAttr(item.title)}">${escapeHtml(item.title)}</div>
+                        <div class="manga-meta">
+                            <span title="${escapeAttr(item.folder)}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;">${escapeHtml(item.folder)}</span>
+                            <span>${item.size_mb} MB</span>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            }
+            if (grid.children.length === 0 && emptyEl) emptyEl.style.display = 'block';
+        }
+
+        // 同一个 <video> 标签、同一个播放器弹窗——本机（QtWebEngine 没有 H.264 解码器）跟局域网里
+        // 的手机/电脑浏览器打开的是同一份东西，不开新窗口。/api/shortvideo/stream 后端会按
+        // 请求是不是本机决定给转码过的 webm 还是原始文件，前端完全不用关心。两个平台共用一个
+        // 弹窗，svPlayerPlatform 记住当前播的是哪个平台，上一条/下一条/删除都照这个来。
+        function openShortVideoPlayer(platform, index) {
+            const st = SV[platform];
+            if (index < 0 || index >= st.list.length) return;
+            svPlayerPlatform = platform;
+            st.curIndex = index;
+            const item = st.list[index];
+
+            // 本机：有 omniBridge 就走原生解码播放（QtWebEngine 解不了 H.264，这条路绕开它，
+            // 见 native_player.py）——原生播放器是盖在整个窗口上的浮层，网页这个 HTML 弹窗
+            // 不用打开。局域网/远程设备没有这个 bridge，走下面原来那套 <video> 标签+HTTP 流。
+            if (window.omniBridge && typeof window.omniBridge.playShortVideo === 'function') {
+                nativePlaybackKind = 'shortvideo';
+                window.omniBridge.playShortVideo(platform, item.rel_path, item.title || '');
+                return;
+            }
+
+            const modal = document.getElementById('shortvideo-player-modal');
+            const videoEl = document.getElementById('shortvideo-player-el');
+            const titleEl = document.getElementById('shortvideo-player-title');
+            const metaEl = document.getElementById('shortvideo-player-meta');
+            const loadingEl = document.getElementById('shortvideo-player-loading');
+            if (!modal || !videoEl) return;
+
+            videoEl.pause();
+            videoEl.poster = item.thumb_url || '';   // 先糊缩略图当封面，别黑屏等首帧
+            // 只有"本机 + 这条真没转码缓存过"才提示"正在转码"——已经缓存过的（或本来就是
+            // 局域网设备在看，压根不转码）不该无脑弹这句话
+            if (loadingEl) loadingEl.style.display = (!isRemoteClient && !item.local_cached) ? 'flex' : 'none';
+            videoEl.src = item.stream_url;
+            if (titleEl) titleEl.textContent = item.title;
+            if (metaEl) metaEl.textContent = `${item.folder} · ${item.mtime_str} · ${item.size_mb} MB`;
+            updateShortVideoLoopBtnUI();
+            const likeBtn = document.getElementById('shortvideo-like-btn');
+            if (likeBtn) {
+                likeBtn.textContent = item.liked ? '❤️' : '🤍';
+                likeBtn.title = item.liked ? '取消点赞' : '点赞';
+            }
+            modal.style.display = 'flex';
+            videoEl.play().catch((e) => console.log('Autoplay policy:', e));
+        }
+
+        function closeShortVideoPlayer() {
+            const modal = document.getElementById('shortvideo-player-modal');
+            const videoEl = document.getElementById('shortvideo-player-el');
+            const loadingEl = document.getElementById('shortvideo-player-loading');
+            if (videoEl) { videoEl.pause(); videoEl.removeAttribute('src'); videoEl.load(); }
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (modal) modal.style.display = 'none';
+        }
+
+        function playShortVideoDelta(delta) {
+            const st = SV[svPlayerPlatform];
+            if (!st.list.length) return;
+            let next = st.curIndex + delta;
+            if (next < 0) next = st.list.length - 1;
+            if (next >= st.list.length) next = 0;
+            openShortVideoPlayer(svPlayerPlatform, next);
+        }
+
+        function toggleShortVideoPlay() {
+            const videoEl = document.getElementById('shortvideo-player-el');
+            if (!videoEl) return;
+            videoEl.paused ? videoEl.play() : videoEl.pause();
+        }
+
+        function deleteShortVideoFromPlayer() {
+            const platform = svPlayerPlatform;
+            const st = SV[platform];
+            if (st.curIndex < 0 || st.curIndex >= st.list.length) return;
+            const item = st.list[st.curIndex];
+            if (!confirm('移至回收站？可以从系统回收站找回。')) return;
+            fetch('/api/shortvideo/trash', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ platform, path: item.rel_path })
+            }).then((r) => r.json()).then((res) => {
+                if (res.status !== 'ok') { alert('删除失败'); return; }
+                st.list.splice(st.curIndex, 1);
+                st.total = Math.max(0, st.total - 1);
+                const badge = svEl(platform, 'total-count-badge');
+                if (badge) badge.textContent = `共 ${st.total} 条`;
+                renderShortVideoGrid(platform, true);
+                if (st.list.length === 0) { closeShortVideoPlayer(); return; }
+                if (st.curIndex >= st.list.length) st.curIndex = 0;
+                openShortVideoPlayer(platform, st.curIndex);
+            }).catch(() => alert('删除失败'));
+        }
+
+        // 只挂一次：起播/有数据了就把"转码中"盖层收起来；失败了给个提示；进度条跟播放位置双向联动
+        (function setupShortVideoPlayerEvents() {
+            const videoEl = document.getElementById('shortvideo-player-el');
+            const seekEl = document.getElementById('shortvideo-seek');
+            const timeEl = document.getElementById('shortvideo-time');
+            const playBtn = document.getElementById('shortvideo-play-btn');
+            if (!videoEl) return;
+            let seeking = false;
+            const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+            const hideLoading = () => {
+                const el = document.getElementById('shortvideo-player-loading');
+                if (el) el.style.display = 'none';
+            };
+            videoEl.addEventListener('playing', hideLoading);
+            videoEl.addEventListener('loadeddata', hideLoading);
+            videoEl.addEventListener('play', () => { if (playBtn) playBtn.textContent = '⏸'; });
+            videoEl.addEventListener('pause', () => { if (playBtn) playBtn.textContent = '▶'; });
+            videoEl.addEventListener('ended', () => {
+                if (shortVideoLoopMode === 'single') {
+                    videoEl.currentTime = 0;
+                    videoEl.play().catch((e) => console.log('Autoplay policy:', e));
+                } else {
+                    playShortVideoDelta(1);   // 列表循环自动连播
+                }
+            });
+            videoEl.addEventListener('error', () => {
+                hideLoading();
+                const metaEl = document.getElementById('shortvideo-player-meta');
+                if (metaEl) metaEl.textContent = '⚠️ 播放失败（转码出错，看 omni_deck.log）';
+            });
+            videoEl.addEventListener('timeupdate', () => {
+                if (seeking || !videoEl.duration) return;
+                if (seekEl) seekEl.value = Math.round((videoEl.currentTime / videoEl.duration) * 1000);
+                if (timeEl) timeEl.textContent = `${fmt(videoEl.currentTime)} / ${fmt(videoEl.duration)}`;
+            });
+            if (seekEl) {
+                seekEl.addEventListener('input', () => {
+                    seeking = true;
+                    if (videoEl.duration && timeEl) {
+                        timeEl.textContent = `${fmt((seekEl.value / 1000) * videoEl.duration)} / ${fmt(videoEl.duration)}`;
+                    }
+                });
+                seekEl.addEventListener('change', () => {
+                    if (videoEl.duration) videoEl.currentTime = (seekEl.value / 1000) * videoEl.duration;
+                    seeking = false;
+                });
+            }
+        })();
+
+        // 图集（抖音多图作品）查看器——跟视频播放器是两个独立弹窗，同一份 st.list 里混着
+        // 视频条目和图集条目，靠 item.kind 分流点开哪个。图集不用转码，直接原图 <img>。
+        let svGalleryPlatform = 'kuaishou';
+        let svGalleryImgIdx = 0;
+
+        function openShortVideoGallery(platform, index) {
+            const st = SV[platform];
+            if (index < 0 || index >= st.list.length) return;
+            svGalleryPlatform = platform;
+            st.curIndex = index;
+            svGalleryImgIdx = 0;
+            const modal = document.getElementById('shortvideo-gallery-modal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            renderGalleryImage();
+        }
+
+        function renderGalleryImage() {
+            const st = SV[svGalleryPlatform];
+            const item = st.list[st.curIndex];
+            if (!item) return;
+            const total = item.image_count || 1;
+            if (svGalleryImgIdx < 0) svGalleryImgIdx = total - 1;
+            if (svGalleryImgIdx >= total) svGalleryImgIdx = 0;
+            const imgEl = document.getElementById('shortvideo-gallery-img');
+            const titleEl = document.getElementById('shortvideo-gallery-title');
+            const metaEl = document.getElementById('shortvideo-gallery-meta');
+            const pageEl = document.getElementById('shortvideo-gallery-page');
+            const galleryLikeBtn = document.getElementById('shortvideo-gallery-like-btn');
+            if (galleryLikeBtn) {
+                galleryLikeBtn.textContent = item.liked ? '❤️' : '🤍';
+                galleryLikeBtn.title = item.liked ? '取消点赞' : '点赞';
+            }
+            if (imgEl) imgEl.src = `/api/shortvideo/gallery_image?platform=${svGalleryPlatform}&path=${encodeURIComponent(item.rel_path)}&idx=${svGalleryImgIdx}`;
+            if (titleEl) titleEl.textContent = item.title;
+            if (metaEl) metaEl.textContent = `${item.folder} · ${item.mtime_str} · ${item.size_mb} MB`;
+            if (pageEl) pageEl.textContent = `${svGalleryImgIdx + 1} / ${total}`;
+        }
+
+        function galleryImgDelta(delta) {
+            svGalleryImgIdx += delta;
+            renderGalleryImage();
+        }
+
+        // 上一条/下一条只在图集条目之间跳（这是图集查看器，混在列表里的视频条目跳过）
+        function galleryWorkDelta(delta) {
+            const st = SV[svGalleryPlatform];
+            if (!st.list.length) return;
+            let next = st.curIndex;
+            for (let tries = 0; tries < st.list.length; tries++) {
+                next = (next + delta + st.list.length) % st.list.length;
+                if (st.list[next] && st.list[next].kind === 'images') { openShortVideoGallery(svGalleryPlatform, next); return; }
+            }
+        }
+
+        function closeShortVideoGallery() {
+            const modal = document.getElementById('shortvideo-gallery-modal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function deleteShortVideoGalleryFromViewer() {
+            const platform = svGalleryPlatform;
+            const st = SV[platform];
+            if (st.curIndex < 0 || st.curIndex >= st.list.length) return;
+            const item = st.list[st.curIndex];
+            if (!confirm('移至回收站？可以从系统回收站找回。')) return;
+            fetch('/api/shortvideo/trash', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ platform, path: item.rel_path })
+            }).then((r) => r.json()).then((res) => {
+                if (res.status !== 'ok') { alert('删除失败'); return; }
+                st.list.splice(st.curIndex, 1);
+                st.total = Math.max(0, st.total - 1);
+                const badge = svEl(platform, 'total-count-badge');
+                if (badge) badge.textContent = `共 ${st.total} 条`;
+                renderShortVideoGrid(platform, true);
+                if (!st.list.length) { closeShortVideoGallery(); return; }
+                if (st.curIndex >= st.list.length) st.curIndex = 0;
+                if (st.list[st.curIndex] && st.list[st.curIndex].kind === 'images') {
+                    openShortVideoGallery(platform, st.curIndex);
+                } else {
+                    closeShortVideoGallery();
+                }
+            }).catch(() => alert('删除失败'));
+        }
+
+        function deleteShortVideoFile(platform, relPath) {
+            if (!confirm('移至回收站？可以从系统回收站找回。')) return;
+            fetch('/api/shortvideo/trash', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ platform, path: relPath })
+            }).then(r => r.json()).then(res => {
+                if (res.status === 'ok') {
+                    const st = SV[platform];
+                    st.list = st.list.filter(x => x.rel_path !== relPath);
+                    renderShortVideoGrid(platform, true);
+                    st.total = Math.max(0, st.total - 1);
+                    const badge = svEl(platform, 'total-count-badge');
+                    if (badge) badge.textContent = `共 ${st.total} 条`;
+                } else {
+                    alert('删除失败');
+                }
+            }).catch(() => alert('删除失败'));
+        }
+
+        // 本机原生播放器（native_player.py 里那个悬浮控件）上一条/下一条/删除按钮被点了，
+        // Python 转发回网页调这几个函数——原生播放器自己不维护列表，这边算出"下一条该放
+        // 哪个文件"之后，直接复用已有的短视频翻页/删除逻辑（那几个函数内部会再走一遍
+        // openShortVideoPlayer，本机情况下会再次命中上面的 omniBridge 分支，重新喊 Python 播）。
+        // 音频这条目前还没接原生播放（见 hub.js 内的 playAudioItem，仍然是网页 <audio> 播放），
+        // 所以 nativePlaybackKind 目前只会是 'shortvideo'。
+        function nativePlayerNext() {
+            if (nativePlaybackKind === 'shortvideo') playShortVideoDelta(1);
+            else if (nativePlaybackKind === 'audio') playNextAudio();
+        }
+        function nativePlayerPrev() {
+            if (nativePlaybackKind === 'shortvideo') playShortVideoDelta(-1);
+            else if (nativePlaybackKind === 'audio') playPrevAudio();
+        }
+        function nativePlayerDelete() {
+            if (nativePlaybackKind === 'shortvideo') deleteShortVideoFromPlayer();
+            else if (nativePlaybackKind === 'audio' && currentAudioItem) {
+                deleteAudioFile(currentAudioItem.rel_path || currentAudioItem.filename, !!currentAudioItem.is_nsfw);
+            }
+        }
+        function nativePlayerToggleLike(liked) {
+            if (nativePlaybackKind === 'shortvideo') toggleShortVideoLikeFromPlayer();
+        }
+        window.nativePlayerNext = nativePlayerNext;
+        window.nativePlayerPrev = nativePlayerPrev;
+        window.nativePlayerDelete = nativePlayerDelete;
+        window.nativePlayerToggleLike = nativePlayerToggleLike;
+
         // ==========================================
         // 全局浮动回到顶部模块 (Scroll to Top)
         // ==========================================
@@ -5935,6 +6737,11 @@ let currentGameSearchQuery = '';
                     }
                 } else if (activeMediaTab === 'novels') {
                     loadMoreNovelsShelf();
+                } else if (activeMediaTab === 'shortvideo' || activeMediaTab === 'shortvideo-douyin' || activeMediaTab === 'shortvideo-tiktok') {
+                    const svPlatform = svPlatformFromTab(activeMediaTab);
+                    const svSt = SV[svPlatform];
+                    if (!svSt.hasMore || svSt.loading) return;
+                    loadShortVideoLibrary(svPlatform, false);
                 }
             }
         }, { passive: true });

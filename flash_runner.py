@@ -18,8 +18,15 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # PyQt5 默认把槽函数里未捕获的异常直接 qFatal 掉整个进程（"点一下按钮就闪退"）。
 # 装个 excepthook：异常写进 flash_crash.log，进程不因此退出。
 def _log_uncaught(exc_type, exc_value, exc_tb):
+    """sys.excepthook 替换函数：把未捕获异常写进 cache/flash_crash.log，不让进程崩溃退出。
+
+    Args:
+        exc_type: 异常类型。
+        exc_value: 异常实例。
+        exc_tb: 异常的 traceback 对象。
+    """
     try:
-        with open(os.path.join(SCRIPT_DIR, "flash_crash.log"), "a") as f:
+        with open(os.path.join(SCRIPT_DIR, "cache", "flash_crash.log"), "a") as f:
             f.write("\n[flash_runner uncaught]\n")
             traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
     except Exception:
@@ -51,7 +58,7 @@ chromium_flags = [
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join(chromium_flags)
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 
-from PyQt5.QtCore import QUrl, Qt
+from PyQt5.QtCore import QUrl, Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QPushButton, QShortcut
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineProfile, QWebEnginePage, QWebEngineSettings
@@ -75,12 +82,17 @@ class FlashRunner(QMainWindow):
         hint (str): 游戏操作提示文字
     """
     def __init__(self, game_id, title, url, engine, swf_path, hint):
+        """按类文档字符串里说明的参数构造窗口并加载对应的 Flash 内容。"""
         super().__init__()
         self.setWindowTitle(f"{title} — Omni Deck Flash Runner")
         self.resize(1280, 800)
         
         self.webview = QWebEngineView(self)
-        self.profile = QWebEngineProfile("omni_flash_profile", self)
+        # profile 不挂到窗口下 —— 挂 self 的话关窗时 Qt 可能先销毁 profile 再销毁 page，
+        # 报 "Release of profile requested but WebEnginePage still not deleted. Expect
+        # troubles!"，teardown 卡住 → 进程不退 → omni 那边 proc.wait() 不返回 → 大厅收不到
+        # 退出回调、界面卡住。改成无父对象，Python 引用兜住生命周期。
+        self.profile = QWebEngineProfile("omni_flash_profile")
         self.profile.setHttpUserAgent(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36 QtWebEngine/1.0"
@@ -141,12 +153,16 @@ class FlashRunner(QMainWindow):
         self.overlay.move(self.width() - self.overlay.width() - 16, 16)
 
     def toggle_web_fullscreen(self):
-        """
-        网页 Flash 窗口内全屏切换：注入 JS，在**所有同源 iframe**里找最大的
-        <object>/<embed> Flash 元素（洛克王国的 Flash 藏在内层 iframe，只查顶层 document
-        找不到 —— 这就是之前"全屏按钮没生效"的原因），把它拉成 fixed 100vw/100vh 并派发
-        resize 让 Flash 重绘。找不到就回退到整窗口 OS 全屏。
-        """
+        """全屏切换。以前只靠注入 JS 去拉页面里的 <object>/<embed> —— 洛克王国的 Flash
+        在**跨源 iframe** 里，JS 根本够不着，所以按钮"没反应"。
+        现在：**先无条件切整窗口全屏**（这个一定生效），再顺带发一次 JS 尽量把 Flash
+        元素也撑满（够得着就撑，够不着拉倒）。"""
+        if self.isFullScreen():
+            self.showNormal()
+            self.btn_fullscreen.setText("⛶ 全屏")
+        else:
+            self.showFullScreen()
+            self.btn_fullscreen.setText("🗗 退出全屏")
         js = r'''
         (function() {
             function allDocs() {
@@ -201,20 +217,24 @@ class FlashRunner(QMainWindow):
             return true;
         })();
         '''
-        def callback(is_fs):
-            if is_fs is True:
-                self.btn_fullscreen.setText("🗗 还原页面")
-            elif is_fs is False:
-                self.btn_fullscreen.setText("⛶ 窗口内全屏")
-            else:
-                # 页面里找不到 Flash 元素 —— 回退到整窗口 OS 全屏
-                if self.isFullScreen():
-                    self.showNormal()
-                    self.btn_fullscreen.setText("⛶ 窗口内全屏")
-                else:
-                    self.showFullScreen()
-                    self.btn_fullscreen.setText("🗗 退出全屏")
-        self.page.runJavaScript(js, callback)
+        # 结果不影响按钮状态（窗口全屏已经切好了），纯 best-effort
+        self.page.runJavaScript(js)
+
+    def closeEvent(self, event):
+        """关窗时按正确顺序拆 webview/page，再硬退 —— 保证 omni 那边 proc.wait() 一定返回。"""
+        try:
+            self.webview.setPage(None)
+        except Exception:
+            pass
+        for obj in ("page", "webview"):
+            try:
+                getattr(self, obj).deleteLater()
+            except Exception:
+                pass
+        super().closeEvent(event)
+        QApplication.quit()
+        # Qt 的 profile/page 释放偶尔会卡住，800ms 后无论如何硬退
+        QTimer.singleShot(800, lambda: os._exit(0))
         
     def toggle_mute(self):
         """切换当前 Chromium 实例的底层音频静音状态"""
@@ -245,5 +265,7 @@ if __name__ == '__main__':
         os.path.join(game_data.get('root', '') or '', game_data.get('swf_file') or ''),
         game_data.get('hint', '')
     )
-    runner.showNormal()
+    # 直接全屏起 —— 在 gamescope / Steam 里，一个 1280x800 的窗口跟大厅窗口并存会让
+    # 合成器分不清前台是谁，关掉 flash 后大厅就点不动了。全屏起 = 明确的前台 app。
+    runner.showFullScreen()
     sys.exit(app.exec_())

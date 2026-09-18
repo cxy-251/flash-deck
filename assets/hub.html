@@ -671,6 +671,12 @@
             grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
             gap: 18px;
             margin-bottom: 30px;
+            min-height: 40px;
+            /* 卡片一张都还没生成出来之前（切标签到数据真正渲染进去这一小段空档），网格
+               容器本身是透明的，直接透出页面背景 #0d1117——这才是那"最后一下"没盖住的
+               地方。垫上跟卡片占位色一致的底色，从切标签那一刻起就没有纯黑可露了。 */
+            background: #1c2128;
+            border-radius: 12px;
         }
         .manga-card {
             background: #161b22;
@@ -691,7 +697,11 @@
         .manga-cover-wrap {
             width: 100%;
             aspect-ratio: 3/4;
-            background: #0d1117;
+            /* 图片加载出来之前的占位色——之前跟页面背景(#0d1117)几乎一样黑，一整屏卡片的
+               封面图还没弹出来之前，看着就像"黑屏闪了一下"（短视频网格新建 DOM 一次性
+               铺出几十张卡片时最明显）。换成跟卡片本身背景(#161b22)更接近的灰，占位状态
+               看着像"卡片还没填满"而不是"变黑了"。 */
+            background: #1c2128;
             position: relative;
             overflow: hidden;
             display: flex;
@@ -2511,7 +2521,7 @@
                 var token = localStorage.getItem('omni_nsfw_token');
                 if (!isDeckLocal && !token) {
                     document.documentElement.classList.add('nsfw-locked');
-                    document.write('<style id="nsfw-init-style">.rpg-card, .slg-card, .tab-btn[data-tab="rpg"], .tab-btn[data-tab="slg"], #media-tab-manga, #media-tab-novels, #media-tab-audio { display: none !important; }</style>');
+                    document.write('<style id="nsfw-init-style">.rpg-card, .slg-card, .tab-btn[data-tab="rpg"], .tab-btn[data-tab="slg"], #media-tab-manga, #media-tab-novels, #media-tab-audio, #media-tab-shortvideo, #media-tab-shortvideo-douyin, #media-tab-shortvideo-tiktok { display: none !important; }</style>');
                 }
             } catch(e) {}
         })();
@@ -2761,7 +2771,11 @@
                     <button class="tab-btn" id="media-tab-manga" onclick="switchMediaTab('manga', this)">🖼️ 漫画画廊</button>
                     <button class="tab-btn" id="media-tab-novels" onclick="switchMediaTab('novels', this)">📖 小说画廊</button>
                     <button class="tab-btn" id="media-tab-audio" onclick="switchMediaTab('audio', this)">🎧 音声画廊</button>
+                    <button class="tab-btn" id="media-tab-shortvideo" onclick="switchMediaTab('shortvideo', this)">📱 Kwai</button>
+                    <button class="tab-btn" id="media-tab-shortvideo-douyin" onclick="switchMediaTab('shortvideo-douyin', this)">🎬 Douyin</button>
+                    <button class="tab-btn" id="media-tab-shortvideo-tiktok" onclick="switchMediaTab('shortvideo-tiktok', this)">🎵 TikTok</button>
                     <button class="tab-btn" id="media-tab-mega" onclick="switchMediaTab('mega', this)">☁️ MEGA</button>
+                    <button class="tab-btn" id="media-tab-crawler" onclick="switchMediaTab('crawler', this)">⬇️ 下载中心</button>
                 </div>
                 <div style="font-size:13px;color:#8b949e;" id="media-sub-stats">共 0 部作品</div>
             </div>
@@ -2781,7 +2795,7 @@
                         <button class="tab-btn" id="manga-subtab-month" onclick="switchMangaSubTab('month', this)">🏆 每月必看</button>
                     </div>
                     <div style="display:flex;gap:8px;align-items:center;">
-                        <input type="text" id="manga-search-input" class="search-input" style="width:260px;" placeholder="🔍 搜索漫画或输入编号 (如 287234)..." oninput="onMangaSearchInput(this.value)" onkeydown="if(event.key==='Enter')onMangaSearchEnter()">
+                        <input type="text" id="manga-search-input" class="search-input" style="width:260px;" placeholder="🔍 搜索漫画或输入编号 (回车全网检索)..." oninput="onMangaSearchInput(this.value)" onkeydown="if(event.key==='Enter')onMangaSearchEnter()">
                         <button class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#f0f6fc;font-size:12px;padding:6px 12px;" onclick="openMangaQueueModal()">📋 待下载列表 (<span id="manga-queue-badge-count">0</span>)</button>
                     </div>
                 </div>
@@ -2976,6 +2990,93 @@
                 </div>
             </div>
 
+            <!-- 二级页面 4.5: 短视频画廊 · Kwai (Downloads/快手/<主播>) -->
+            <div id="media-shortvideo-view" style="display:none;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                        <span style="font-size:15px;font-weight:700;color:#f0f6fc;">📱 Kwai</span>
+                        <span id="shortvideo-total-count-badge" style="font-size:12px;color:#58a6ff;background:#1f6feb22;padding:2px 8px;border-radius:12px;border:1px solid #388bfd44;">共 ... 条</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="shortvideo-search-input" class="search-input" style="width:220px;" placeholder="🔍 搜索标题或主播..." oninput="onShortVideoSearchInput('kuaishou', this.value)">
+                        <button class="manga-mini-btn" onclick="rescanShortVideoLibrary('kuaishou')" title="重新扫描 Downloads/快手">🔄 刷新</button>
+                    </div>
+                </div>
+
+                <!-- 主播（文件夹名）筛选条 -->
+                <div id="shortvideo-folder-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+                <div class="manga-grid" id="shortvideo-grid"></div>
+
+                <div id="shortvideo-loading-more" style="display:none;text-align:center;padding:20px;color:#8b949e;">
+                    <span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> 正在加载更多视频...
+                </div>
+
+                <div id="shortvideo-empty-msg" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+                    <div style="font-size:36px;margin-bottom:10px;">📱</div>
+                    <div style="font-size:15px;font-weight:600;color:#f0f6fc;">还没有扫到 Kwai 视频</div>
+                    <div style="font-size:13px;margin-top:6px;">用 ExtensionForge 里的快手采集插件下载几条到 <code>~/Downloads/快手/&lt;主播&gt;/</code> 试试，插件按主播名分好文件夹，这里就自动按文件夹分标签。</div>
+                </div>
+            </div>
+
+            <!-- 二级页面 4.6: 短视频画廊 · Douyin (Downloads/抖音/<主播>) -->
+            <div id="media-shortvideo-douyin-view" style="display:none;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                        <span style="font-size:15px;font-weight:700;color:#f0f6fc;">🎬 Douyin</span>
+                        <span id="shortvideo-douyin-total-count-badge" style="font-size:12px;color:#58a6ff;background:#1f6feb22;padding:2px 8px;border-radius:12px;border:1px solid #388bfd44;">共 ... 条</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="shortvideo-douyin-search-input" class="search-input" style="width:220px;" placeholder="🔍 搜索标题或主播..." oninput="onShortVideoSearchInput('douyin', this.value)">
+                        <button class="manga-mini-btn" onclick="rescanShortVideoLibrary('douyin')" title="重新扫描 Downloads/抖音">🔄 刷新</button>
+                    </div>
+                </div>
+
+                <!-- 主播（文件夹名）筛选条 -->
+                <div id="shortvideo-douyin-folder-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+                <div class="manga-grid" id="shortvideo-douyin-grid"></div>
+
+                <div id="shortvideo-douyin-loading-more" style="display:none;text-align:center;padding:20px;color:#8b949e;">
+                    <span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> 正在加载更多视频...
+                </div>
+
+                <div id="shortvideo-douyin-empty-msg" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+                    <div style="font-size:36px;margin-bottom:10px;">🎬</div>
+                    <div style="font-size:15px;font-weight:600;color:#f0f6fc;">还没有扫到 Douyin 视频</div>
+                    <div style="font-size:13px;margin-top:6px;">用 ExtensionForge 里的抖音采集插件(003)下载几条到 <code>~/Downloads/抖音/&lt;主播&gt;/</code> 试试，插件按主播名分好文件夹，这里就自动按文件夹分标签。</div>
+                </div>
+            </div>
+
+            <!-- 二级页面 4.7: 短视频画廊 · TikTok (Downloads/TikTok/<创作者>) -->
+            <div id="media-shortvideo-tiktok-view" style="display:none;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                        <span style="font-size:15px;font-weight:700;color:#f0f6fc;">🎵 TikTok</span>
+                        <span id="shortvideo-tiktok-total-count-badge" style="font-size:12px;color:#58a6ff;background:#1f6feb22;padding:2px 8px;border-radius:12px;border:1px solid #388bfd44;">共 ... 条</span>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="shortvideo-tiktok-search-input" class="search-input" style="width:220px;" placeholder="🔍 搜索标题或创作者..." oninput="onShortVideoSearchInput('tiktok', this.value)">
+                        <button class="manga-mini-btn" onclick="rescanShortVideoLibrary('tiktok')" title="重新扫描 Downloads/TikTok">🔄 刷新</button>
+                    </div>
+                </div>
+
+                <!-- 创作者（文件夹名）筛选条 -->
+                <div id="shortvideo-tiktok-folder-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+                <div class="manga-grid" id="shortvideo-tiktok-grid"></div>
+
+                <div id="shortvideo-tiktok-loading-more" style="display:none;text-align:center;padding:20px;color:#8b949e;">
+                    <span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> 正在加载更多视频...
+                </div>
+
+                <div id="shortvideo-tiktok-empty-msg" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+                    <div style="font-size:36px;margin-bottom:10px;">🎵</div>
+                    <div style="font-size:15px;font-weight:600;color:#f0f6fc;">还没有扫到 TikTok 视频</div>
+                    <div style="font-size:13px;margin-top:6px;">用 ExtensionForge 里的 TikTok 采集插件(004)下载几条到 <code>~/Downloads/TikTok/&lt;创作者&gt;/</code> 试试，插件按创作者名分好文件夹，这里就自动按文件夹分标签。</div>
+                </div>
+            </div>
+
             <!-- 二级页面 5: MEGA -->
             <div id="media-mega-view" style="display:none;">
                 <!-- 顶栏状态与工具栏 -->
@@ -3092,6 +3193,61 @@
                         </div>
                     </div>
                     <div id="mega-transfers-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+                </div>
+            </div>
+
+            <!-- ================= 下载中心：把 crawlers/ 里能贴链接下载的脚本包装成按钮 ================= -->
+            <div id="media-crawler-view" style="display:none;">
+                <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+                    <div style="font-size:13px;color:#8b949e;line-height:1.6;">
+                        ⬇️ 粘贴链接，自动抓取音频并打包为带章节轨的 <code>.m4b</code> 单文件，下载完成后自动刷新有声书曲库索引，无需手动去终端敲脚本。
+                    </div>
+                </div>
+
+                <!-- Bilibili 广播剧下载卡片 -->
+                <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+                    <div style="font-size:13px;font-weight:600;color:#c9d1d9;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+                        <span>📺 Bilibili 广播剧音频下载</span>
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+                        <input type="text" id="crawler-bili-bvid" class="search-input" style="flex:1;min-width:200px;" placeholder="BV号，例如 BV1xx411c7mD（必填）">
+                        <input type="text" id="crawler-bili-album" class="search-input" style="flex:1;min-width:200px;" placeholder="专辑名（留空默认：鬼吹灯之精绝古城）">
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                        <input type="number" id="crawler-bili-start" class="search-input" style="width:110px;" placeholder="起始P" value="1">
+                        <input type="number" id="crawler-bili-end" class="search-input" style="width:110px;" placeholder="结束P" value="6">
+                        <input type="text" id="crawler-bili-output" class="search-input" style="flex:1;min-width:200px;" placeholder="输出文件名（可选，留空自动命名）">
+                        <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:8px 18px;font-weight:600;" onclick="startCrawlerJob('bilibili_audiobook')">📥 开始下载</button>
+                    </div>
+                </div>
+
+                <!-- YouTube 广播剧下载卡片 -->
+                <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+                    <div style="font-size:13px;font-weight:600;color:#c9d1d9;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+                        <span>▶️ YouTube 广播剧音频下载</span>
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+                        <input type="text" id="crawler-yt-url" class="search-input" style="flex:1;min-width:260px;" placeholder="YouTube 视频链接（必填）">
+                        <input type="text" id="crawler-yt-album" class="search-input" style="flex:1;min-width:200px;" placeholder="专辑名（留空默认：鬼吹灯之精绝古城）">
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                        <input type="text" id="crawler-yt-cookies" class="search-input" style="flex:1;min-width:200px;" placeholder="Cookies来源（可选，浏览器名如 chrome，或 cookies.txt 路径）">
+                        <input type="text" id="crawler-yt-output" class="search-input" style="flex:1;min-width:200px;" placeholder="输出文件名（可选，留空自动命名）">
+                        <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:8px 18px;font-weight:600;" onclick="startCrawlerJob('youtube_audiobook')">📥 开始下载</button>
+                    </div>
+                </div>
+
+                <!-- 任务队列与日志 -->
+                <div id="crawler-jobs-card" style="background:#161b22;border:1px solid #1f6feb66;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <div style="font-size:14px;font-weight:700;color:#58a6ff;display:flex;align-items:center;gap:8px;">
+                            <span>⚡ 下载任务</span>
+                        </div>
+                        <button class="manga-mini-btn" onclick="refreshCrawlerJobs()">🔄 刷新进度</button>
+                    </div>
+                    <div id="crawler-jobs-list" style="display:flex;flex-direction:column;gap:10px;">
+                        <div style="text-align:center;padding:20px;color:#8b949e;font-size:13px;">暂无下载任务</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3325,6 +3481,75 @@
                     <span style="color:#58a6ff;">💡 点击任意回目即刻瞬移定位播放</span>
                 </div>
                 <div id="audio-chapters-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 短视频播放器（点播，同一个 <video>，本机/局域网都用这个页面，不开新窗口） -->
+    <div class="manga-modal-backdrop" id="shortvideo-player-modal" onclick="if(event.target===this) closeShortVideoPlayer()">
+        <div style="background:#000;border:1px solid #30363d;border-radius:12px;overflow:hidden;max-width:420px;width:100%;height:88vh;max-height:88vh;position:relative;box-shadow:0 16px 36px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
+            <button onclick="closeShortVideoPlayer()" title="关闭" style="position:absolute;top:8px;right:8px;z-index:3;background:rgba(22,27,34,0.85);border:1px solid #30363d;color:#fff;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer;">×</button>
+
+            <!-- 视频铺满整个弹窗，控件浮在它上面（overlay，不占额外布局高度，不会被挤出屏幕） -->
+            <video id="shortvideo-player-el" style="width:100%;height:100%;background:#000;display:block;object-fit:contain;" autoplay playsinline preload="auto"></video>
+
+            <div id="shortvideo-player-loading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#c9d1d9;font-size:12.5px;background:rgba(0,0,0,0.4);pointer-events:none;text-align:center;padding:0 20px;">
+                <span style="font-size:28px;animation:spin 1s linear infinite;">⏳</span>
+                <span>本机第一次打开这条要转码几秒，转完就存住了，之后秒开（局域网设备直接秒开）</span>
+            </div>
+
+            <div id="shortvideo-controls-overlay" style="position:absolute;left:0;right:0;bottom:0;z-index:2;background:linear-gradient(transparent, rgba(0,0,0,.88) 55%);padding:26px 12px 10px;display:flex;flex-direction:column;gap:7px;">
+                <div id="shortvideo-player-title" style="font-size:13px;font-weight:600;color:#fff;line-height:1.3;text-shadow:0 1px 3px rgba(0,0,0,.8);"></div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <button class="manga-mini-btn" onclick="toggleShortVideoPlay()" id="shortvideo-play-btn" title="播放/暂停">⏸</button>
+                    <button class="manga-mini-btn" onclick="toggleShortVideoLoopMode()" id="shortvideo-loop-btn" title="循环模式：列表循环（点击切换为单片循环）">🔁</button>
+                    <button class="manga-mini-btn" onclick="toggleShortVideoLikeFromPlayer()" id="shortvideo-like-btn" title="点赞">🤍</button>
+                    <input type="range" id="shortvideo-seek" min="0" max="1000" value="0" style="flex:1;accent-color:#58a6ff;">
+                    <span id="shortvideo-time" style="font-size:11px;color:#eee;min-width:74px;text-align:center;">0:00 / 0:00</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <span id="shortvideo-player-meta" style="font-size:11px;color:#ccc;"></span>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <button class="manga-mini-btn" onclick="playShortVideoDelta(-1)" title="上一条">⬅</button>
+                        <button class="manga-mini-btn" onclick="playShortVideoDelta(1)" title="下一条">➡</button>
+                        <span style="width:1px;align-self:stretch;background:rgba(255,255,255,.2);margin:0 4px;"></span>
+                        <button class="manga-mini-btn" onclick="deleteShortVideoFromPlayer()" title="移至回收站" style="margin-left:10px;">🗑️</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图集查看器（抖音多图作品，原图直接显示，不用转码）——跟视频播放器是独立弹窗 -->
+    <div class="manga-modal-backdrop" id="shortvideo-gallery-modal" onclick="if(event.target===this) closeShortVideoGallery()">
+        <div style="background:#000;border:1px solid #30363d;border-radius:12px;overflow:hidden;max-width:420px;width:100%;height:88vh;max-height:88vh;position:relative;box-shadow:0 16px 36px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
+            <button onclick="closeShortVideoGallery()" title="关闭" style="position:absolute;top:8px;right:8px;z-index:3;background:rgba(22,27,34,0.85);border:1px solid #30363d;color:#fff;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer;">×</button>
+
+            <img id="shortvideo-gallery-img" style="width:100%;height:100%;background:#000;display:block;object-fit:contain;">
+
+            <!-- 图内左右热区，点一下切上一张/下一张图（图集内部翻页，不是切换作品） -->
+            <div onclick="galleryImgDelta(-1)" style="position:absolute;left:0;top:0;bottom:64px;width:30%;cursor:pointer;"></div>
+            <div onclick="galleryImgDelta(1)" style="position:absolute;right:0;top:0;bottom:64px;width:30%;cursor:pointer;"></div>
+
+            <div style="position:absolute;left:0;right:0;bottom:0;z-index:2;background:linear-gradient(transparent, rgba(0,0,0,.88) 55%);padding:26px 12px 10px;display:flex;flex-direction:column;gap:7px;">
+                <div id="shortvideo-gallery-title" style="font-size:13px;font-weight:600;color:#fff;line-height:1.3;text-shadow:0 1px 3px rgba(0,0,0,.8);"></div>
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <span id="shortvideo-gallery-meta" style="font-size:11px;color:#ccc;"></span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <button class="manga-mini-btn" onclick="toggleShortVideoLikeFromGallery()" id="shortvideo-gallery-like-btn" title="点赞">🤍</button>
+                        <span id="shortvideo-gallery-page" style="font-size:11px;color:#eee;">1 / 1</span>
+                    </div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <button class="manga-mini-btn" onclick="galleryImgDelta(-1)" title="上一张图">◀</button>
+                        <button class="manga-mini-btn" onclick="galleryImgDelta(1)" title="下一张图">▶</button>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <button class="manga-mini-btn" onclick="galleryWorkDelta(-1)" title="上一条作品">⬅</button>
+                        <button class="manga-mini-btn" onclick="galleryWorkDelta(1)" title="下一条作品">➡</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

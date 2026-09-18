@@ -1,5 +1,6 @@
 /.venv/
-/__pycache__/
+/.venv_flash/
+__pycache__/
 *.py[cod]
 *$py.class
 /cache/
@@ -7,48 +8,41 @@
 *.log
 uv.lock
 
-# Large game assets ignored (Flash games are completely unignored and tracked)
-rpg_games/*/*
-renpy_games/*/*
-retro_games/*/*
-slg_games/*/*
-unity_games/*/*
-godot_games/*/*
-unreal_games/*/*
-wine_games/*/*
-standalone_games/*/*
-steam_games/*/*
+# 运行时配置（NSFW 密码哈希、局域网/公网共享开关等本机状态，含敏感信息，整个目录不进库）
+/config/
+
+# 本机专属常量真实值（资源库根路径、广域网域名、NSFW 默认密码等）——见 services/app_config.py
+# 顶部说明；services/local_settings.example.py 是随代码分发的模板，没有真实值，仍然要进库。
+/services/local_settings.py
+
+# 代码/资源分离：所有游戏内容都搬到仓库外部了（~/Games/standalone_games/、SD 卡等，
+# 见 services/app_config.py 统一管理的资源库根路径），这里彻底不追踪任何游戏文件/占位符——
+# 只保留 omni-deck 自带、随代码一起分发的运行时基础设施（模拟器核心、Flash 播放器）。
+*_games/*
+!retro_games/emulatorjs/
+!retro_games/emulatorjs/**
+!flash_games/plugins/
+!flash_games/plugins/**
 
 # Documentation subfolders (keep root docs files tracked)
 docs/*/
 
-# Manga / novels / audio libraries + crawler scripts
+# 漫画/小说/有声书库同理，全是资源，不进仓库
 manga/
 novels/
 audio/
-crawlers/
 *.cbz
 *.cbr
 *.epub
 
+# crawlers/ 目前仍按"个人脚本，不进仓库"处理——但下载中心 UI（crawler_service.py）
+# 现在会在运行时调用这里的脚本，如果哪天要把仓库搬到别的机器/重新 clone，下载中心的
+# 按钮会在，脚本不会在。要不要把这个目录也开始追踪，看用户自己的意愿再定。
+crawlers/
+
 # Local configs / secrets / runtime
-.lan_config.json
-.wan_config.json
-privacy_config.json
 cookies.txt
 boot.log
-
-# Keep emulator runtime
-!retro_games/emulatorjs/**
-
-# Preserve folder structure and adapters
-!rpg_games/*/.gitkeep
-!retro_games/*/.gitkeep
-!slg_games/*/.gitkeep
-!steam_games/*/.gitkeep
-
-!rpg_games/*/adapter.js
-!slg_games/*/adapter.js
 
 # OS & Editor Artifacts
 .DS_Store

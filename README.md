@@ -1,4 +1,4 @@
-# 🎮 Omni Deck (全能甲板) v2.3
+# 🎮 Omni Deck (全能甲板) v2.4
 
 > **专为 Steam Deck (SteamOS/Linux) 打造的多引擎单机游戏与媒体流式中枢控制中心**
 > *(Steam 精选 · 独立大作 · RPG Maker · Ren'Py · Retro 复古掌机 · SLG · Flash 殿堂 · 漫画阅读器 · 小说书架 · 音声广播剧)*
@@ -41,131 +41,16 @@ Omni Deck 是一个基于 Python (PyQt6 WebEngine) 构建的现代化本地多�
 
 ## 📁 目录结构
 
+> `rpg_games/`、`renpy_games/`、`slg_games/`、`steam_games/` 四个专区的实际游戏内容已经搬到仓库外部
+> （`~/Games/standalone_games/`、SD 卡等，具体位置由 `services/app_config.py` 统一管理，可编辑
+> `services/local_settings.py` 里的 `LIBRARY_ROOTS` 调整），omni-deck 仓库本身不再打包任何游戏文件，
+> 只保留引擎运行时与扫描逻辑；下方目录树里只列出仍然随代码一起分发的部分。
+
 ```text
 omni-deck/
-├── rpg_games/                          # 🗡️ RPG Maker 游戏专区（全量 96 款游戏，纯英文编号）
-│   ├── 001 - Loli Ninja Village/
-│   ├── 002 - Adventurer Liena/
-│   ├── 003 - Aisha's Futa Diaries/
-│   ├── 004 - Ayako's Effort/
-│   ├── 005 - Battle Demon Kirsten/
-│   ├── 006 - Broken Eden/
-│   ├── 007 - Careless Sister/
-│   ├── 008 - Cool Friend & Sister/
-│   ├── 009 - Daily Love Life with Mother/
-│   ├── 010 - Escape from Ninja Girls/
-│   ├── 011 - Fallen Kunoichi/
-│   ├── 012 - Forestia/
-│   ├── 013 - Futanari's Sex World/
-│   ├── 014 - Isekai Monster Girls/
-│   ├── 015 - Goblin Front/
-│   ├── 016 - Golden Canary/
-│   ├── 017 - House Chores/
-│   ├── 018 - Isekai Kabukicho/
-│   ├── 019 - Karryn's Prison/
-│   ├── 020 - Latex Dungeon/
-│   ├── 021 - Lewd Gym/
-│   ├── 022 - Lilialette's Hustle/
-│   ├── 023 - Listaria/
-│   ├── 024 - Live Empire/
-│   ├── 025 - MRYG/
-│   ├── 026 - Mother Alicia/
-│   ├── 027 - Mother NTR Hunter/
-│   ├── 028 - My Countryside Life/
-│   ├── 029 - My Secret Summer Vacation 2/
-│   ├── 030 - NTR Hunter/
-│   ├── 031 - NTR Priestess/
-│   ├── 032 - Naive Elven Swordswoman/
-│   ├── 033 - Night Bloom/
-│   ├── 034 - Now, She is.../
-│   ├── 035 - OVER Devil/
-│   ├── 036 - Pleasant Adultery Village/
-│   ├── 037 - Pleasure Cruise/
-│   ├── 038 - QOS MILF/
-│   ├── 039 - QOS Wife 2/
-│   ├── 040 - Hooked on Air Conditioner/
-│   ├── 041 - Sakurako NTR Story/
-│   ├── 042 - Heroine Falah/
-│   ├── 043 - Reaching Mom/
-│   ├── 044 - Rebecca and the Sword of Mystery/
-│   ├── 045 - Risty and the Village of Bocchino/
-│   ├── 046 - Secret Rule/
-│   ├── 047 - Sex Knight/
-│   ├── 048 - Sheena Relic Hunter/
-│   ├── 049 - Shoot NPC/
-│   ├── 050 - Slutty Witches/
-│   ├── 051 - Succubers! Dark Covenant/
-│   ├── 052 - Succubus Boss/
-│   ├── 053 - Summer Vacation/
-│   ├── 054 - The Cuniculus of Paradise/
-│   ├── 055 - The Saint Wife's Newlywed Trials/
-│   ├── 056 - The Savior Heart 2/
-│   ├── 057 - Town of Passion/
-│   ├── 058 - Trials of Interspecies Sisters/
-│   ├── 059 - Undercity of Sin/
-│   ├── 060 - Unholy Maiden/
-│   ├── 061 - Yokai Busters/
-│   ├── 062 - Eriru's Adventure/
-│   ├── 063 - Succubus Battle Kai/
-│   ├── 064 - Sex Training Island/
-│   ├── 065 - Toneriko's Merchant Life/
-│   ├── 066 - May It Be For Her/
-│   ├── 067 - Masturbation Wife/
-│   ├── 068 - Bitch Training/
-│   ├── 069 - Hina & Dean and Cursed Dungeon/
-│   ├── 070 - Isekai Island/
-│   ├── 071 - School Ghost Stories/
-│   ├── 072 - Wild West Female Gunman 2/
-│   ├── 073 - Red Warrior Remilia/
-│   ├── 074 - Saint Magnolia's Quest/
-│   ├── 075 - Defiled Silver/
-│   ├── 076 - Elf Heroine Leane/
-│   ├── 077 - Lady Spy of the Blue Sea/
-│   ├── 078 - Red-Haired Pregnant Princess/
-│   ├── 079 - Ayuu Rei/
-│   ├── 080 - Ruruka and the Grand Sorcerer/
-│   ├── 081 - Demon Goblin and Mr Knight/
-│   ├── 082 - Zombio Apocalypse/
-│   ├── 083 - Village Erotic Life/
-│   ├── 084 - Hot Spring Room Sharing/
-│   ├── 085 - Elf Girl Rifia/
-│   ├── 086 - This Goddess Corrupted Our World/
-│   ├── 087 - Endless Tentacle Cave/
-│   ├── 088 - Trial of Lust/
-│   ├── 089 - Moms Friend Under Curse/
-│   ├── 090 - Aine Tamagushi Case Files/
-│   ├── 091 - Support Among Companions/
-│   ├── 092 - Contributing to the Village/
-│   ├── 093 - Mind Lyuda/
-│   ├── 094 - Takitsubo Channel/
-│   ├── 095 - Mother Alicia Crest/
-│   ├── 096 - Daily Greetings Wife/
-│   └── 097 - The Witch and the Two Apprentices/
-├── renpy_games/                        # 📖 Ren'Py 视觉小说专区（原生 SDK 调度直通，共 6 款）
-│   ├── 001 - Mom's Best Friend/
-│   ├── 002 - After the Fire/
-│   ├── 003 - Love Strikes Thrice/
-│   ├── 004 - Obsessed Lucy/
-│   ├── 005 - Cradle/                   # 面纱之外 (Cradle)
-│   └── 006 - Hokages Adopted Son/      # 火影之木叶村收养之子 (Hokage's Adopted Son)
-├── slg_games/                          # ♟️ SLG 模拟策略与互动养成专区 (ACGGW 精选)
-│   └── 001 - Cowgirl Maid Milk Cafe/   # 奶牛女仆咖啡厅 (经营模拟 SLG)
-├── flash_games/                        # ⚡ Flash 殿堂级神作专区（原生 Pepper Flash 硬件加速，共 16 款）
+├── flash_games/                        # ⚡ Flash 殿堂专区（原生 Pepper Flash 硬件加速）
 │   ├── plugins/                        # Flash 原生 PPAPI 解除时间炸弹插件 (Linux .so / Windows .dll)
-│   ├── 01 - Kingdom Rush (王国保卫战)/
-│   ├── 02 - Age of War (战争进化史)/
-│   ├── 03 - Bad Ice Cream 3 (坏冰淇淋 3)/
-│   ├── 04 - Bloxorz (魔方滚块)/
-│   ├── 05 - Bob the Robber (强盗鲍勃)/
-│   ├── 06 - Dad n Me (狂扁小朋友)/
-│   ├── 07 - Extreme Pamplona (奔牛节快跑)/
-│   ├── 08 - Fish Tales (大鱼吃小鱼)/
-│   ├── 09 - Henry Stickmin - Escaping the Prison (火柴人逃狱)/
-│   ├── 10 - Interactive Buddy (互动小伙伴)/
-│   ├── 11 - Learn to Fly (企鹅学飞)/
-│   ├── 12 - Mad Arrow (斯巴达守城)/
-│   ├── 13 - Portal The Flash Version (传送门 Flash 版)/
-│   └── 14 - The Last Stand 2 (最后的战役 2)/
+│   └── 00 - Roco Kingdom (洛克王国)/    # 随仓库分发的示例条目，其余内容按需自行放入
 ├── retro_games/                        # 🕹️ 复古街机与掌机卡带专区（按游戏系列+版本规范命名，共 119 款）
 │   ├── Knights of Valour (Arcade)/     # 三国战纪 1~3 / 风云再起 / 乱世枭雄 (6款)
 │   ├── Oriental Legend (Arcade)/       # 西游释厄传 街机原版 (Arcade)
@@ -184,10 +69,16 @@ omni-deck/
 ├── emulatorjs/                         # 全套预编译 WASM 核心底座 (GBA/NES/FBNeo/SFC/MD)
 ├── assets/
 │   ├── hub.html                        # 五大引擎分类控制中心大厅 (一二级导航+实时搜索+系列包裹)
+│   ├── core.js                         # 核心运行环境模拟层与 Polyfill (游戏生命线)
 │   ├── player_retro.html               # 复古游戏 WASM 全屏播放器视口
 │   └── player_flash.html               # Flash 独立视口播放器与居中自适应
+├── services/                           # 可导入的核心业务逻辑模块 (音声/漫画/小说/短视频/MEGA/下载中心等)
+├── config/                             # 运行时配置 (NSFW 密码、局域网/公网共享开关，已 gitignore)
+├── crawlers/                           # 下载中心 UI 背后的贴链接下载与归档脚本
+├── catalogs/                           # 在线小说检索静态目录清单
 ├── main.py                             # 五大引擎调度主程序、多线程 HTTP 路由与 Direct FS 桥梁
-├── core.js                             # 核心运行环境模拟层与 Polyfill (游戏生命线)
+├── flash_runner.py                     # Flash 独立子进程运行时
+├── sc2_runner.py                       # 星际争霸2 对局子进程运行时
 ├── run.sh                              # 一键自愈与依赖管理启动脚本 (入口点)
 ├── pyproject.toml                      # Python 依赖与项目配置文件
 └── uv.lock                             # uv 依赖锁文件，保证环境一致性
@@ -236,9 +127,8 @@ chmod +x run.sh
 
 ```python
 DISPLAY_NAMES = {
-    '001 - Cowgirl Maid Milk Cafe': '001 - 奶牛女仆咖啡厅',
-    '005 - Cradle': '005 - 面纱之外 (Cradle)',
     # '文件夹名称': '您想要的显示名称'
+    '001 - Example Folder Name': '001 - 示例显示名称',
 }
 ```
 

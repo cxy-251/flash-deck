@@ -1,7 +1,6 @@
 import os
 import sys
 import shutil
-import platform
 import threading
 import subprocess
 import json
@@ -9,7 +8,6 @@ import re
 import socket
 import struct
 import time
-import functools
 import urllib.parse
 import atexit
 import signal
@@ -17,6 +15,8 @@ import ctypes
 import mimetypes
 import datetime
 from collections import deque
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "services"))
+from app_config import find_library_dirs, get_library_roots, get_wan_domain
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # ---------------------------------------------------------------------------
@@ -29,6 +29,14 @@ _BOOT_LOG = os.path.join(_SCRIPT_DIR, "cache", "boot.log")
 _BOOT_T0 = time.time()
 
 def _boot(msg: str) -> None:
+    """把启动阶段的追踪日志写到 cache/boot.log（带时间戳/pid/相对启动耗时），超长自动截断。
+
+    专门用来排查"游戏模式下第二次打开卡死/切不到桌面"这类硬重启后 stdout/stderr
+    全丢的问题——这份日志是唯一能留下来的线索。
+
+    Args:
+        msg: 本条日志的正文内容。
+    """
     line = f"{datetime.datetime.now().isoformat(timespec='milliseconds')} " \
            f"pid={os.getpid()} +{time.time() - _BOOT_T0:6.2f}s  {msg}"
     try:
@@ -74,9 +82,12 @@ import novel_service
 _boot("imported novel_service")
 import audio_service
 _boot("imported audio_service")
+import shortvideo_service
+_boot("imported shortvideo_service")
 import mega_service
 import sc2_panel_service
 import privacy_service
+import crawler_service
 _boot("all service imports done")
 
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
@@ -225,7 +236,8 @@ PLAYER_RETRO_HTML = os.path.join(ASSETS_DIR, "player_retro.html")
 PLAYER_FLASH_HTML = os.path.join(ASSETS_DIR, "player_flash.html")
 PORT = 8998
 
-LAN_CONFIG_FILE = os.path.join(SCRIPT_DIR, ".lan_config.json")
+os.makedirs(os.path.join(SCRIPT_DIR, "config"), exist_ok=True)
+LAN_CONFIG_FILE = os.path.join(SCRIPT_DIR, "config", ".lan_config.json")
 
 def get_local_ip() -> str:
     """
@@ -263,9 +275,9 @@ def save_lan_sharing_enabled(enabled: bool) -> None:
 
 LAN_SHARING_ENABLED = load_lan_sharing_enabled()
 
-WAN_CONFIG_FILE = os.path.join(SCRIPT_DIR, ".wan_config.json")
-WAN_DOMAIN = "omni.cxy251.uk"
-WAN_URL = f"https://{WAN_DOMAIN}"
+WAN_CONFIG_FILE = os.path.join(SCRIPT_DIR, "config", ".wan_config.json")
+WAN_DOMAIN = get_wan_domain()  # 真实域名在 services/local_settings.py 里，不写死在会公开的源码中
+WAN_URL = f"https://{WAN_DOMAIN}" if WAN_DOMAIN else None
 
 def load_wan_sharing_enabled() -> bool:
     """从磁盘配置文件读取 Cloudflare 广域网隧道远程共享开关状态（默认 False）"""
@@ -334,6 +346,7 @@ def start_local_dns_helper():
     LOCAL_DNS_HELPER_STARTED = True
 
     def dns_worker():
+        """DNS 代理主循环：监听 127.0.0.1:53535，劫持 argotunnel.com 查询并转发其余请求。"""
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -382,7 +395,6 @@ def start_local_dns_helper():
 
 def ensure_wan_daemon():
     """保证 Cloudflare 专属隧道后台静默常驻，随时待命响应请求"""
-    global WAN_TUNNEL_PROC
     if not is_cloudflared_ready():
         return
     config_file = os.path.expanduser("~/.cloudflared/config.yml")
@@ -392,6 +404,7 @@ def ensure_wan_daemon():
     start_local_dns_helper()
 
     def daemon_worker():
+        """后台常驻循环：按 WAN_SHARING_ENABLED 开关状态拉起/保持 cloudflared 隧道进程。"""
         global WAN_TUNNEL_PROC
         while True:
             # 广域网开关关着就不起隧道（否则 config 存在时会空转 / 反复重连）
@@ -624,6 +637,28 @@ DISPLAY_NAMES = {
     '024 - Succu-Mama': '024 - 魅魔妈妈 (Succu-Mama)',
     '025 - Agent 17': '025 - 特工 17 (Agent 17)',
     '026 - Echoes': '026 - 回音 (Echoes)',
+    '027 - Mother NTR Training': '027 - 妈妈的NTR调教 (Mother NTR Training)',
+    '028 - Falling Undercover Nox Syndicate': '028 - 潜伏行动：夜色辛迪加 (Falling Undercover)',
+    '029 - The Better Deal': '029 - 更好的交易 (The Better Deal)',
+    '030 - Boundaries of Morality': '030 - 道德的边界 (Boundaries of Morality)',
+    '031 - No Honor Just Need': '031 - 无关荣耀，唯有渴望 (No Honor Just Need)',
+    '032 - Driven by Desire': '032 - 欲望驱使 (Driven by Desire)',
+    '033 - Time Heals': '033 - 时间治愈一切 (Time Heals)',
+    '034 - That New Teacher': '034 - 那个新老师 (That New Teacher)',
+    '035 - His Bet Her Loss': '035 - 他的赌注她的损失 (His Bet Her Loss)',
+    '036 - Bright Lord': '036 - 光明领主 (Bright Lord)',
+    '037 - Town of Magic': '037 - 魔法小镇 (Town of Magic)',
+    '038 - Angels Love': '038 - 天使之爱 (Angels Love)',
+    '039 - Little Man': '039 - 小男人 (Little Man)',
+    '040 - Reclaiming the Lost': '040 - 寻回失落 (Reclaiming the Lost)',
+    '041 - The Neverwhere Tales': '041 - 虚幻传说 (The Neverwhere Tales)',
+    '042 - Double Faced': '042 - 双面 (Double Faced)',
+    '043 - Dark Lord Leona': '043 - 魔物女王蕾欧娜 (Dark Lord Leona)',
+    '044 - My Cute Roommate 2': '044 - 我可爱的室友2 (My Cute Roommate 2)',
+    '045 - Tokyo Hotel': '045 - 东京旅馆 (Tokyo Hotel)',
+    '046 - Growing Things Up': '046 - 萌芽滋长 (Growing Things Up)',
+    '047 - JASON Coming of Age': '047 - 杰森：成年初显期 (JASON, Coming of Age)',
+    '048 - FreshWomen Season 2': '048 - 疯狂星期四：第二季 (FreshWomen Season 2)',
 
     # === Standalone Unity Games ===
     '001 - Kaiju Princess Detective': '001 - Kaiju Princess & Detective Servant',
@@ -662,6 +697,21 @@ DISPLAY_NAMES = {
     '034 - Ride Me Taxi Driver': '034 - 老司机带带我 (Ride Me Taxi Driver)',
     '035 - Dekiru Kouhai Aoi-chan': '035 - 能力出众的后辈葵酱 (Dekiru Kouhai Aoi-chan)',
     '036 - Final Boss is Mother-in-law': '036 - 最终魔王是岳母 (Final Boss is Mother-in-Law)',
+    '037 - Maid Sister': '037 - 女仆妹妹 (Maid Sister)',
+    '038 - Secret Pie': '038 - 秘密派 (Secret Pie)',
+    '039 - Daily Lives of My Country Cousins': '039 - 乡下堂妹们的日常 (Daily Lives of My Country Cousins)',
+    '040 - Detective Girl': '040 - 侦探少女 (Detective Girl)',
+    '041 - Sister Travel': '041 - 姐妹旅行 (Sister Travel)',
+    '042 - Happy Island Fantasy': '042 - 快乐岛幻想 (Happy Island Fantasy)',
+    '043 - Neighbors Wife': '043 - 邻居的妻子 (Neighbors Wife)',
+    '044 - Midnight Sin': '044 - 午夜之罪 (Midnight Sin)',
+    '045 - Summer Memories': '045 - 夏日回忆 (Summer Memories)',
+    '046 - Love and Life': '046 - 爱与生活 (Love and Life)',
+    '047 - NTR Family': '047 - NTR家族 (NTR Family)',
+    '048 - My 29 Years': '048 - 我的29岁妻子 (My 29 Years)',
+    '049 - Fallen Elf Freya': '049 - 堕落精灵芙蕾雅 (Fallen Elf Freya)',
+    '050 - Summer 14 Days': '050 - 夏日14日 (SUMMER ～夏の14日)',
+    '051 - Sisters Service': '051 - 姊妹的侍奉 (Sisters Service)',
 
     # === Standalone Steam 精选独立神作 ===
     '001 - Game Dev Story': '001 - 游戏开发物语 (Game Dev Story)',
@@ -695,6 +745,10 @@ DISPLAY_NAMES = {
     '001 - Pawn Pleasure': '001 - Pawn Pleasure',
     '002 - NTR Phone': '002 - NTR Phone',
     '003 - 30 Days of Work': '003 - 职场的30天 (30 Days of Work)',
+    '004 - Barely Working': '004 - 勉强维持 (Barely Working)',
+    '005 - Harem Heaven': '005 - 后宫天堂 (Harem Heaven)',
+    '006 - Goodbye Eternity': '006 - 再见永恒 (Goodbye Eternity)',
+    '007 - Anomalous Coffee Machine 2': '007 - 异常咖啡机 2 (Anomalous Coffee Machine 2)',
 
     # === Standalone Unreal Games ===
     '001 - Loser Isekai': '001 - Loser Got Isekai\'d',
@@ -724,6 +778,15 @@ DISPLAY_NAMES = {
     '021 - YadoKasegi': '021 - 旅店打工记 (YadoKasegi)',
     '022 - Komadori Inn': '022 - 驹鸟旅馆 (Komadori Inn)',
     '023 - Punishment NyanNyan R': '023 - 惩罚喵喵 R (Punishment NyanNyan R)',
+    '024 - Bodysmith Tales': '024 - 锻体物语 (Bodysmith Tales)',
+    '025 - Naughty Chat': '025 - 淘气聊天室 (Naughty Chat)',
+    '026 - Magical Monstergirls Academy': '026 - 魔法魔物娘学园 (Magical Monstergirls Academy)',
+    '027 - Legend of Moonlight': '027 - 月光物语 (Legend of Moonlight)',
+    '028 - Loser Isekai': '028 - 废柴转生异世界 (Loser Got Isekai\'d)',
+    '029 - Company Trip Island': '029 - 孤岛求生：公司旅行 (Company Trip)',
+    '030 - I Antasized Again': '030 - 幻想 (I Antasized Again)',
+    '031 - Queen': '031 - 恶魔女王的诱惑 (Seduction of the Demon Queen)',
+    '032 - NTR Phone v0.33': '032 - 打电话 (NTR Phone v0.33)',
 
     # === Standalone 3DS 模拟器专区 ===
     '001 - Pokemon Ultra Sun': '001 - 宝可梦：究极之日 (Pokemon Ultra Sun)',
@@ -1108,18 +1171,41 @@ def register_slg_folder(folder_path, custom_id=None):
     game_sub = os.path.join(folder_path, 'game')
     if os.path.isdir(game_sub):
         icon_candidates = [
+            os.path.join(folder_path, 'cover.jpg'),
+            os.path.join(folder_path, 'cover.png'),
+            os.path.join(folder_path, 'icon.png'),
             os.path.join(game_sub, 'gui', 'window_icon.png'),
             os.path.join(game_sub, 'icon.png'),
-            os.path.join(folder_path, 'icon.png'),
-            os.path.join(folder_path, 'cover.png'),
-            os.path.join(folder_path, 'cover.jpg')
+            os.path.join(game_sub, 'presplash.jpg'),
+            os.path.join(game_sub, 'presplash.png')
         ]
         icon_path = next((ic for ic in icon_candidates if os.path.exists(ic)), None)
+
+        # 寻找原生可执行脚本 (.sh / .py / .exe)
+        sh_files = [f for f in sorted(os.listdir(folder_path)) if f.endswith('.sh') and not f.startswith('.')]
+        exe_path = None
+        if sh_files:
+            exe_path = os.path.join(folder_path, sh_files[0])
+            try: os.chmod(exe_path, 0o755)
+            except: pass
+        else:
+            py_files = [f for f in sorted(os.listdir(folder_path)) if f.endswith('.py') and not f.startswith('.')]
+            if py_files:
+                exe_path = os.path.join(folder_path, py_files[0])
+                try: os.chmod(exe_path, 0o755)
+                except: pass
+            else:
+                exe_files = [f for f in sorted(os.listdir(folder_path)) if f.endswith('.exe') and not f.startswith('.')]
+                if exe_files:
+                    exe_path = os.path.join(folder_path, exe_files[0])
+
         GAMES_REGISTRY[game_id] = {
             'id': game_id,
             'name': name,
             'type': 'slg',
             'slg_engine': 'renpy',
+            'engine': 'renpy',
+            'exe_path': exe_path,
             'root': folder_path,
             'save_dir': os.path.join(game_sub, 'saves'),
             'icon': icon_path,
@@ -1180,28 +1266,41 @@ def register_flash_folder(folder_path, custom_id=None):
 _games_scan_lock = threading.Lock()
 _last_watched_sig = None
 
+STANDALONE_CATEGORIES = ['steam', 'renpy', 'unity', 'godot', 'unreal', 'wine', '3ds', 'app']
+
 def _get_monitored_paths():
-    paths = [
-        RPG_GAMES_DIR,
-        os.path.join(SCRIPT_DIR, "games"),
-        RETRO_GAMES_DIR,
-        SLG_GAMES_DIR,
-        FLASH_GAMES_DIR,
-        GAMES_BASE_DIR,
-    ]
-    standalone_categories = ['steam', 'renpy', 'unity', 'godot', 'unreal', 'wine', '3ds', 'app']
-    for cat in standalone_categories:
-        paths.extend([
-            os.path.join(SD_CARD_ROOT, "standalone_games", f"{cat}_games"),
-            os.path.join(SD_CARD_ROOT, f"{cat}_games"),
-            os.path.join(SCRIPT_DIR, "standalone_games", f"{cat}_games"),
-            os.path.join(SCRIPT_DIR, f"{cat}_games"),
-            os.path.join(GAMES_BASE_DIR, "standalone_games", f"{cat}_games"),
-            os.path.join(GAMES_BASE_DIR, f"{cat}_games"),
-        ])
+    """列出所有需要监控 stat 变化的游戏目录路径（各资源库根路径下五大分类各自的候选位置）。
+
+    这只是列路径，不判断存在性——路径存不存在都无所谓（stat 失败记 None，从 None
+    变成有值本身也是一种"变化"，照样能被 _get_filesystem_signature() 检测到）。
+
+    Returns:
+        list[str]: 待监控路径列表。
+    """
+    # 指纹只是"这些路径的 stat 变没变"，路径存不存在都无所谓（stat 失败记 None，
+    # 从 None 变成有值本身也是一种"变化"，照样能被检测到）——所以这里直接按配置的
+    # 资源库根路径拼路径，不用先过滤存在性。
+    paths = [RPG_GAMES_DIR, GAMES_BASE_DIR]
+    for root in get_library_roots():
+        paths.append(os.path.join(root, "rpg_games"))
+        paths.append(os.path.join(root, "standalone_games", "rpg_games"))
+        paths.append(os.path.join(root, "retro_games"))
+        paths.append(os.path.join(root, "standalone_games", "retro_games"))
+        paths.append(os.path.join(root, "slg_games"))
+        paths.append(os.path.join(root, "standalone_games", "slg_games"))
+        paths.append(os.path.join(root, "flash_games"))
+        paths.append(os.path.join(root, "standalone_games", "flash_games"))
+        for cat in STANDALONE_CATEGORIES:
+            paths.append(os.path.join(root, f"{cat}_games"))
+            paths.append(os.path.join(root, "standalone_games", f"{cat}_games"))
     return paths
 
 def _get_filesystem_signature():
+    """给所有监控路径拍一次快照（mtime+size），用于跟上一次快照比较判断"有没有变动"。
+
+    Returns:
+        dict: {路径: (mtime_ns, size) 或 None（路径不存在）}。
+    """
     sig = {}
     for p in _get_monitored_paths():
         try:
@@ -1210,6 +1309,34 @@ def _get_filesystem_signature():
         except OSError:
             sig[p] = None
     return sig
+
+def _scan_roots_for(subfolder_name):
+    """某一类资源（比如 "retro_games"）在所有已配置资源库根路径（app_config.py）
+    下的候选目录，外加 omni-deck 自己目录下的旧版位置（SCRIPT_DIR/<subfolder_name>）——
+    这个旧版位置不在配置的根路径管辖范围内，因为它嵌套在 SCRIPT_DIR 里，不是直接
+    挂在某个配置根路径下面，得额外补一句。"""
+    dirs = find_library_dirs("standalone_games", subfolder_name) + find_library_dirs(subfolder_name)
+    legacy = os.path.join(SCRIPT_DIR, subfolder_name)
+    if os.path.isdir(legacy) and legacy not in dirs:
+        dirs.append(legacy)
+    return dirs
+
+def _register_standalone_category_games(cat: str) -> None:
+    """扫描并注册某个独立游戏子分类（如 "renpy"/"unity"）在所有已配置资源库根路径下的游戏。
+
+    从 scan_games() 拆出来的单分类扫描逻辑，避免那边"遍历分类 -> 遍历根路径 -> 遍历
+    文件夹"叠成三层嵌套。
+
+    Args:
+        cat: 子分类前缀（如 "renpy"），实际会去扫描 f"{cat}_games" 目录。
+    """
+    for sp in _scan_roots_for(f"{cat}_games"):
+        for item in sorted(os.listdir(sp)):
+            if item.startswith("."):
+                continue
+            sub = os.path.join(sp, item)
+            register_standalone_folder(sub, subcategory=cat, custom_id=item)
+
 
 def scan_games(force=False):
     """
@@ -1226,35 +1353,27 @@ def scan_games(force=False):
         _last_watched_sig = current_sig
         GAMES_REGISTRY.clear()
     
-    # 1. 扫描 RPG Maker 游戏目录 (rpg_games/ 或 games/)
-    rpg_dir = RPG_GAMES_DIR if os.path.exists(RPG_GAMES_DIR) else os.path.join(SCRIPT_DIR, "games")
-    if os.path.exists(rpg_dir):
+    # 1. 扫描 RPG Maker 游戏目录 —— 依次看每个已配置的资源库根路径（app_config.py：
+    #    默认是项目根路径/SD 卡/下载目录，可编辑 services/local_settings.py 里的
+    #    LIBRARY_ROOTS 增删），同名文件夹后扫到的覆盖先扫到的。
+    rpg_scan_roots = _scan_roots_for("rpg_games")
+    legacy_games_dir = os.path.join(SCRIPT_DIR, "games")  # 更老版本的目录名兼容
+    if os.path.isdir(legacy_games_dir) and legacy_games_dir not in rpg_scan_roots:
+        rpg_scan_roots.append(legacy_games_dir)
+    for rpg_dir in rpg_scan_roots:
         for item in sorted(os.listdir(rpg_dir)):
+            if item.startswith("."): continue
             sub = os.path.join(rpg_dir, item)
             register_rpg_folder(sub, custom_id=item)
 
     # 2. 扫描 独立游戏专区 (Steam 精选, Ren'Py, Unity, Godot, Unreal, Wine, 3DS 模拟器, Windows 软件应用)
-    standalone_categories = ['steam', 'renpy', 'unity', 'godot', 'unreal', 'wine', '3ds', 'app']
-    for cat in standalone_categories:
-        scan_paths = [
-            os.path.join(SD_CARD_ROOT, "standalone_games", f"{cat}_games"),
-            os.path.join(SD_CARD_ROOT, f"{cat}_games"),
-            os.path.join(SCRIPT_DIR, "standalone_games", f"{cat}_games"),
-            os.path.join(SCRIPT_DIR, f"{cat}_games"),
-            os.path.join(GAMES_BASE_DIR, "standalone_games", f"{cat}_games"),
-            os.path.join(GAMES_BASE_DIR, f"{cat}_games")
-        ]
-        for sp in scan_paths:
-            if os.path.isdir(sp):
-                for item in sorted(os.listdir(sp)):
-                    if item.startswith("."): continue
-                    sub = os.path.join(sp, item)
-                    register_standalone_folder(sub, subcategory=cat, custom_id=item)
+    for cat in STANDALONE_CATEGORIES:
+        _register_standalone_category_games(cat)
 
     # 扫描 Windows 软件与独立应用 (支持 GAMES_BASE_DIR 或 Steam 原装容器路径)
     if os.path.exists(GAMES_BASE_DIR):
         for item in sorted(os.listdir(GAMES_BASE_DIR)):
-            if item in ['omni-deck', 'StarCraft II', 'Battle.net', 'claude', 'rpg_games', 'standalone_games']: continue
+            if item in ['omni-deck', 'StarCraft II', 'Battle.net', 'claude', 'rpg_games', 'standalone_games', 'media_library']: continue
             sub = os.path.join(GAMES_BASE_DIR, item)
             if os.path.isdir(sub):
                 register_standalone_folder(sub, subcategory='app', custom_id=item)
@@ -1278,31 +1397,57 @@ def scan_games(force=False):
             'icon': os.path.join(HOME_DIR, "Applications", "Lime3DS", "lime3ds.png"),
         }
 
-    # 3. 扫描 街机与复古卡带目录 (retro_games/)
-    if os.path.exists(RETRO_GAMES_DIR):
-        for item in sorted(os.listdir(RETRO_GAMES_DIR)):
+    # 3. 扫描 街机与复古卡带目录 (retro_games/)——emulatorjs/plugins 是模拟器核心/插件
+    #    固定放在 RETRO_GAMES_DIR 下（app 基础设施，不是游戏内容，不跟着资源库根路径走），
+    #    这里只排除这两个名字，不影响 EMULATORJS_DIR/PLUGINS_DIR 这两个固定路径本身。
+    for r_dir in _scan_roots_for("retro_games"):
+        for item in sorted(os.listdir(r_dir)):
             if item in ["emulatorjs", "plugins"] or item.startswith("."):
                 continue
-            sub = os.path.join(RETRO_GAMES_DIR, item)
+            sub = os.path.join(r_dir, item)
             register_retro_folder(sub, custom_id=item)
 
     # 4. 扫描 SLG 模拟策略与养成互动目录 (slg_games/)
-    if os.path.exists(SLG_GAMES_DIR):
-        for item in sorted(os.listdir(SLG_GAMES_DIR)):
-            sub = os.path.join(SLG_GAMES_DIR, item)
+    for s_dir in _scan_roots_for("slg_games"):
+        for item in sorted(os.listdir(s_dir)):
+            if item.startswith("."): continue
+            sub = os.path.join(s_dir, item)
             register_slg_folder(sub, custom_id=item)
 
-    # 5. 扫描 Flash 殿堂级神作目录 (flash_games/)
-    if os.path.exists(FLASH_GAMES_DIR):
-        for item in sorted(os.listdir(FLASH_GAMES_DIR)):
+    # 5. 扫描 Flash 殿堂级神作目录 (flash_games/)——plugins（Ruffle 等运行时）固定放在
+    #    FLASH_GAMES_DIR 下，同样是基础设施，不跟资源库根路径走，这里只排除这个名字。
+    for f_dir in _scan_roots_for("flash_games"):
+        for item in sorted(os.listdir(f_dir)):
             if item == "plugins" or item.startswith("."):
                 continue
-            sub = os.path.join(FLASH_GAMES_DIR, item)
+            sub = os.path.join(f_dir, item)
             register_flash_folder(sub, custom_id=item)
 
 scan_games()
 
 REVERSE_LOCALE_CACHE = {}
+
+def _merge_locale_reverse_map(json_path: str, rev: dict) -> None:
+    """读取一个语言包 JSON 文件，把"翻译后文本 -> 原始 key"的反向映射合并进 rev。
+
+    从 get_reverse_locale() 拆出来的单文件加载逻辑，避免那边的
+    "遍历文件 -> 遍历 JSON 键值对" 叠成三层嵌套。
+
+    Args:
+        json_path: 语言包 JSON 文件路径。
+        rev: 累积结果的反向映射字典（原地修改，不返回新对象）。
+    """
+    try:
+        with open(json_path, 'r', encoding='utf-8') as jf:
+            data = json.load(jf)
+        if not isinstance(data, dict):
+            return
+        for k, v in data.items():
+            if isinstance(v, str) and isinstance(k, str) and len(v) < 100:
+                rev[v.strip().lower()] = k.strip()
+    except Exception:
+        pass
+
 
 def get_reverse_locale(base_dir):
     """
@@ -1318,17 +1463,8 @@ def get_reverse_locale(base_dir):
             for root, dirs, files in os.walk(locales_dir):
                 for f in files:
                     if f.endswith('.json'):
-                        fp = os.path.join(root, f)
-                        try:
-                            with open(fp, 'r', encoding='utf-8') as jf:
-                                data = json.load(jf)
-                                if isinstance(data, dict):
-                                    for k, v in data.items():
-                                        if isinstance(v, str) and isinstance(k, str) and len(v) < 100:
-                                            rev[v.strip().lower()] = k.strip()
-                        except:
-                            pass
-        except:
+                        _merge_locale_reverse_map(os.path.join(root, f), rev)
+        except Exception:
             pass
     REVERSE_LOCALE_CACHE[base_dir] = rev
     return rev
@@ -1429,7 +1565,7 @@ def resolve_case_insensitive_path(base_dir, rel_path):
     return res
 
 GLOBAL_LOG_BUFFER = deque(maxlen=1000)
-LOG_FILE_PATH = os.path.join(SCRIPT_DIR, "omni_deck.log")
+LOG_FILE_PATH = os.path.join(CACHE_DIR, "omni_deck.log")
 
 def log_omni(level: str, msg: str, tag: str = None):
     """
@@ -1520,15 +1656,15 @@ def launch_standalone_game_process(game_id: str, title: str, on_exit_callback=No
     run_env = os.environ.copy()
 
     if engine == 'renpy':
-        if os.path.exists(RENPY_SDK_PATH):
-            cmd = [RENPY_SDK_PATH, root]
-        elif exe_path and os.path.exists(exe_path):
+        if exe_path and os.path.exists(exe_path):
             if exe_path.endswith('.sh') or exe_path.endswith('.py'):
                 try: os.chmod(exe_path, 0o755)
                 except: pass
                 cmd = [exe_path]
             elif exe_path.endswith('.exe'):
                 cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
+        elif os.path.exists(RENPY_SDK_PATH):
+            cmd = [RENPY_SDK_PATH, root]
     elif engine == '3ds':
         lime_app = '/home/deck/Applications/Lime3DS/Lime3DS.AppImage'
         if not os.path.exists(lime_app):
@@ -1566,6 +1702,7 @@ def launch_standalone_game_process(game_id: str, title: str, on_exit_callback=No
     RUNNING_GAME_IDS.add(game_id)
 
     def runner():
+        """在后台线程里拉起独立游戏子进程，把 stdout/stderr 落到 cache/game_<id>.log。"""
         safe_game_id = re.sub(r'\W+', '_', str(game_id)).strip('_')
         game_log_path = os.path.join(SCRIPT_DIR, "cache", f"game_{safe_game_id}.log")
         os.makedirs(os.path.dirname(game_log_path), exist_ok=True)
@@ -1633,13 +1770,21 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
        - 在线检索、异步下载任务与队列管理 (/api/manga/*, /api/novels/*)
     """
     def log_message(self, format, *args):
+        """覆盖父类默认的访问日志：静音正常 2xx/3xx 与游戏常规探测 404，其余写进 log_omni。
+
+        Args:
+            format: printf 风格格式串（父类约定的签名）。
+            *args: 格式化参数，约定 args[0] 是请求行、args[1] 是状态码。
+        """
         # 彻底静音所有正常 2xx / 3xx 与游戏常规探测 HEAD / 404 日志
         try:
             req = str(args[0]) if len(args) >= 1 else ""
             code = str(args[1]) if len(args) >= 2 else ""
             if code.startswith(('2', '3')):
                 return
-            if code == '404' and ('HEAD ' in req or '/save/' in req or '.rpgsave' in req or 'favicon.ico' in req or '/api/patch/' in req):
+            if code == '404' and ('HEAD ' in req or '/save/' in req or '.rpgsave' in req or 'favicon.ico' in req
+                                   or '/api/patch/' in req or '/api/shortvideo/thumb' in req or '/api/shortvideo/stream' in req
+                                   or '/api/shortvideo/gallery_image' in req):
                 return
             tag = extract_game_id_from_path(req) or "Server"
             if code.startswith('5'):
@@ -1650,6 +1795,12 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             pass
 
     def parse_request(self):
+        """请求解析钩子：在真正处理请求前做局域网/广域网访问闸门拦截。
+
+        Returns:
+            bool: 允许继续处理返回 True；命中闸门时直接回 403 页面并返回 False，
+            调用方（BaseHTTPRequestHandler）据此中止后续的 do_GET/do_POST 分发。
+        """
         if not super().parse_request():
             return False
 
@@ -1679,12 +1830,22 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         return True
 
     def check_is_local(self) -> bool:
+        """判断当前请求是否来自本机（127.0.0.1/本机屏幕），Cloudflare 转发的一律不算本机。
+
+        Returns:
+            bool: 是本机请求返回 True。
+        """
         client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else '127.0.0.1'
         local_ip = get_local_ip()
         is_cf = bool(self.headers.get('CF-Connecting-IP') or self.headers.get('cf-ray'))
         return (client_ip in ('127.0.0.1', 'localhost', '::1', local_ip)) and not is_cf
 
     def check_nsfw_authorized(self) -> bool:
+        """判断当前请求是否有权限访问 NSFW/成人专区内容。
+
+        Returns:
+            bool: 有权限返回 True（本机始终放行，非本机需要有效 Token）。
+        """
         is_local = self.check_is_local()
         return privacy_service.is_request_authorized(self, is_local)
 
@@ -1709,6 +1870,12 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         return True
 
     def log_error(self, format, *args):
+        """覆盖父类默认的错误日志：过滤掉 favicon/404 噪音，其余写进 log_omni 并带上游戏 tag。
+
+        Args:
+            format: printf 风格格式串（父类约定的签名）。
+            *args: 格式化参数。
+        """
         try:
             msg = format % args
             if "favicon.ico" in self.path or "fav.ico" in self.path or "code 404" in msg:
@@ -1719,12 +1886,27 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             pass
 
     def copyfile(self, source, outputfile):
+        """覆盖父类的静态文件传输：吞掉客户端中途断开连接的异常，避免刷一堆无意义报错。
+
+        Args:
+            source: 源文件对象。
+            outputfile: 目标输出流（通常是 self.wfile）。
+        """
         try:
             super().copyfile(source, outputfile)
         except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
             pass
 
     def translate_path(self, path):
+        """把请求路径映射成实际物理文件路径——大厅前端资源、模拟器核心、游戏/存档虚拟路径
+        都在这里做重定向，是整个 Direct FS Bridge 虚拟文件系统的核心入口。
+
+        Args:
+            path: 原始请求路径（可能带 query string/fragment）。
+
+        Returns:
+            str: 解析后的物理文件路径。
+        """
         clean_path = path.split('?')[0].split('#')[0]
         unquoted = urllib.parse.unquote(urllib.parse.unquote(clean_path))
 
@@ -1796,6 +1978,7 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         return super().translate_path(path)
 
     def do_HEAD(self):
+        """处理 HEAD 请求：存档文件走专门的存在性检查，其余资源走快速存在性判断后交给父类。"""
         if self.path.startswith('/save/'):
             parts = urllib.parse.unquote(self.path).split('/')
             if len(parts) >= 4:
@@ -1824,6 +2007,13 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         super().do_HEAD()
 
     def do_GET(self):
+        """GET 请求总路由：一长串 `if self.path.startswith(...)` 依次匹配 `/api/*` 接口
+        （游戏/媒体库查询、流媒体点播、SSE 事件、网络共享开关状态等），一个都不命中时
+        落到最后交给父类按静态文件处理（走 translate_path() 解析出的物理路径）。
+
+        本方法只做路由分发，具体业务逻辑都在各 service 模块里；新增路由直接在方法体里
+        按 `if self.path.startswith('/api/xxx')` 的既有写法插入即可。
+        """
         if self.deny_if_remote_online():
             return
         if self.path.startswith('/api/_alive'):
@@ -2003,7 +2193,7 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                                             break
                                     if not matched:
                                         current_path = os.path.join(current_path, part)
-                                except:
+                                except Exception:
                                     current_path = os.path.join(current_path, part)
                         target_path = current_path
 
@@ -2195,6 +2385,50 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                         self.end_headers()
                         self.wfile.write(data)
                         return
+        # --- 非 NSFW 有声书前端直接读的"静态"JSON快照 ---
+        # 这个文件本来是 audio_service.update_standard_catalog_json() 写盘的缓存，但前端切换成
+        # 直接读这个静态路径之后，没人再触发过会重新扫描/重写它的那条 API 了——文件就冻结在了
+        # 「stream_url 还是 /audio/standard/... 这种旧静态直链」的年代（那条路由早就没了，
+        # 现在统一走支持 Range 分段的 /api/audio/stream）。结果就是有声书打开了但放不出声音。
+        # 这里直接拦下这个路径，每次都强制重新扫描一遍再吐出去，stream_url 永远是当前代码生成的、
+        # 真正能播的地址，不会再冻结成史前版本。
+        if self.path.startswith('/audio/standard_catalog.json'):
+            data = audio_service.get_standard_catalog()
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+            return
+
+        # --- Crawler Download Panel Routes ---
+        if self.path.startswith('/api/crawler/types'):
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(crawler_service.list_job_types(), ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/crawler/jobs/'):
+            job_id = self.path.replace('/api/crawler/jobs/', '').split('?')[0]
+            job = crawler_service.get_job(job_id)
+            self.send_response(200 if job else 404)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(job or {'error': '任务不存在'}, ensure_ascii=False).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/crawler/jobs'):
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(crawler_service.list_jobs(), ensure_ascii=False).encode('utf-8'))
+            return
+
         # --- Audio Stream & Library Routes ---
         if self.path.startswith('/api/audio/library'):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -2290,6 +2524,147 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                 with open(full_path, 'rb') as f:
                     shutil.copyfileobj(f, self.wfile)
             return
+
+        # --- 短视频画廊（Downloads/快手/<主播>/*.mp4，来自 ExtensionForge 002 插件）---
+        # 内容是私人下的主播视频，跟其它 NSFW 分区一个安全模型：本机随便看，
+        # 非本机（局域网/广域网）要过 privacy_service 的 token 校验。
+        if self.path.startswith(('/api/shortvideo/library', '/api/shortvideo/thumb', '/api/shortvideo/stream', '/api/shortvideo/transcode_status', '/api/shortvideo/gallery_image')):
+            if not self.check_nsfw_authorized():
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"error": "Forbidden: short-video gallery is locked"}')
+                return
+
+            if self.path.startswith('/api/shortvideo/transcode_status'):
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                platform = qs.get('platform', ['kuaishou'])[0] or 'kuaishou'
+                data = shortvideo_service.transcode_status(platform)
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+                self.end_headers()
+                self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+                return
+
+            if self.path.startswith('/api/shortvideo/library'):
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                platform = qs.get('platform', ['kuaishou'])[0] or 'kuaishou'
+                q = qs.get('q', [''])[0] or ''
+                folder = qs.get('folder', ['all'])[0] or 'all'
+                page = int(qs.get('page', ['1'])[0] or 1)
+                page_size = int(qs.get('page_size', ['60'])[0] or 60)
+                data = shortvideo_service.query_shortvideo_library(platform=platform, q=q, folder=folder, page=page, page_size=page_size)
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+                self.end_headers()
+                self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
+                return
+
+            if self.path.startswith('/api/shortvideo/thumb'):
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                platform = qs.get('platform', ['kuaishou'])[0] or 'kuaishou'
+                rel_p = qs.get('path', [''])[0]
+                thumb_p = shortvideo_service.get_video_thumb(platform, rel_p)
+                if not thumb_p or not os.path.exists(thumb_p):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header('Content-type', 'image/webp')
+                self.send_header('Cache-Control', 'public, max-age=86400')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                with open(thumb_p, 'rb') as f:
+                    data = f.read()
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+
+            if self.path.startswith('/api/shortvideo/gallery_image'):
+                # 图集（抖音多图作品）里第 idx 张原图，浏览器原生显示 webp/jpg，不用转码
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                platform = qs.get('platform', ['kuaishou'])[0] or 'kuaishou'
+                rel_p = qs.get('path', [''])[0]
+                idx = int(qs.get('idx', ['0'])[0] or 0)
+                img_p, content_type = shortvideo_service.get_gallery_image(platform, rel_p, idx)
+                if not img_p or not os.path.exists(img_p):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header('Content-type', content_type or 'application/octet-stream')
+                self.send_header('Cache-Control', 'public, max-age=86400')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                with open(img_p, 'rb') as f:
+                    data = f.read()
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+
+            if self.path.startswith('/api/shortvideo/stream'):
+                # 本机 QtWebEngine 没有 H.264 解码器，放不了原始 mp4——现转 VP9/WebM（有缓存）；
+                # 局域网/远程设备是正常浏览器，解码原始 H.264 没问题，直接给原始文件，不转码。
+                # 两边用的是同一个 <video> 标签、同一个接口，前端不用关心是谁在看。
+                qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                platform = qs.get('platform', ['kuaishou'])[0] or 'kuaishou'
+                rel_p = qs.get('path', [''])[0]
+                full_path, content_type = shortvideo_service.get_playable_for_client(platform, rel_p, self.check_is_local())
+                if not full_path or not os.path.exists(full_path):
+                    self.send_response(503 if rel_p else 404)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(b'{"error": "video not found or transcode failed"}')
+                    return
+
+                file_size = os.path.getsize(full_path)
+                range_header = self.headers.get('Range', '')
+
+                if range_header and range_header.startswith('bytes='):
+                    ranges = range_header[6:].split('-')
+                    start = int(ranges[0]) if ranges[0] else 0
+                    end = int(ranges[1]) if len(ranges) > 1 and ranges[1] else file_size - 1
+                    end = min(end, file_size - 1)
+                    length = end - start + 1
+
+                    self.send_response(206)
+                    self.send_header('Content-Type', content_type)
+                    self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
+                    self.send_header('Content-Length', str(length))
+                    self.send_header('Accept-Ranges', 'bytes')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+
+                    with open(full_path, 'rb') as f:
+                        f.seek(start)
+                        chunk_size = 65536
+                        bytes_left = length
+                        while bytes_left > 0:
+                            to_read = min(chunk_size, bytes_left)
+                            chunk = f.read(to_read)
+                            if not chunk:
+                                break
+                            try:
+                                self.wfile.write(chunk)
+                            except (BrokenPipeError, ConnectionResetError):
+                                break
+                            bytes_left -= len(chunk)
+                else:
+                    self.send_response(200)
+                    self.send_header('Content-Type', content_type)
+                    self.send_header('Content-Length', str(file_size))
+                    self.send_header('Accept-Ranges', 'bytes')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    with open(full_path, 'rb') as f:
+                        shutil.copyfileobj(f, self.wfile)
+                return
 
         # --- Manga & Media Hub API Routes ---
         if self.path.startswith(('/api/novels/search', '/api/novels/queue', '/api/novels/tasks')):
@@ -2778,10 +3153,34 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def end_headers(self):
+        """给每个响应统一加上禁用缓存的响应头，再交给父类真正写出响应头。"""
         self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         super().end_headers()
 
     def do_POST(self):
+        """POST 请求总路由：跟 do_GET 同样的 `if self.path.startswith(...)` 依次匹配写法，
+        覆盖下载中心任务提交、存档写入、隐私鉴权、局域网/广域网开关切换等所有写操作接口。
+        """
+        if self.path.startswith('/api/crawler/start'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            job_type = payload.get('type', '')
+            params = payload.get('params', {}) or {}
+            try:
+                job_id = crawler_service.start_job(job_type, params)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'success': True, 'job_id': job_id}, ensure_ascii=False).encode('utf-8'))
+            except ValueError as e:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({'success': False, 'error': str(e)}, ensure_ascii=False).encode('utf-8'))
+            return
+
         if self.path.startswith('/api/logs/clear'):
             GLOBAL_LOG_BUFFER.clear()
             log_omni("INFO", "全局日志缓冲区已成功清空", tag="System")
@@ -2873,7 +3272,7 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             return
 
         # 检查敏感专区 POST 操作权限
-        if self.path.startswith(('/api/manga/', '/api/novels/', '/api/audio/')):
+        if self.path.startswith(('/api/manga/', '/api/novels/', '/api/audio/', '/api/shortvideo/')):
             if not self.check_nsfw_authorized():
                 self.send_response(403)
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
@@ -3202,6 +3601,65 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({'status': 'ok' if ok else 'failed'}).encode('utf-8'))
             return
 
+        if self.path.startswith('/api/shortvideo/like'):
+            if not self.check_nsfw_authorized():
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"error": "Forbidden: short-video gallery is locked"}')
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            platform = payload.get('platform') or 'kuaishou'
+            rel_p = payload.get('path', '') or payload.get('rel_path', '')
+            liked_val = payload.get('liked')
+            res = shortvideo_service.toggle_shortvideo_like(platform, rel_p, liked_val)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok', 'liked': res}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/shortvideo/trash') or self.path.startswith('/api/shortvideo/delete'):
+            if not self.check_nsfw_authorized():
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"error": "Forbidden: short-video gallery is locked"}')
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            platform = payload.get('platform') or 'kuaishou'
+            rel_p = payload.get('path', '') or payload.get('rel_path', '')
+            ok = shortvideo_service.trash_shortvideo_file(platform, rel_p)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok' if ok else 'failed'}).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/shortvideo/transcode_all'):
+            if not self.check_nsfw_authorized():
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"error": "Forbidden: short-video gallery is locked"}')
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
+            shortvideo_service.transcode_all_now(payload.get('platform') or 'kuaishou')
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b'{"status": "ok"}')
+            return
+
         # --- MEGA API POST Routes ---
         if self.path.startswith('/api/mega/'):
             client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else '127.0.0.1'
@@ -3334,9 +3792,18 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps(res, ensure_ascii=False).encode('utf-8'))
                 return
 
-        super().do_POST()
+        # 没有路由认领这个 POST——SimpleHTTPRequestHandler 压根没有 do_POST，
+        # 之前这里写的是 super().do_POST()，任何没匹配上的 POST 都会直接炸出
+        # AttributeError（比如前端代码更新了、调了新接口，但服务器还没重启热更那批）。
+        # 老老实实回一个 404，别让整条请求线程崩掉。
+        self.send_response(404)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(b'{"error": "no such POST route"}')
 
     def do_DELETE(self):
+        """DELETE 请求总路由：目前只有存档删除一条 `/api/save/<id>` 路径。"""
         if self.path.startswith('/api/save/'):
             parsed = urllib.parse.urlparse(self.path)
             game_id = urllib.parse.unquote(parsed.path.replace('/api/save/', ''))
@@ -3365,6 +3832,12 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
     daemon_threads = True        # 工作线程不阻塞进程退出
     allow_reuse_address = True   # 允许 TIME_WAIT 状态下立即重新绑定
     def handle_error(self, request, client_address):
+        """覆盖父类的请求处理异常钩子：吞掉客户端中途断连的噪音异常，其余交给父类正常处理。
+
+        Args:
+            request: 出错的请求对象。
+            client_address: 客户端地址。
+        """
         exc_type, exc_value, exc_traceback = sys.exc_info()
         if exc_type in (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
             return
@@ -3485,7 +3958,7 @@ try:
         QHBoxLayout,
         QPushButton,
     )
-    from PyQt6.QtGui import QKeySequence, QShortcut, QDesktopServices
+    from PyQt6.QtGui import QKeySequence, QShortcut
     from PyQt6.QtWebEngineWidgets import QWebEngineView
     from PyQt6.QtWebEngineCore import (
         QWebEngineSettings,
@@ -3493,6 +3966,7 @@ try:
         QWebEnginePage,
         QWebEngineScript,
     )
+    from PyQt6.QtWebChannel import QWebChannel
     QT6 = True
 except ImportError:
     from PyQt5.QtCore import QUrl, Qt, QTimer, pyqtSignal
@@ -3506,7 +3980,7 @@ except ImportError:
         QPushButton,
         QShortcut,
     )
-    from PyQt5.QtGui import QKeySequence, QDesktopServices
+    from PyQt5.QtGui import QKeySequence
     from PyQt5.QtWebEngineWidgets import (
         QWebEngineView,
         QWebEngineSettings,
@@ -3514,6 +3988,7 @@ except ImportError:
         QWebEnginePage,
         QWebEngineScript,
     )
+    from PyQt5.QtWebChannel import QWebChannel
     QT6 = False
 
 class CustomWebPage(QWebEnginePage):
@@ -3525,11 +4000,24 @@ class CustomWebPage(QWebEnginePage):
     4. 导航拦截：拦截 action://play- 内部伪协议，直通 launch_game 启动器
     """
     def __init__(self, profile, main_window, parent=None):
+        """构造定制页面并接好特性权限自动授予的信号连接。
+
+        Args:
+            profile: QWebEngineProfile 实例。
+            main_window: 承载这个页面的主窗口，用于取当前游戏 id 等上下文。
+            parent: 父级 QObject，可选。
+        """
         super().__init__(profile, parent)
         self.main_window = main_window
         self.featurePermissionRequested.connect(self.on_feature_permission_requested)
 
     def on_feature_permission_requested(self, securityOrigin, feature):
+        """网页请求麦克风/全屏等浏览器特性权限时自动授予（单机游戏场景不需要用户逐次确认）。
+
+        Args:
+            securityOrigin: 请求权限的页面来源。
+            feature: 请求的具体特性类型。
+        """
         perm = (
             QWebEnginePage.PermissionPolicy.PermissionGrantedByUser
             if QT6
@@ -3542,6 +4030,14 @@ class CustomWebPage(QWebEnginePage):
         return self
 
     def javaScriptConsoleMessage(self, level, msg, line, source):
+        """网页 console.log/warn/error 的回调：过滤掉游戏引擎自带的日常噪音，其余转发进 log_omni。
+
+        Args:
+            level: 日志级别（QWebEnginePage 的 JavaScriptConsoleMessageLevel 枚举）。
+            msg: 日志文本。
+            line: 触发日志的源码行号。
+            source: 触发日志的源文件/URL。
+        """
         # 仅保留关键的 Omni-Deck / RPGWeb-Deck 框架启动信息或警告报错，彻底静音游戏自带的日常噪音 log
         info_level = (
             QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel
@@ -3596,6 +4092,12 @@ class CustomWebPage(QWebEnginePage):
         log_omni(level_str, f"{msg} (Line {line} in {src_name})", tag=active_game)
 
     def javaScriptAlert(self, securityOrigin, msg):
+        """网页 window.alert() 的回调：不弹原生对话框（单机全屏体验），只记日志。
+
+        Args:
+            securityOrigin: 调用来源页面。
+            msg: alert 文本内容。
+        """
         try:
             active_game = getattr(self.main_window, 'current_game_id', None) or "Emulator"
             log_omni("WARN", f"[JS-Alert] {msg}", tag=active_game)
@@ -3603,6 +4105,15 @@ class CustomWebPage(QWebEnginePage):
             pass
 
     def javaScriptConfirm(self, securityOrigin, msg):
+        """网页 window.confirm() 的回调：默认一律当用户点了"确定"，特定已知误报文案除外。
+
+        Args:
+            securityOrigin: 调用来源页面。
+            msg: confirm 提示文本。
+
+        Returns:
+            bool: 视为用户选择的结果，默认 True（确定）。
+        """
         try:
             active_game = getattr(self.main_window, 'current_game_id', None) or "Emulator"
             log_omni("WARN", f"[JS-Confirm] {msg}", tag=active_game)
@@ -3613,9 +4124,29 @@ class CustomWebPage(QWebEnginePage):
         return True
 
     def javaScriptPrompt(self, securityOrigin, msg, defaultVal):
+        """网页 window.prompt() 的回调：不弹原生输入框，直接回默认值当作用户输入。
+
+        Args:
+            securityOrigin: 调用来源页面。
+            msg: 提示文本。
+            defaultVal: 默认值。
+
+        Returns:
+            tuple[bool, str]: (是否"确定", 返回给网页的输入值)。
+        """
         return (True, defaultVal)
 
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        """页面导航拦截：回到大厅时重置窗口状态；拦截 `action://play-` 伪协议直通游戏启动器。
+
+        Args:
+            url: 目标导航 URL。
+            nav_type: 导航触发类型。
+            is_main_frame: 是否主 frame 导航。
+
+        Returns:
+            bool: 是否放行这次导航（父类默认实现的返回值，本方法末尾会调用父类处理）。
+        """
         url_str = url.toString()
         if "hub.html" in url_str:
             self.main_window.is_in_game = False
@@ -3647,6 +4178,7 @@ class RpgDeckMainWindow(QMainWindow):
     renpy_finished = pyqtSignal()
 
     def __init__(self):
+        """构造主窗口：初始化 WebEngine、UI、快捷键，加载大厅页面，并启动内存看门狗。"""
         super().__init__()
 
         self.setWindowTitle("Omni Deck")
@@ -3689,6 +4221,11 @@ class RpgDeckMainWindow(QMainWindow):
         self._cache_timer.start(2 * 60 * 60 * 1000)
 
     def _total_rss_mb(self) -> float:
+        """统计当前进程及其所有子进程的 RSS 内存总和。
+
+        Returns:
+            float: 总内存占用（MB）；psutil 不可用或出错时返回 0.0。
+        """
         try:
             import psutil
             me = psutil.Process()
@@ -3698,15 +4235,15 @@ class RpgDeckMainWindow(QMainWindow):
             return 0.0
 
     def _http_cache_flush(self):
-        if getattr(self, 'is_in_game', False):
-            return
-        try:
-            self.profile.clearHttpCache()
-            log_omni("INFO", "已清 HTTP 缓存（定期维护）", tag="Mem")
-        except Exception:
-            pass
+        """HTTP 缓存清理定时器回调：目前是空实现占位（见方法内注释说明原因）。"""
+        # 曾经在这里 clearHttpCache()，但 QtWebEngine 运行中调它会把 profile 的网络请求
+        # 上下文搅乱，之后页面里所有 fetch() 全挂（"TypeError: Failed to fetch"，媒体专区
+        # 整个加载不出来）。缓存靠 setHttpCacheMaximumSize(96MB) 的上限兜着就够了，
+        # 不再运行时主动清。这个定时器留着当占位/以后别的用途。
+        pass
 
     def _mem_watchdog_tick(self):
+        """内存看门狗定时回调：总内存超阈值且当前不在游戏中时，干净地自我重启进程。"""
         rss = self._total_rss_mb()
         if rss <= 0 or rss < MEM_RESTART_MB:
             return
@@ -3789,7 +4326,7 @@ class RpgDeckMainWindow(QMainWindow):
             p_settings.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
 
         # 核心 Polyfill: 精准单次 Hook、全模块 NW/Node 模拟、Spine 原生立绘引擎、首帧居中缩放自适应
-        core_js_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core.js")
+        core_js_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "core.js")
         with open(core_js_path, "r", encoding="utf-8") as f:
             core_runtime_js = f.read()
 
@@ -3901,6 +4438,105 @@ class RpgDeckMainWindow(QMainWindow):
         """)
         self.overlay.hide()
 
+        # ---- 本机原生播放通道：QtWebEngine 内置解码器阉割了 H.264/AAC，这里旁路一份
+        # QtMultimedia（完整 ffmpeg，同一个窗口里播放，不开新窗口）——见 native_player.py
+        # 顶部注释。局域网/远程设备走的还是 main.py 现有的 HTTP 流接口，不受影响。
+        from native_player import NativePlayerWidget, PlayerBridge
+
+        self.native_player = NativePlayerWidget(self)
+        self.native_player.hide()
+        self.native_player.closed.connect(self.hide_native_player)
+        # 上一条/下一条/删除：原生播放器自己不维护列表，转发回网页，网页算出下一条该放
+        # 哪个文件之后，会再通过 bridge 重新喊一次 Python 播放（见 hub.js 里的
+        # nativePlayerPrev/Next/Delete）。
+        self.native_player.prevRequested.connect(
+            lambda: self.webview.page().runJavaScript("window.nativePlayerPrev && window.nativePlayerPrev()"))
+        self.native_player.nextRequested.connect(
+            lambda: self.webview.page().runJavaScript("window.nativePlayerNext && window.nativePlayerNext()"))
+        self.native_player.deleteRequested.connect(
+            lambda: self.webview.page().runJavaScript("window.nativePlayerDelete && window.nativePlayerDelete()"))
+        self.native_player.likeToggled.connect(
+            lambda liked: self.webview.page().runJavaScript(f"window.nativePlayerToggleLike && window.nativePlayerToggleLike({json.dumps(liked)})"))
+
+        self.player_bridge = PlayerBridge(self)
+        self.web_channel = QWebChannel(self.webview.page())
+        self.web_channel.registerObject('bridge', self.player_bridge)
+        self.webview.page().setWebChannel(self.web_channel)
+
+        # qwebchannel.js 是 Qt 自带资源（不是磁盘上的散文件），读出来跟"网页那边怎么连上
+        # 这个 bridge"的胶水代码拼一块，当成页面脚本注入——跟上面 core_runtime_js 是同一个
+        #机制。网页那边（hub.js）判断 window.omniBridge 存在与否，来决定走原生播放还是
+        # 走 HTTP 流，天然只在本机这个嵌入视图里生效。
+        try:
+            from PyQt6.QtCore import QFile, QIODevice
+        except ImportError:
+            from PyQt5.QtCore import QFile, QIODevice
+        qwc_file = QFile(":/qtwebchannel/qwebchannel.js")
+        if qwc_file.open(QIODevice.OpenModeFlag.ReadOnly if QT6 else QIODevice.ReadOnly):
+            qwebchannel_js = bytes(qwc_file.readAll()).decode("utf-8")
+            qwc_file.close()
+            glue_js = qwebchannel_js + """
+            (function() {
+                if (typeof qt === 'undefined' || !qt.webChannelTransport) return;
+                new QWebChannel(qt.webChannelTransport, function(channel) {
+                    window.omniBridge = channel.objects.bridge;
+                    window.dispatchEvent(new Event('omniBridgeReady'));
+                });
+            })();
+            """
+            bridge_script = QWebEngineScript()
+            bridge_script.setName("omni_deck_bridge")
+            bridge_script.setSourceCode(glue_js)
+            bridge_script.setInjectionPoint(
+                QWebEngineScript.InjectionPoint.DocumentCreation if QT6 else QWebEngineScript.DocumentCreation)
+            bridge_script.setWorldId(
+                QWebEngineScript.ScriptWorldId.MainWorld if QT6 else QWebEngineScript.MainWorld)
+            self.profile.scripts().insert(bridge_script)
+        else:
+            log_omni("WARN", "qwebchannel.js 资源读取失败，本机原生播放桥接不可用（会自动退回网页内置播放器）", tag="NativePlayer")
+
+    def show_native_player(self, full_path: str, is_audio: bool, title: str = "", chapters=None, is_liked: bool = False):
+        """显示原生播放器并播放指定文件；同模式下切歌不重新摆窗口，避免闪一下露出网页。
+
+        Args:
+            full_path: 本地文件绝对路径。
+            is_audio: True 为音频模式（底部细条），False 为视频模式（铺满窗口）。
+            title: 展示标题。
+            chapters: 章节列表，可选。
+            is_liked: 当前条目是否已点赞。
+        """
+        # 视频：铺满整个窗口（专注观看，跟原来的网页视频弹窗一个体验）。
+        # 音频：只占底部一条细长的控制条，不挡住上面的网页——有声书本来就是"边听边逛"，
+        # 不该被一个全屏播放器把浏览这件事挡掉。
+        #
+        # 切上一条/下一条时（同一个模式下、播放器本来就已经开着）不要重新 setGeometry/
+        # show/raise_——这几个调用会让底下那个原生视频解码表面被迫重新贴一次窗口，
+        # 相当于"关一下窗口再开一下"，只是快到看着像一次切换，但中间那一下依旧会露出
+        # 底下的网页。已经开着、模式没变的情况下，只管换源播放，窗口本身完全不动。
+        already_showing_same_mode = (
+            self.native_player.isVisible() and self.native_player.is_audio_mode == is_audio
+        )
+        self.native_player.play_local(full_path, is_audio, title, chapters=chapters, is_liked=is_liked)
+        if not already_showing_same_mode:
+            self._layout_native_player()
+            self.native_player.show()
+            self.native_player.raise_()
+
+    def _layout_native_player(self):
+        """按当前模式（音频/视频）重新计算并设置原生播放器控件的位置与大小。"""
+        if not hasattr(self, 'native_player'):
+            return
+        if getattr(self.native_player, 'is_audio_mode', False):
+            bar_h = max(64, self.native_player.controls.sizeHint().height())
+            self.native_player.setGeometry(0, self.height() - bar_h, self.width(), bar_h)
+        else:
+            self.native_player.setGeometry(0, 0, self.width(), self.height())
+
+    def hide_native_player(self):
+        """停止播放并隐藏原生播放器，恢复显示底下的网页。"""
+        self.native_player.stop_and_hide()
+        self.native_player.hide()
+
     def on_load_finished(self, ok):
         """网页加载完毕后，若处于游戏状态则自动计算并显示右上角控制胶囊。
         外部游戏（web_flash 独立窗口 / Proton 独立进程）不算 —— 大厅这套胶囊按钮
@@ -3991,9 +4627,11 @@ class RpgDeckMainWindow(QMainWindow):
             self.load_category()
 
     def resizeEvent(self, event):
-        """窗口尺寸变动时自适应悬浮控制胶囊在右上角的位置"""
+        """窗口尺寸变动时自适应悬浮控制胶囊在右上角的位置；原生播放器铺满全窗口，跟着一起变"""
         super().resizeEvent(event)
         self.overlay.move(self.width() - self.overlay.width() - 16, 16)
+        if hasattr(self, 'native_player') and self.native_player.isVisible():
+            self._layout_native_player()
 
     def load_hub(self):
         """加载 Omni Deck 首页大厅 (hub.html) 并重置游戏状态"""
@@ -4126,6 +4764,8 @@ class RpgDeckMainWindow(QMainWindow):
                 self.is_external_game = True
                 self.overlay.hide()
                 self.btn_pure.hide()
+                # flash_runner 全屏起；大厅这边收起来，给合成器一个干净的前台切换
+                self.showMinimized()
                 game_data_json = json.dumps(game_data)
                 flash_python = os.path.join(SCRIPT_DIR, ".venv_flash", "bin", "python")
                 if not os.path.exists(flash_python):
@@ -4139,7 +4779,8 @@ class RpgDeckMainWindow(QMainWindow):
                 clean_env['QT_QPA_PLATFORM'] = 'xcb'
                 
                 def runner():
-                    log_file = open(os.path.join(SCRIPT_DIR, "flash_crash.log"), "w")
+                    """在后台线程里拉起 flash_runner.py 隔离子进程并等待其退出。"""
+                    log_file = open(os.path.join(CACHE_DIR, "flash_crash.log"), "w")
                     rc = None
                     try:
                         proc = subprocess.Popen(
@@ -4196,18 +4837,25 @@ class RpgDeckMainWindow(QMainWindow):
 
     def launch_standalone_game(self, game_id: str, title: str):
         """调用全局独立进程拉起器运行大型 PC 游戏，退出时自动回调激活大厅"""
+        self.showMinimized()
         launch_standalone_game_process(game_id, title, on_exit_callback=lambda: self.renpy_finished.emit())
+
+    def launch_renpy_game(self, game_id: str, title: str):
+        """拉起原生桌面版 Ren'Py 视觉小说游戏"""
+        self.launch_standalone_game(game_id, title)
 
     def on_renpy_exit(self):
         """独立游戏 / 外部进程退出回调：重新激活并置顶 Omni Deck 窗口，保持大厅当前视口"""
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized if QT6
+                            else self.windowState() & ~Qt.WindowMinimized)
+        self.showNormal()
         self.show()
         self.raise_()
         self.activateWindow()
-        # 游戏那段瞬时分配最大，退出后顺手清一次 HTTP 缓存
-        try:
-            self.profile.clearHttpCache()
-        except Exception:
-            pass
+        # 合成器有时要慢半拍才把焦点交回来，延迟再顶一次
+        QTimer.singleShot(400, lambda: (self.raise_(), self.activateWindow()))
+        # ⚠️ 不要在这里 clearHttpCache() —— 运行中调它会搞坏渲染进程的网络栈，之后页面
+        # 所有 fetch() 全失败（媒体专区加载不出来）。缓存有 96MB 上限兜着。
         # 仅当处于内置 Webview 游戏运行时才触发 load_category()。
         # 对于 Wine/Proton/Linux 外部独立游戏，Webview 在游戏运行期间始终停留在大厅页面，无需也不应重新加载，避免破坏用户的滚动位置、过滤条件与标签页状态！
         if getattr(self, 'is_in_game', False):
@@ -4234,10 +4882,22 @@ class RpgDeckMainWindow(QMainWindow):
         self.btn_mute.setText("🔇 静音" if self.is_muted else "🔊 声音")
 
     def closeEvent(self, event):
-        """主窗口关闭拦截：彻底递归清理所有拉起的游戏与后台守护子进程"""
-        kill_all_child_processes()
-        _release_http_server()
-        super().closeEvent(event)
+        """主窗口关闭拦截：彻底递归清理所有拉起的游戏与后台守护子进程。
+
+        点窗口右上角叉叉，本来指望 Qt「最后一个窗口关掉就自动退出」这套机制去触发
+        app.aboutToQuit → graceful_shutdown。但 native_player.py 里的 QVideoWidget
+        （QtMultimedia 视频渲染）在某些图形后端下会额外占一个隐藏的原生渲染表面，Qt
+        清点"还有没有顶层窗口开着"时可能把它也算进去——主窗口表面上关掉了，Qt却觉得
+        还有一个窗口没关，于是不触发自动退出，进程悄悄留在后台不退出（Steam 因此认为
+        游戏还在跑，得手动去 Steam 里点停止才能再次启动）。不再依赖那套自动判断，这里
+        直接强制调用同一套关闭流程（清子进程、放端口、os._exit 硬退出），不管 Qt 怎么
+        清点窗口数量，点叉叉一定真正退出进程。"""
+        try:
+            if hasattr(self, 'native_player'):
+                self.native_player.stop_and_hide()
+        except Exception:
+            pass
+        graceful_shutdown()
 
 def main():
     """Omni Deck 应用程序全局启动主入口"""
