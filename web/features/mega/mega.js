@@ -312,9 +312,9 @@ function renderMegaFileList(items, query) {
         let actionBtns = '';
         if (item.is_dir) {
             actionBtns += `<button class="manga-mini-btn" onclick="loadMegaFiles('${safePath}')" style="color:#58a6ff;border-color:#388bfd44;font-size:12px;padding:4px 10px;">📂 打开</button> `;
-            actionBtns += `<button class="manga-mini-btn" onclick="megaDownload('${safePath}')" style="background:#238636;color:#fff;border-color:#2ea043;font-size:12px;padding:4px 10px;font-weight:600;" title="整目录打包下载至 /home/deck/Downloads">📥 下载整目录</button> `;
+            actionBtns += `<button class="manga-mini-btn" onclick="megaDownload('${safePath}')" style="background:#238636;color:#fff;border-color:#2ea043;font-size:12px;padding:4px 10px;font-weight:600;" title="整目录打包下载到收件箱目录">📥 下载整目录</button> `;
         } else {
-            actionBtns += `<button class="manga-mini-btn" onclick="megaDownload('${safePath}')" style="background:#238636;color:#fff;border-color:#2ea043;font-size:12px;padding:4px 12px;font-weight:600;" title="高速下载至 /home/deck/Downloads">📥 下载</button> `;
+            actionBtns += `<button class="manga-mini-btn" onclick="megaDownload('${safePath}')" style="background:#238636;color:#fff;border-color:#2ea043;font-size:12px;padding:4px 12px;font-weight:600;" title="高速下载到收件箱目录">📥 下载</button> `;
         }
         actionBtns += `<button class="manga-mini-btn" onclick="megaTrashItem('${safePath}', '${safeName}')" style="color:#f85149;border-color:#f8514944;font-size:12px;padding:4px 8px;" title="移入 MEGA 云端回收站">🗑️</button>`;
 

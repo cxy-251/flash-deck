@@ -21,10 +21,12 @@ function renderCrawlerCards(types) {
         const fieldsHtml = (t.fields || []).map(f => {
             const fieldId = `crawler-field-${t.id}-${f.name}`;
             if (f.options) {
-                const opts = f.options.map(o => `<option value="${escapeAttr(o)}"${o === f.default ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('');
+                const opts = f.options.length
+                    ? f.options.map(o => `<option value="${escapeAttr(o)}"${o === f.default ? ' selected' : ''}>${escapeHtml(f.label)}：${escapeHtml(o)}</option>`).join('')
+                    : `<option value="">（${escapeHtml(f.label)}：暂无）</option>`;
                 return `<select id="${fieldId}" class="search-input" style="flex:1;min-width:150px;" title="${escapeAttr(f.label)}">${opts}</select>`;
             }
-            const placeholder = escapeAttr(f.label + (f.required ? '（必填）' : (f.default ? `（留空默认：${f.default}）` : '（可选）')));
+            const placeholder = escapeAttr(f.label + (f.required ? '（必填）' : (f.default ? `（留空默认：${f.default}）` : (f.label.includes('可选') ? '' : '（可选）'))));
             const value = f.default ? ` value="${escapeAttr(f.default)}"` : '';
             return `<input type="text" id="${fieldId}" class="search-input" style="flex:1;min-width:180px;" placeholder="${placeholder}"${value}>`;
         }).join('');
@@ -129,7 +131,7 @@ Omni.register('downloads', {
     activate() {
         const subStats = document.getElementById('media-sub-stats');
         document.getElementById('total-badge').textContent = '下载中心';
-        if (subStats) subStats.textContent = '把 tools/crawlers/ 里的脚本包装成贴链接下载/一键运行的按钮';
+        if (subStats) subStats.textContent = '通用下载 / 转换任务 · 保存的任务';
         loadCrawlerTypes();
         refreshCrawlerJobs();
     },

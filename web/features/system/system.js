@@ -45,7 +45,7 @@ function updateWanButtonUI(status) {
     const desc = document.getElementById('wan-bubble-desc');
     if (!btn || !dot || !text) return;
 
-    const domainUrl = status.url || 'https://omni.cxy251.uk';
+    const domainUrl = status.url || '（未配置广域网域名）';
 
     if (status.enabled) {
         btn.className = 'nav-net-btn active';
@@ -64,7 +64,7 @@ function updateWanButtonUI(status) {
             bubbleStatus.textContent = '未开启';
         }
         if (urlText) urlText.textContent = domainUrl;
-        if (desc) desc.textContent = '开启后放行外部网络通过 https://omni.cxy251.uk 访问，出门在外随时看漫画！';
+        if (desc) desc.textContent = (status.url ? `开启后放行外部网络通过 ${status.url} 访问，出门在外随时看漫画！` : '先在 var/config/settings.json 里配置 wan_domain');
     }
 }
 
@@ -146,7 +146,8 @@ function copyNetUrl(type) {
         url = currentLanStatus.url || `http://${currentLanStatus.ip}:${currentLanStatus.port}`;
         badgeEl = document.getElementById('lan-copy-badge');
     } else {
-        url = (currentWanStatus && currentWanStatus.url) ? currentWanStatus.url : 'https://omni.cxy251.uk';
+        url = (currentWanStatus && currentWanStatus.url) ? currentWanStatus.url : '';
+        if (!url) { alert('尚未配置广域网域名（settings.json 的 wan_domain）'); return; }
         badgeEl = document.getElementById('wan-copy-badge');
     }
 

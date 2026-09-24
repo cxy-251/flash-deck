@@ -37,6 +37,8 @@ SETTINGS_FILE = os.path.join(CONFIG, "settings.json")
 PRIVACY_FILE = os.path.join(CONFIG, "privacy.json")
 NETWORK_FILE = os.path.join(CONFIG, "network.json")
 COOKIES_TXT = os.path.join(CONFIG, "cookies.txt")
+CRAWLER_SECRETS = os.path.join(CONFIG, "crawler_secrets.json")   # 下载脚本的站点 Cookie / 代理等个人参数
+CRAWLER_TASKS = os.path.join(CONFIG, "crawler_tasks")             # 下载中心「保存的任务」（*.json）
 
 WEBENGINE_PROFILE = os.path.join(DATA, "webengine")      # QtWebEngine 持久化存储（Cookie/LocalStorage/IndexedDB）
 SHORTVIDEO_LIKES = os.path.join(DATA, "shortvideo_likes.json")

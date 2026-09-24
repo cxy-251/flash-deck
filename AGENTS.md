@@ -73,7 +73,7 @@ omni-deck/
 │   ├── players/               #   retro.html  flash.html  rpg-runtime.js(NW.js/Node 兼容层，Qt 注入)
 │   └── vendor/                #   katex marked mermaid
 ├── vendor/                    # 第三方运行时：emulatorjs/ ruffle/ pepflash/ cloudflared/（随仓库分发，断网可用）
-├── tools/crawlers/            # 下载中心调用的脚本（个人工具，gitignore）
+├── tools/crawlers/            # 下载中心脚本：一类任务一个参数化脚本；个人参数在 var/config/crawler_secrets.json，保存的任务在 var/config/crawler_tasks/
 ├── tests/                     # route_snapshot.py  ui_smoke.py  test_path_guard.py
 ├── docs/                      # 项目文档
 └── var/                       # 本机状态（gitignore）：config/ data/ cache/ logs/

@@ -1,24 +1,19 @@
 """
-下载中心：把 tools/crawlers/ 目录下的脚本包装成"提交任务 -> 轮询状态/日志"的后台任务，
-供 hub.js 的下载中心面板调用。
+下载中心：把 tools/crawlers/ 里的通用脚本包装成「填参数 → 后台运行 → 看日志」的任务，
+供前端下载中心面板调用。每类任务一个脚本，参数都来自表单；站点 Cookie、代理等个人参数在
+var/config/crawler_secrets.json；常用的一组参数可以存成 var/config/crawler_tasks/*.task.json，
+在「运行保存的任务」里一键执行。
 
-每个任务用 subprocess 起一个独立的 tools/crawlers/xxx.py 子进程（复用脚本自身已经写好的下载/
-打包/解压逻辑，不重复实现），后台线程读取它的 stdout 逐行追加进内存日志，前端轮询 GET 接口
-拿状态和日志增量，不需要 websocket。
-
-JOB_TYPES 里的任务分两种形态：
-- 带 fields 的（如 bilibili/youtube 下载、伪装压缩包解压）：前端渲染成输入框表单，
-  "action" 对应脚本 argparse 的子命令（没有子命令的脚本 action 留 None）。
-- fields 为空列表的（如 xbookcn 全站爬取、guichuideng/1000ji/fenghuang 有声书批量下载）：
-  这几个脚本本身没有 argparse，每次运行走的是脚本内置的固定清单/全站分类，前端只渲染一个
-  "一键运行"按钮，没有输入框。
-
-tools/crawlers/ 目录里剩下 3 个脚本（build_english_books.py、build_english_module.py、
-extract_all_apk_books.py）没收进 JOB_TYPES——它们是纯本地内容生成器，没有下载/爬取这一步，
-输出内容确定且已经生成过，重新跑一遍不会产生任何新结果，收进"下载中心"没有意义。
+字段规格（前端据此生成输入框/下拉框）：
+  name/label/required/default/options   基本属性
+  positional: True   作为位置参数传给脚本
+  multi: True        按空白/换行拆成多个值（位置参数就是多个参数，否则重复 --name）
+  flag: True         下拉「否/是」，选「是」时传一个不带值的 --name
 """
 import os
+import re
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -32,118 +27,134 @@ _jobs = {}
 _jobs_lock = threading.Lock()
 _MAX_LOG_LINES = 2000
 
+NSFW = {"name": "nsfw", "label": "存到 NSFW 分区", "flag": True, "options": ["否", "是"], "default": "否"}
+
 JOB_TYPES = {
-    "bilibili_audiobook": {
-        "label": "Bilibili 广播剧音频下载",
-        "script": "audiobook_crawler.py",
-        "action": "bilibili",
+    "task": {
+        "label": "▶ 运行保存的任务（var/config/crawler_tasks）",
+        "script": "run_task.py",
+        "fields": [{"name": "task", "label": "任务", "required": True, "options": []}],
+    },
+    "media_fetch": {
+        "label": "🎧 视频站音频 → 有声书（YouTube / B站 / 播放列表）",
+        "script": "media_fetch.py",
         "fields": [
-            {"name": "bvid", "label": "BV号", "required": True},
-            {"name": "album", "label": "专辑名", "default": "鬼吹灯之精绝古城"},
-            {"name": "start", "label": "起始P", "default": "1"},
-            {"name": "end", "label": "结束P", "default": "6"},
-            {"name": "output", "label": "输出文件名（可选）", "required": False},
+            {"name": "urls", "label": "视频/播放列表网址（多个用空格分隔，可写 网址|文件名）", "required": True,
+             "positional": True, "multi": True},
+            {"name": "album", "label": "专辑名", "required": True},
+            {"name": "mode", "label": "保存方式", "options": ["files", "m4b"], "default": "files"},
+            {"name": "items", "label": "只取第几集（如 1-6,9，可选）"},
+            NSFW,
         ],
     },
-    "youtube_audiobook": {
-        "label": "YouTube 广播剧音频下载",
-        "script": "audiobook_crawler.py",
-        "action": "youtube",
+    "tts_drama": {
+        "label": "🎙️ 文本 → 多角色广播剧（Edge TTS）",
+        "script": "tts_drama.py",
         "fields": [
-            {"name": "url", "label": "视频链接", "required": True},
-            {"name": "album", "label": "专辑名", "default": "鬼吹灯之精绝古城"},
-            {"name": "cookies", "label": "Cookies来源（浏览器名如 chrome，或 cookies.txt 路径，可选）", "required": False},
-            {"name": "output", "label": "输出文件名（可选）", "required": False},
+            {"name": "text", "label": "小说文本文件路径", "required": True},
+            {"name": "title", "label": "单集标题（可选）"},
+            {"name": "roles", "label": "角色音色配置 JSON 路径（可选）"},
+            {"name": "album", "label": "专辑名", "required": True},
+            NSFW,
         ],
     },
-    "archive_extract": {
-        "label": "伪装压缩包游戏解压（.mp4/.mkv 还原成游戏文件夹）",
-        "script": "process_archives.py",
-        "action": None,
+    "blog_stories": {
+        "label": "📚 博客站短篇 → 合卷 EPUB",
+        "script": "blog_novels.py",
+        "subcommand": "stories",
         "fields": [
-            {"name": "type", "label": "伪装容器类型", "default": "mp4", "options": ["mp4", "mkv"]},
+            {"name": "site", "label": "站点根地址", "required": True},
+            {"name": "label", "label": "标签名（多个用空格分隔）", "required": True, "multi": True},
+            {"name": "prefix", "label": "书名前缀", "default": "短篇合集"},
+            {"name": "chunk", "label": "每卷篇数", "default": "30"},
+            NSFW,
+        ],
+    },
+    "blog_book": {
+        "label": "📖 博客站标签 → 一本长篇 EPUB",
+        "script": "blog_novels.py",
+        "subcommand": "book",
+        "fields": [
+            {"name": "url", "label": "该书的标签页网址", "required": True},
+            {"name": "title", "label": "书名", "required": True},
+            {"name": "folder", "label": "输出子目录", "default": "长篇"},
+            NSFW,
+        ],
+    },
+    "apk_books": {
+        "label": "📱 APK 内置书库 → EPUB",
+        "script": "apk_books.py",
+        "fields": [
+            {"name": "apk", "label": "APK 文件路径", "required": True},
+            {"name": "root", "label": "书库目录（如 assets/book/世界名著）", "required": True},
+            {"name": "layout", "label": "书库布局", "options": ["folders", "files"], "default": "folders"},
+            {"name": "folder", "label": "输出子目录", "required": True},
+            {"name": "author", "label": "作者", "default": "佚名"},
+        ],
+    },
+    "epub_build": {
+        "label": "🗂️ 本地 md/txt 目录 → EPUB",
+        "script": "epub_build.py",
+        "fields": [
+            {"name": "dir", "label": "目录路径", "required": True},
+            {"name": "title", "label": "书名", "required": True},
+            {"name": "author", "label": "作者", "default": "佚名"},
+            {"name": "folder", "label": "输出子目录", "required": True},
+        ],
+    },
+    "archive_unpack": {
+        "label": "📦 伪装压缩包游戏还原（.mp4/.mkv → 游戏文件夹）",
+        "script": "archive_unpack.py",
+        "fields": [
             {"name": "source", "label": "伪装文件完整路径", "required": True},
-            {"name": "category", "label": "目标专区", "default": "renpy",
+            {"name": "category", "label": "目标游戏分类", "default": "renpy",
              "options": ["renpy", "steam", "unity", "godot", "unreal", "wine", "app", "rpg", "slg"]},
             {"name": "name", "label": "游戏文件夹名（如 043 - New Game Title）", "required": True},
         ],
     },
-    "guichuideng_audiobook": {
-        "label": "《鬼吹灯》有声书批量下载（支持断点续传）",
-        "script": "download_guichuideng.py",
-        "action": None,
-        "fields": [],
-    },
-    "1000ji_audiobook": {
-        "label": "《你都1000级了外面最高30级》有声书批量下载",
-        "script": "download_1000ji.py",
-        "action": None,
-        "fields": [],
-    },
-    "fenghuang_audiobook": {
-        "label": "《新鬼吹灯之凤凰神殿》有声书批量下载",
-        "script": "download_fenghuang.py",
-        "action": None,
-        "fields": [],
-    },
-    "xbookcn_official": {
-        "label": "小书屋 官方32分类全站抓取",
-        "script": "xbookcn_downloader.py",
-        "action": None,
-        "fields": [],
-    },
-    "xbookcn_long": {
-        "label": "小书屋 长篇小说全站抓取",
-        "script": "xbookcn_long_downloader.py",
-        "action": None,
-        "fields": [],
-    },
-    "xbookcn_wave2": {
-        "label": "小书屋 第二波18分类抓取",
-        "script": "xbookcn_wave2_downloader.py",
-        "action": None,
-        "fields": [],
-    },
 }
 
 
-def list_job_types():
-    """列出所有可供前端渲染成表单的下载任务类型。
+def _saved_tasks() -> list:
+    sys.path.insert(0, CRAWLERS_DIR)
+    try:
+        import run_task
+        return [n for n, _label in run_task.list_tasks()]
+    except Exception:
+        return []
+    finally:
+        sys.path.remove(CRAWLERS_DIR)
 
-    Returns:
-        list[dict]: 每项包含 id/label/fields，fields 是表单字段规格列表
-        （name/label/required/default），前端据此动态生成输入框。
-    """
+
+def list_job_types():
+    """前端表单规格（「保存的任务」的下拉选项每次现读任务目录）。"""
     out = []
     for job_id, spec in JOB_TYPES.items():
-        out.append({
-            "id": job_id,
-            "label": spec["label"],
-            "fields": spec["fields"],
-        })
+        fields = [dict(f) for f in spec["fields"]]
+        if job_id == "task":
+            fields[0]["options"] = _saved_tasks()
+            fields[0]["default"] = fields[0]["options"][0] if fields[0]["options"] else ""
+        out.append({"id": job_id, "label": spec["label"], "fields": fields})
     return out
 
 
 def _build_cmd(job_type, params):
-    """把表单参数拼成实际要执行的命令行。
-
-    Args:
-        job_type: JOB_TYPES 里的任务类型 key。
-        params: 前端提交的表单参数字典，缺省/空值的字段会被跳过（用脚本自己的默认值）。
-
-    Returns:
-        list[str]: 传给 subprocess.Popen 的完整命令行参数列表。
-    """
+    """表单参数 -> 命令行。空值字段跳过（用脚本自己的默认值）。"""
     spec = JOB_TYPES[job_type]
-    cmd = [PYTHON_BIN, os.path.join(CRAWLERS_DIR, spec["script"])]
-    if spec.get("action"):
-        cmd.append(spec["action"])
+    cmd = [PYTHON_BIN, "-u", os.path.join(CRAWLERS_DIR, spec["script"])]
+    if spec.get("subcommand"):
+        cmd.append(spec["subcommand"])
     for f in spec["fields"]:
-        name = f["name"]
-        val = params.get(name)
-        if val is None or str(val).strip() == "":
+        val = str(params.get(f["name"]) or "").strip()
+        if not val:
             continue
-        cmd += [f"--{name}", str(val)]
+        if f.get("flag"):
+            if val in ("是", "true", "1", "yes"):
+                cmd.append(f"--{f['name']}")
+            continue
+        values = [v for v in re.split(r"\s+", val) if v] if f.get("multi") else [val]
+        for v in values:
+            cmd += [v] if f.get("positional") else [f"--{f['name']}", v]
     return cmd
 
 
@@ -185,6 +196,8 @@ def start_job(job_type, params):
     if job_type not in JOB_TYPES:
         raise ValueError(f"未知任务类型: {job_type}")
     spec = JOB_TYPES[job_type]
+    if job_type == "task" and params.get("task") not in _saved_tasks():
+        raise ValueError(f"没有这个保存的任务: {params.get('task')}")
     for f in spec["fields"]:
         if f.get("required") and not str(params.get(f["name"], "")).strip():
             raise ValueError(f"缺少必填参数: {f['label']}")
@@ -194,7 +207,7 @@ def start_job(job_type, params):
     job = {
         "id": job_id,
         "type": job_type,
-        "label": spec["label"],
+        "label": spec["label"] if job_type != "task" else f"{spec['label']} · {params.get('task')}",
         "params": params,
         "status": "running",
         "log": [],

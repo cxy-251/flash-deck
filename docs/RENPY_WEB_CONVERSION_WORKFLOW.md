@@ -103,8 +103,8 @@ flowchart TD
 #### 第 5 步：Ren'Py Web 渐进式编译构建
 使用 SDK 内置的 `web_build` 命令行工具编译为 Web 工程：
 ```bash
-/home/deck/Applications/renpy-8.5.3-sdk/renpy.sh \
-  /home/deck/Applications/renpy-8.5.3-sdk/launcher \
+~/Applications/renpy-8.5.3-sdk/renpy.sh \
+  ~/Applications/renpy-8.5.3-sdk/launcher \
   web_build <游戏源码目录> --dest <输出目录>
 ```
 * **输出产物特性**：
@@ -116,7 +116,7 @@ flowchart TD
 ---
 
 #### 第 6 步：Omni-Deck SLG 专区编目接入
-1. **目录编号**：在 `/home/deck/Games/omni-deck/slg_games/` 下创建依次递增的编号目录（如 `008 - Harem x Family`、`009 - ...`）。
+1. **目录编号**：在 默认资源库的 `standalone_games/slg_games/` 下创建依次递增的编号目录（如 `008 - Harem x Family`、`009 - ...`）。
 2. **封面与图标**：
    * 复制 `web-presplash.jpg` 为 `cover.png`（用作大厅网格封面海报）。
    * 复制 `icons/icon-512x512.png` 为 `icon.png`。
@@ -141,5 +141,5 @@ flowchart TD
 ### 三、安全规范守则（严禁违规）
 
 1. **删除文件守则**：严禁执行 `rm` 或 `rm -rf`，所有废弃文件/临时构建缓存必须使用 `gio trash <路径>` 移入回收站。
-2. **源文件保护**：SD 卡（`/run/media/deck/FUCKDECK/`）原游戏文件在验证稳定前必须完好保留，严禁直接在 SD 卡原地破坏性覆写。
+2. **源文件保护**：SD 卡（`/run/media/<用户>/<卷标>/`）原游戏文件在验证稳定前必须完好保留，严禁直接在 SD 卡原地破坏性覆写。
 3. **Git 规范**：严禁随意提交大体积二进制资产，必须通过 `.gitignore` 与 `.gitkeep` 维护工程目录纯净。

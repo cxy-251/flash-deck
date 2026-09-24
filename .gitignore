@@ -16,8 +16,6 @@ __pycache__/
 /cookies.txt
 /services/local_settings.py
 
-# 下载中心调用的个人爬虫脚本（含站点 cookie/账号相关逻辑），按个人工具处理，不进库
-/tools/crawlers/
 
 # 游戏与媒体资源一律不在仓库里——资源库位置在 var/config/settings.json，见 omni/core/library.py
 *.cbz
