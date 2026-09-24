@@ -1,139 +1,122 @@
 # 🤖 Omni Deck — AI Agent & Developer Guidelines (`AGENTS.md`)
 
-> **本文档为所有接手本项目的 AI 编码助手（Antigravity, Gemini, Claude, Cursor 等）与开发者提供全景架构、核心铁律与开发规范。**
+> **本文档为所有接手本项目的 AI 编码助手（Claude、Gemini、Cursor 等）与开发者提供架构全景、核心铁律与开发规范。**
+> 架构细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ---
 
 ## 🚨 核心铁律 (Mandatory Rules)
 
-### 1. 文件删除铁律 (Deletion Policy)
-* 在代表用户删除任何文件或目录时，**必须且只能使用 `gio trash <path>`** 将其移动到回收站；
-* **严禁使用 `rm`、`rm -rf` 或 `rm -f` 进行永久删除**；
-* 任何清理操作必须确保可在回收站中找回。
+### 1. 文件删除铁律
+* 代表用户删除任何文件或目录时，**必须且只能使用 `gio trash <path>`** 移到回收站；
+* **严禁使用 `rm`、`rm -rf`、`rm -f` 永久删除**；任何清理操作都必须能在回收站里找回。
+* 应用自身的删除功能（漫画/小说/音频/短视频的「移至回收站」）同样走 `gio trash`。
 
-### 2. Git 提交与推送铁律 (Git Operations Policy)
-* **严禁主动执行 `git add` 和 `git push`**；
-* 只有在用户明确下达 `add` 或 `push` 指令时方可执行提交与推送操作；
-* 绝对不得覆盖远程仓库的既有提交历史。
+### 2. Git 操作铁律
+* **严禁主动执行 `git add` 与 `git push`**，只有用户明确下达指令时才执行；
+* 绝对不得改写/覆盖远程仓库的既有提交历史。
 
----
+### 3. 路径铁律（防止霰弹式修改）
+* 程序与状态路径只从 `omni/core/paths.py` 取；资源（游戏/媒体）路径只从 `omni/core/library.py` 取；
+  外部工具路径与本机配置只从 `omni/core/settings.py` 取。
+* 业务代码里**禁止**写死 `/home/...`、`/run/media/...`、`expanduser(...)`、`SCRIPT_DIR` 拼路径——
+  `tests/test_path_guard.py` 会拦截。新增配置项 = 在 `settings.DEFAULTS` 加一行；新增资源分类 = 在
+  `library.LAYOUT` 加一行。
 
-## 📌 项目定位与核心愿景 (Project Mission)
-
-**Omni Deck** 是一个专为 **Steam Deck (SteamOS/Linux x86_64)** 与 **PC Linux** 打造的五大引擎多世代全能独立游戏控制中心。
-
-### 🌟 五大底层引擎矩阵：
-1. 🗡️ **RPG Maker 专区 (`rpg_games/`)**：原生 WebGL 硬件加速，内置 `core.js` 全套 NW.js/Node 模拟与 Direct FS 物理存档直通；
-2. 📖 **Ren'Py 专区 (`renpy_games/`)**：全局 Ren'Py SDK 调度直通，原生支持 64位 OpenGL 硬件加速与手柄映射；
-3. 🕹️ **Retro 复古掌机街机专区 (`retro_games/`)**：EmulatorJS 纯原生 WebAssembly 极速底座（GBA/NDS/Arcade/NES/SFC/MD）；
-4. ♟️ **SLG 模拟策略与养成专区 (`slg_games/`)**：现代 2D/3D WebGL 互动模拟引擎；
-5. ⚡ **Flash 殿堂级神作专区 (`flash_games/`)**：内置解除时间炸弹的原生 Pepper Flash 硬件加速微端，直通 14 款官方原装单机神作及《洛克王国》/《造梦西游》。
+### 4. 资源与项目分离
+* 仓库里**不放任何游戏/媒体资源**。资源在「资源库」里（见下），状态在 `var/`，两者都不进 git。
 
 ---
 
-## 📂 项目全景文件结构 (Repository Map)
+## 📌 项目定位
+
+**Omni Deck** 是为 **Steam Deck (SteamOS) / Linux** 打造的本地游戏与媒体中心：PyQt6 + QtWebEngine 桌面壳 +
+本地 HTTP 服务（8998）+ 网页大厅。覆盖 RPG Maker、独立游戏（Steam 精选 / Unity / Ren'Py / Godot / Unreal /
+Wine / 3DS / Windows 软件）、复古街机掌机（EmulatorJS）、SLG、Flash（Ruffle / Pepper Flash）、星际争霸 2 离线对战，
+以及技术文档、漫画、小说、有声书、短视频、MEGA 网盘、下载中心。局域网 / Cloudflare 广域网可远程访问。
+
+---
+
+## 🧭 三条架构原则
+
+1. **UI 数据驱动**：`omni/manifest.json` 是 UI 的唯一数据源——分区、导航顺序、图标标题、访问级别
+   （`public` / `nsfw` / `local`）、所需资源库键。后端据此给 API 套默认鉴权，前端据此渲染导航与权限表。
+2. **代码与 UI 对称**：每个 UI 分区（manifest 的 `module`）在后端和前端各有一个同名目录：
+   `omni/features/<module>/{api.py, service.py}` ↔ `web/features/<module>/{view.html, overlays.html, <module>.js, <module>.css}`。
+3. **资源与项目分离**：游戏与媒体放在一个或多个「资源库」根目录（像 Steam 的游戏库文件夹），每个库都是同一套
+   目录骨架，应用只按逻辑键（如 `games.rpg`、`media.manga`）通过 `omni.core.library` 取路径。
+
+---
+
+## 📂 仓库结构
 
 ```text
 omni-deck/
-├── AGENTS.md                 # [本文件] AI 助手与核心架构规范
-├── pyproject.toml            # uv 标准依赖配置 (PyQt5 + PyQtWebEngine)
-├── uv.lock                   # uv 依赖锁定清单
-├── README.md                 # 用户面向完整说明文档
-├── LICENSE                   # MIT 开源许可证
-├── .gitignore                # 运行时目录过滤与骨架规则
-├── run.sh                    # Linux / SteamOS 全自动自愈启动脚本
-├── main.py                   # Omni Deck 核心调度主程序与 Direct FS 路由 (唯一入口点)
-├── flash_runner.py           # Flash 独立子进程运行时 (main.py 以子进程方式拉起)
-├── sc2_runner.py             # 星际争霸2 对局子进程运行时 (main.py 以子进程方式拉起)
-├── services/                 # 可导入的核心业务逻辑模块 (main.py 统一 sys.path 注入后 import)
-│   ├── app_config.py         # 统一常量入口：资源库根路径/广域网域名/NSFW默认密码, 全模块共用
-│   ├── local_settings.py     # ↑ 真实值 (本机专属，已 gitignore，不进 git)
-│   ├── local_settings.example.py # ↑ 模板 (随代码分发，无真实值)
-│   ├── audio_service.py      # 有声书/音声库
-│   ├── manga_service.py      # 漫画库
-│   ├── novel_service.py      # 小说库 (含在线检索目录)
-│   ├── shortvideo_service.py # 快手/抖音/TikTok 短视频库
-│   ├── mega_service.py       # MEGA 个人网盘集成
-│   ├── sc2_panel_service.py  # 星际争霸2 控制面板后端
-│   ├── privacy_service.py    # NSFW 密码保护与鉴权
-│   ├── crawler_service.py    # 下载中心后台任务队列 (包装 crawlers/ 脚本)
-│   ├── media_index.py        # 媒体库 SQLite 索引缓存
-│   └── native_player.py      # QtMultimedia 原生音视频播放组件
-├── config/                   # 运行时配置 (敏感/本机状态，已 gitignore)
-│   ├── privacy_config.json   # NSFW 密码哈希与登录 Token
-│   ├── .lan_config.json      # 局域网共享开关
-│   └── .wan_config.json      # 公网隧道配置
-├── crawlers/                 # 贴链接/一键下载归档脚本集 (下载中心 UI 的后端实现)
-├── catalogs/                 # 在线小说检索用的静态目录清单 (Gutenberg 中文库、xbookcn)
-├── docs/                     # 内置"技术文档"画廊内容 + 项目自身文档
-├── bin/                      # 内置二进制 (cloudflared 隧道客户端等)
-├── assets/                   # 前端大厅 UI 与独立播放器视口
-│   ├── hub.html              # Omni Deck 五大专区分类控制中心
-│   ├── core.js               # 核心 Polyfill 与环境仿真层 (NW.js / Node.js 模拟)
-│   ├── player_retro.html     # 复古游戏 WASM 全屏视口
-│   └── player_flash.html     # Flash 独立视口
-├── emulatorjs/               # EmulatorJS WASM 核心底座 (含 data/ 核心文件)
-├── rpg_games/                # 🗡️ RPG Maker 游戏专区
-├── renpy_games/              # 📖 Ren'Py 视觉小说专区
-├── retro_games/              # 🕹️ 复古街机掌机 ROM 专区
-├── slg_games/                # ♟️ SLG 模拟策略专区
-└── flash_games/              # ⚡ Flash 殿堂神作专区 (全量入库跟踪)
-    └── plugins/              # Linux/Windows 原生 Pepper Flash PPAPI 插件
+├── main.py / run.sh           # 入口（Steam 快捷方式 → run.sh → main.py → omni.app.main）
+├── omni/                      # Python 包
+│   ├── manifest.json          # ★ UI 唯一数据源
+│   ├── app.py                 # 启动编排：迁移 → 单实例 → HTTP → 后台任务 → Qt
+│   ├── core/                  # 与具体 UI 无关的平台层
+│   │   ├── paths.py           #   程序/状态路径唯一来源
+│   │   ├── settings.py        #   var/config/settings.json（全部本机配置）
+│   │   ├── library.py         #   资源库清单 + 目录骨架 LAYOUT
+│   │   ├── manifest.py  access.py  events.py(SSE 总线)  log.py  process.py  vfs.py  media_index.py  migrate.py
+│   │   └── http/              #   router.py(装饰器路由+鉴权) server.py static.py(白名单) hub.py(大厅页面组装)
+│   ├── network/               # lan.py  wan.py(cloudflared 隧道 + DNS 助手)  state.py
+│   ├── shell/                 # Qt 桌面壳：window.py  native_player.py  flash_runner.py(PyQt5 子进程)
+│   └── features/<module>/     # ★ 与 web/features 对称：games sc2 manga novels docs audio shortvideo mega downloads library privacy system
+├── web/                       # 前端
+│   ├── index.html             #   页面外壳（{{slot}} / {{nav}} 由 hub.py 按 manifest 填充）
+│   ├── app/                   #   core(Omni 注册表) access(权限表) shell(分区切换/分派) events(SSE) boot
+│   ├── ui/                    #   共享组件：components gallery responsive reader/(文本阅读器+Markdown/RST)
+│   ├── features/<module>/     #   ★ 与 omni/features 对称
+│   ├── players/               #   retro.html  flash.html  rpg-runtime.js(NW.js/Node 兼容层，Qt 注入)
+│   └── vendor/                #   katex marked mermaid
+├── vendor/                    # 第三方运行时：emulatorjs/ ruffle/ pepflash/ cloudflared/（随仓库分发，断网可用）
+├── tools/crawlers/            # 下载中心调用的脚本（个人工具，gitignore）
+├── tests/                     # route_snapshot.py  ui_smoke.py  test_path_guard.py
+├── docs/                      # 项目文档
+└── var/                       # 本机状态（gitignore）：config/ data/ cache/ logs/
 ```
 
-> `services/` 里的模块用 `import xxx_service` / `from app_config import ...` 这种扁平写法互相引用——main.py 在最开头把 `services/` 加进
-> `sys.path`，之后全项目（包括 `crawlers/` 下的脚本）都能直接 `import audio_service` 而不用关心它具体存放在哪个子目录，新增模块也一样放进
-> `services/` 即可，不需要改 import 写法。
->
-> 路径、域名、密码这类"跟这台机器/这个人绑定、不该公开"的设置统一走 `app_config.py` + `local_settings.py`
-> 这一套：`app_config.py` 随代码公开分发，只有读取逻辑和通用默认值；真实值写在 `local_settings.py`
-> 里（已 gitignore），改这个文件不用重启（`app_config.py` 会检测它的 mtime 自动重新加载）。新增一项
-> 配置的流程见 `app_config.py` 顶部的文档字符串。
+**资源库**（仓库外，例如 `~/Games/omni_library`、`/run/media/deck/<SD卡>/omni_library`）：
+
+```text
+<库根>/omnilibrary.json                                  # 库标记（id/名称），换挂载点也能认回来
+<库根>/standalone_games/{rpg,retro,slg,flash,steam,renpy,unity,godot,unreal,wine,3ds,app}_games/<游戏>/
+<库根>/media_library/{manga, novels/{standard,nsfw}, audio/{standard,nsfw}, shortvideo/{快手,抖音,TikTok}, docs}/
+```
+
+每个游戏目录可放 `omni.json`（显示名、隐藏、图标、主程序、启动参数、环境变量、Proton 容器 appid），
+取代以前写死在代码里的名称表与按 id 特判。
 
 ---
 
-## ⚙️ 核心架构规范与开发约束
+## 🛠️ 开发约定
 
-### 1. Flash 插件内聚性
-* Flash 运行库统一放置在 `flash_games/plugins/`；
-* 必须随 Git 仓库直接打包入库，保证新设备断网亦能开箱即玩；
-* `scan_games()` 扫描 `flash_games/` 时自动跳过 `plugins` 文件夹。
+### 新增一个 UI 分区
+1. `omni/manifest.json` 的 `sections` 加一项（`id/group/title/icon/access`，需要资源时写 `library` 键），并加进 `groups[].tabs`；
+2. 后端 `omni/features/<module>/api.py`：`api = Api("<module>")`，用 `@api.get/@api.post` 登记路由，
+   默认鉴权取 manifest 的 `access`，个别路由用 `access=` / `deny=` 覆盖；业务放 `service.py`；
+3. 前端 `web/features/<module>/`：`view.html`（根元素 `id="media-<分区id>-view"`）、可选 `overlays.html`、
+   `<module>.js`（末尾 `Omni.register('<module>', { activate() {...}, onScrollEnd, prewarm, onUnlock, onLibraryChanged })`）、`<module>.css`；
+4. `manifest.web.modules` 里登记 `features/<module>`。外壳、导航、权限表都不用改。
 
-### 2. 窗口内纯净全屏
-* 悬浮胶囊中的「🎮 纯净全屏」功能专门服务于《洛克王国》（`17roco.qq.com`）等带网页边框的游戏，单机 SWF、大厅与其他专区游戏自动隐藏。
+### 前端脚本约定
+* 所有脚本是普通 `<script>`，共享全局作用域；HTML 里 `onclick="xxx()"` 直接调用全局函数。
+* 顶层语句只做声明与本文件内的初始化；启动流程统一放 `web/app/boot.js`（最后加载）。
+* 修改 CSS 拆分/加载顺序后，确认层叠结果不变（同优先级规则后加载者生效）。
 
-### 3. Direct FS 存档持久化
-* 所有基于 Web 的游戏通过本地多线程 HTTP 路由与文件系统直通将存档写入物理磁盘（各游戏根目录下的 `save/`），绝不依赖不可靠的临时浏览器 IndexedDB。
-
-### 4. 零垃圾文件与持久化收敛
-* 运行时产生的全部数据严格收敛在 4 个目录中，且全部受到 `.gitignore` 保护：
-  * `data/storage/`：用户本地存档与 Cookie；
-  * `cache/engine_cache/`：Chromium 原生 C++ 磁盘缓存（上限 1GB）；
-  * `.venv/`：由 `uv` 管理的隔离运行环境；
-  * `__pycache__/`：Python 字节码编译缓存。
-
----
-
-## 🛠️ 常用开发与测试指令 (Developer Commands)
-
-### 1. 运行与验证程序
+### 常用命令
 ```bash
-# 方式 A：标准 uv 极速启动
-uv run python main.py
-
-# 方式 B：执行 Linux 自动化自愈脚本
-./run.sh
+./run.sh                                        # 启动（Steam 游戏模式同款）
+.venv/bin/python -m omni --headless --port 8997 --no-workers   # 只起 HTTP 服务调试
+.venv/bin/python tests/test_path_guard.py       # 路径守卫
+.venv/bin/python tests/route_snapshot.py compare --against tests/snapshots/v3.json   # 路由回归
+.venv/bin/python tests/ui_smoke.py              # 前端冒烟（offscreen QtWebEngine，截图在 /tmp/omni-ui-smoke）
+uv lock / uv sync                               # 依赖管理
 ```
+测试实例一律用独立端口 + 临时状态目录（`OMNI_STATE_DIR`），不会碰正在运行的实例。
 
-### 2. 依赖管理
-```bash
-# 查看或锁定依赖
-uv lock
-
-# 更新或同步虚拟环境
-uv sync
-```
-
-### 3. Git 提交规范
-* 遵循语义化提交信息：`feat: ...`, `fix: ...`, `chore: ...`, `docs: ...`；
-* 避免将 `data/`, `cache/`, `.venv/` 等运行时缓存提交进仓库。
+### Git 提交规范
+语义化提交信息：`feat:` / `fix:` / `refactor:` / `chore:` / `docs:` / `test:`；`var/`、`.venv/` 等不进库。

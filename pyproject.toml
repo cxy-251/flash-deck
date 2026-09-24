@@ -1,7 +1,7 @@
 [project]
 name = "omni-deck"
-version = "2.4.0"
-description = "Omni Deck — 专为 Steam Deck (SteamOS/Linux) 打造的单机游戏与漫画阅读双一级控制中心"
+version = "3.0.0"
+description = "Omni Deck — Steam Deck (SteamOS/Linux) 本地游戏与媒体中心"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

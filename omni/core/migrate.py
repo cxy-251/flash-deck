@@ -89,6 +89,12 @@ def _migrate_state():
     for f in (lan_f, wan_f):
         if os.path.exists(f) and os.path.exists(paths.NETWORK_FILE):
             os.remove(f)
+    # 旧状态目录搬空后顺手去掉（os.rmdir 只删空目录，里面还有东西就原样留着）
+    for d in (os.path.join(R, "config"), os.path.join(R, "data"), LEGACY_CACHE):
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass
 
 
 def _looks_like_library(root):

@@ -1,17 +1,9 @@
 # Gemini Project Instructions for Omni Deck
 
-See [AGENTS.md](../AGENTS.md) for full 5-Engine architecture, strict guidelines, and workflow.
+完整规范见 [AGENTS.md](../AGENTS.md)，架构见 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)。
 
-## Quick Summary for AI Assistants:
-1. **Tech Stack**: Python 3.10+, PyQt5, PyQtWebEngine, uv, EmulatorJS (WASM), Ren'Py SDK 8.x/7.x, NW.js polyfill (`core.js`), Pepper Flash PPAPI (`flash_games/plugins/`).
-2. **Key Rules**:
-   - **Mandatory Deletion Policy**: MUST ALWAYS use `gio trash <path>` to delete/trash files. NEVER use `rm` or `rm -rf`.
-   - **Git Operations**: NEVER execute `git add` or `git push` unless explicitly instructed by the user.
-   - **5-Engine Directory Structure**:
-     - `rpg_games/`: RPG Maker MV/MZ (WebGL, NW.js polyfilled, Direct FS Bridge)
-     - `renpy_games/`: Ren'Py Visual Novels (Native SDK bridge)
-     - `retro_games/`: Retro Arcade & Handheld ROMs (EmulatorJS WASM)
-     - `slg_games/`: SLG Simulation & Strategy (WebGL)
-     - `flash_games/`: Flash SWFs + Web Flash (PPAPI Flash, self-contained plugins)
-   - **Flash Support**: Flash binaries reside in `flash_games/plugins/` and are fully tracked in Git.
-   - **Window Fullscreen**: "🎮 纯净全屏" is dynamically displayed for Roco Kingdom (`17roco.qq.com`) and hidden for others.
+要点：
+1. 删除文件只能用 `gio trash`，禁止 `rm`；未经用户明确指示不得 `git add` / `git push`。
+2. 路径只从 `omni/core/paths.py`（程序/状态）、`omni/core/library.py`（资源库）、`omni/core/settings.py`（本机配置）取。
+3. UI 由 `omni/manifest.json` 驱动；每个分区在 `omni/features/<module>/` 与 `web/features/<module>/` 各有同名目录。
+4. 技术栈：Python 3.10+、PyQt6 + QtWebEngine（Flash 网页游戏走 `.venv_flash` 的 PyQt5 子进程）、uv。
