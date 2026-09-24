@@ -1,0 +1,195 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    background-color: #0d1117;
+    color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    padding: 0 24px 24px 24px;
+    user-select: none;
+    overflow-x: hidden;
+}
+.container { max-width: 1300px; margin: 0 auto; }
+
+/* 顶部吸顶区域 (主导航 + 二级页面控制栏) */
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    background-color: #0d1117;
+    padding-top: 18px;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid #21262d;
+}
+
+/* 顶部导航栏 */
+.top-navbar {
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 12px;
+}
+.nav-title {
+    font-size: 20px; font-weight: 700; color: #f0f6fc;
+    display: flex; align-items: center; gap: 10px;
+}
+.badge-total {
+    background: #21262d; border: 1px solid #30363d; color: #8b949e;
+    font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 12px;
+}
+.back-btn {
+    background: #21262d; border: 1px solid #30363d; color: #58a6ff;
+    padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s; outline: none; display: flex; align-items: center; gap: 6px;
+}
+.back-btn:hover { background: #30363d; border-color: #58a6ff; color: #ffffff; }
+.back-btn:active { transform: scale(0.96); }
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}
+
+.search-input {
+    background: #161b22; border: 1px solid #30363d; color: #f0f6fc;
+    padding: 7px 14px; border-radius: 6px; font-size: 13px; outline: none; width: 220px;
+    transition: all 0.2s;
+}
+.search-input:focus { border-color: #58a6ff; width: 280px; }
+
+/* 一级页面切换按钮 */
+.primary-section-btn {
+    background: linear-gradient(135deg, #1f6feb 0%, #8957e5 100%);
+    border: 1px solid #388bfd;
+    color: #ffffff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 8px rgba(31,111,235,0.25);
+}
+.primary-section-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(137,87,229,0.4);
+    filter: brightness(1.15);
+}
+.primary-section-btn:active { transform: scale(0.96); }
+
+/* 媒体中心与小说/文档阅读器样式 */
+.media-nav-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+    border-bottom: 1px solid #21262d;
+    padding-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.media-tab-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.media-tab-btn:hover { background: #30363d; color: #fff; }
+.media-tab-btn.active {
+    background: #1f6feb;
+    border-color: #388bfd;
+    color: #fff;
+    box-shadow: 0 0 12px rgba(56, 139, 253, 0.4);
+}
+
+/* 全局浮动回到顶部按钮 (Scroll to Top) */
+.scroll-to-top-btn {
+    position: fixed;
+    right: 28px;
+    bottom: 28px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(22, 27, 34, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(240, 246, 252, 0.18);
+    color: #c9d1d9;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 9998;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(16px) scale(0.92);
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                bottom 0.25s ease,
+                background 0.2s,
+                border-color 0.2s,
+                color 0.2s,
+                box-shadow 0.2s;
+    user-select: none;
+}
+.scroll-to-top-btn.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+}
+.scroll-to-top-btn.elevated {
+    bottom: 96px;
+}
+.scroll-to-top-btn:hover {
+    color: #58a6ff;
+    border-color: #58a6ff;
+    background: rgba(33, 38, 45, 0.96);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 16px rgba(88, 166, 255, 0.35);
+    transform: translateY(-3px) scale(1.06);
+}
+.scroll-to-top-btn:active {
+    transform: translateY(0) scale(0.95);
+    background: rgba(31, 111, 235, 0.2);
+}
+.scroll-to-top-btn svg {
+    transition: transform 0.2s ease;
+}
+.scroll-to-top-btn:hover svg {
+    transform: translateY(-2px);
+}
+.scroll-to-top-btn .scroll-top-text {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    margin-top: 2px;
+}
+
+/* 媒体专区处于激活状态时，绝对屏蔽游戏二级页面控制栏与返回大厅按钮 */
+body.section-media #list-controls,
+body.section-media #nav-back-btn,
+body.section-media .sub-filter-bar {
+    display: none !important;
+}
+/* NSFW 解锁态 / 局域网可见性受控的分区卡片与标签：显示与隐藏统一由 hub.js 的
+   ACCESS_RULES/applyAccessRules() 通过内联 style.display 控制，这里不再重复一份
+   基于 body/html 类名的隐藏规则（曾经两套机制各管一半，互相不知道对方存在，
+   导致状态切换时出现该显示的没显示、该隐藏的没隐藏的错位）。仅剩 <head> 里那份
+   document.write 注入的 #nsfw-init-style 用于首次渲染前防止内容闪一下，
+   一解锁就会被移除，交棒给上面的 JS 权限表。 */
+/* 非本机访客（局域网/广域网）：藏掉一切联网搜索 / 榜单 / 下载类控件，只留浏览本地媒体 */
+body.remote-client #manga-subtab-week,
+body.remote-client #manga-subtab-month,
+body.remote-client #novel-nsfw-toggle-btn,
+body.remote-client button[onclick="openMangaQueueModal()"],
+body.remote-client button[onclick="openNovelQueueModal()"],
+body.remote-client #manga-incomplete-banner,
+body.remote-client #manga-ranking-section,
+body.remote-client #novel-online-section,
+body.remote-client #manga-online-section {
+    display: none !important;
+}

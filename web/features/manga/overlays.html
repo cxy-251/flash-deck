@@ -1,0 +1,84 @@
+<!-- 漫画专属待下载列表模态弹窗 -->
+<div class="manga-modal-backdrop" id="manga-download-queue-modal">
+    <div class="manga-modal-content" style="max-width:560px;">
+        <div class="manga-modal-header">
+            <div style="font-size:15px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                <span>🖼️ 漫画待下载列表</span>
+                <span id="manga-queue-modal-badge" style="font-size:12px;color:#58a6ff;font-weight:600;">(共 0 部)</span>
+            </div>
+            <button class="manga-mini-btn" onclick="closeMangaQueueModal()" style="font-size:14px;padding:4px 8px;">✕</button>
+        </div>
+        <div class="manga-modal-body" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+            <div id="manga-queue-empty-msg" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                <div style="font-size:32px;margin-bottom:8px;">📭</div>
+                <div style="font-size:14px;color:#c9d1d9;font-weight:600;">漫画待下载列表为空</div>
+                <div style="font-size:12px;color:#8b949e;margin-top:6px;">在漫画区搜索框输入作品名或编号，检索出作品后点击【➕ 加入待下载列表】即可加入此处。</div>
+            </div>
+            <div id="manga-queue-items-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+        <div class="manga-modal-footer" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div style="display:flex;gap:8px;">
+                <button class="manga-btn" onclick="recoverUncompletedMangaDownloads()" id="manga-queue-recover-btn" title="扫描并找回 temp 中未完成或曾被移出的漫画">🔄 找回未完成下载</button>
+                <button class="manga-btn" onclick="clearMangaDownloadQueue()" id="manga-queue-clear-btn">🧹 清空列表</button>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <button class="manga-btn" onclick="closeMangaQueueModal()">关闭</button>
+                <button class="manga-btn" id="manga-queue-stop-btn" style="display:none;background:#21262d;border:1px solid #f8514988;color:#f85149;" onclick="stopMangaBatchDownload()">⏹️ 完工当前后停止</button>
+                <button class="manga-btn" id="manga-queue-seq-download-btn" style="background:#21262d;color:#58a6ff;border:1px solid #388bfd55;" onclick="startMangaQueueBatchDownload(1)" title="逐本顺序下载，稳定低开销">📥 逐本顺序下载</button>
+                <button class="manga-btn manga-btn-primary" id="manga-queue-start-download-btn" onclick="startMangaQueueBatchDownload(3)" title="3路并发同时下载，速度更快">⚡ 3路并发下载 (<span id="manga-queue-btn-count">0</span>)</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 章节选择补充下载模态弹窗 -->
+<div class="manga-modal-backdrop" id="manga-chapters-modal">
+    <div class="manga-modal-content">
+        <div class="manga-modal-header">
+            <div>
+                <div style="font-size:15px;font-weight:700;color:#f0f6fc;" id="modal-album-title">选择下载章节</div>
+                <div style="font-size:12px;color:#8b949e;" id="modal-album-author"></div>
+            </div>
+            <button class="manga-mini-btn" onclick="closeChapterModal()" style="font-size:14px;padding:4px 8px;">✕</button>
+        </div>
+        <div style="padding:8px 20px;background:#0d1117;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center;">
+            <div style="display:flex;gap:8px;">
+                <button class="manga-mini-btn" onclick="selectAllChapters(true)">全选</button>
+                <button class="manga-mini-btn" onclick="selectAllChapters(false)">全不选</button>
+            </div>
+            <span style="font-size:12px;color:#8b949e;" id="modal-selected-count">已选 0 话</span>
+        </div>
+        <div class="manga-modal-body" id="modal-chapters-list" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(130px, 1fr));gap:8px;">
+            <!-- 章节勾选复选框 -->
+        </div>
+        <div class="manga-modal-footer">
+            <label style="font-size:12px;color:#8b949e;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="modal-clean-temp-cb" checked>
+                <span>打包后清理切片碎片</span>
+            </label>
+            <div style="display:flex;gap:8px;">
+                <button class="manga-btn" onclick="closeChapterModal()">取消</button>
+                <button class="manga-btn manga-btn-primary" onclick="confirmDownloadSelectedChapters()">🚀 开始下载所选章节</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 内嵌 Webtoon 瀑布流漫画阅读器全屏视口 -->
+<div id="manga-reader-modal">
+    <div class="reader-topbar">
+        <div class="reader-topbar-tools">
+            <button class="manga-btn reader-back-btn" onclick="closeMangaReader()">◀ <span class="reader-back-text">返回</span></button>
+            <div class="reader-topbar-right">
+                <span id="reader-page-counter" class="reader-counter">0 / 0</span>
+                <button class="manga-btn reader-ext-btn" onclick="openCurrentMangaExternal()" title="使用系统预设应用 (Okular) 打开当前 CBZ">🖥️ <span class="reader-ext-text">外部打开</span></button>
+                <button class="manga-btn" id="manga-fullscreen-btn" onclick="toggleReaderFullscreen()" title="切换全屏">⛶ 全屏</button>
+                <button class="manga-mini-btn" onclick="closeMangaReader()" title="关闭阅读器" style="font-size:15px;padding:4px 8px;line-height:1;margin-left:2px;">✕</button>
+            </div>
+        </div>
+        <div class="reader-title-box" id="reader-title">漫画阅读器</div>
+    </div>
+    <div class="reader-content" id="reader-image-container">
+        <!-- 动态瀑布流流式载入漫画切片 -->
+    </div>
+</div>

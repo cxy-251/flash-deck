@@ -371,7 +371,10 @@ def lookup(game_id: str):
 
 
 def is_nsfw(game: dict) -> bool:
-    return game.get("type") in ("rpg", "slg")
+    """游戏类型就是 manifest 里的分区 id（rpg/slg/retro/flash/standalone）——该分区 access=nsfw 即为 NSFW。"""
+    from omni.core import manifest
+    sec = manifest.section(game.get("type", ""))
+    return bool(sec and sec.get("access") == "nsfw")
 
 
 def game_id_from_path(path: str):

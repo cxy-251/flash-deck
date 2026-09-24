@@ -1,0 +1,63 @@
+<!-- 二级页面 2: 小说画廊 (Novel Gallery - 纯净小说与 NSFW 独立隔离) -->
+<div id="media-novels-view" style="display:none;">
+    <!-- 异步任务进度面板 (有下载任务时自动展现) -->
+    <div id="novel-tasks-container" style="display:none;margin-bottom:16px;">
+        <div class="manga-tasks-card" id="novel-tasks-card"></div>
+    </div>
+
+    <!-- 小说区顶栏：标题 + NSFW 独立隔离按钮 + 右侧模糊搜索与待下载列表 -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <span id="novel-shelf-heading" style="font-size:15px;font-weight:700;color:#f0f6fc;">📚 本地已收录小说</span>
+            <span id="novel-local-count" style="font-size:12px;color:#8b949e;">(...)</span>
+            <button class="tab-btn" id="novel-nsfw-toggle-btn" onclick="toggleNovelNsfw()" title="开启/关闭 NSFW 绅士专区" style="padding:4px 12px;font-size:13px;border-radius:16px;cursor:pointer;transition:all 0.2s;">🔞 NSFW</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="novel-search-input" class="search-input" style="width:280px;" placeholder="🔍 搜索小说书名、作者或关键词 (回车检索)..." oninput="onNovelSearchInput(this.value)" onkeydown="if(event.key==='Enter')onNovelSearchEnter()">
+            <button class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#f0f6fc;font-size:12px;padding:6px 12px;" onclick="openNovelQueueModal()">📋 待下载列表 (<span id="novel-queue-badge-count">0</span>)</button>
+        </div>
+    </div>
+    <!-- NSFW 专属分类快速筛选条 -->
+    <div id="novel-category-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+    <!-- 小说展示区 (本地书架 + 线上检索结果) -->
+    <div id="novel-main-container">
+        <!-- 1. 本地已收录书架 -->
+        <div id="novel-local-section" style="margin-bottom:24px;">
+            <div class="novel-grid" id="novels-shelf-grid"></div>
+            <div id="novels-shelf-empty" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+                <div style="font-size:32px;margin-bottom:8px;">📖</div>
+                <div style="font-size:14px;font-weight:600;color:#f0f6fc;">暂无本地已收录小说</div>
+                <div style="font-size:12px;margin-top:6px;">在上方搜索框检索感兴趣的作品，一键下载打包为标准 EPUB 即可离线畅读！</div>
+            </div>
+        </div>
+
+        <!-- 2. 线上小说检索结果 -->
+        <div id="novel-online-section" style="display:none;margin-top:20px;border-top:1px dashed #30363d;padding-top:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div style="font-size:15px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:6px;">
+                    <span>🌐 小说检索结果</span>
+                    <span id="novel-online-stats" style="font-size:12px;color:#58a6ff;font-weight:600;">(共 0 部)</span>
+                </div>
+            </div>
+
+            <!-- 搜索源与来源展示栏 -->
+            <div id="novel-online-source-bar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#8b949e;margin-bottom:12px;background:#161b22;padding:8px 12px;border-radius:8px;border:1px solid #30363d;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <span>📡 检索数据源:</span>
+                    <a id="novel-source-indicator" href="https://www.gutenberg.org" target="_blank" rel="noopener noreferrer" style="color:#58a6ff;font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer;" title="点击在浏览器中打开: https://www.gutenberg.org">www.gutenberg.org ↗</a>
+                </div>
+                <div id="novel-source-tip" style="font-size:11px;color:#7d8590;">支持书名/作者/分类/题材多维检索 (回车检索)</div>
+            </div>
+
+            <div id="novel-online-loading" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                <div style="font-size:28px;animation:spin 1s linear infinite;display:inline-block;margin-bottom:8px;">⏳</div>
+                <div>正在检索小说书库，请稍候...</div>
+            </div>
+            <div class="novel-grid" id="novels-online-grid"></div>
+            <div id="novel-online-end-tip" style="display:none;text-align:center;padding:30px 20px;color:#484f58;font-size:13px;">
+                —— 已展示全部匹配结果 ——
+            </div>
+        </div>
+    </div>
+</div>

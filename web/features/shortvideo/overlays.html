@@ -1,0 +1,68 @@
+<!-- 短视频播放器（点播，同一个 <video>，本机/局域网都用这个页面，不开新窗口） -->
+<div class="manga-modal-backdrop" id="shortvideo-player-modal" onclick="if(event.target===this) closeShortVideoPlayer()">
+    <div style="background:#000;border:1px solid #30363d;border-radius:12px;overflow:hidden;max-width:420px;width:100%;height:88vh;max-height:88vh;position:relative;box-shadow:0 16px 36px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
+        <button onclick="closeShortVideoPlayer()" title="关闭" style="position:absolute;top:8px;right:8px;z-index:3;background:rgba(22,27,34,0.85);border:1px solid #30363d;color:#fff;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer;">×</button>
+
+        <!-- 视频铺满整个弹窗，控件浮在它上面（overlay，不占额外布局高度，不会被挤出屏幕） -->
+        <video id="shortvideo-player-el" style="width:100%;height:100%;background:#000;display:block;object-fit:contain;" autoplay playsinline preload="auto"></video>
+
+        <div id="shortvideo-player-loading" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#c9d1d9;font-size:12.5px;background:rgba(0,0,0,0.4);pointer-events:none;text-align:center;padding:0 20px;">
+            <span style="font-size:28px;animation:spin 1s linear infinite;">⏳</span>
+            <span>本机第一次打开这条要转码几秒，转完就存住了，之后秒开（局域网设备直接秒开）</span>
+        </div>
+
+        <div id="shortvideo-controls-overlay" style="position:absolute;left:0;right:0;bottom:0;z-index:2;background:linear-gradient(transparent, rgba(0,0,0,.88) 55%);padding:26px 12px 10px;display:flex;flex-direction:column;gap:7px;">
+            <div id="shortvideo-player-title" style="font-size:13px;font-weight:600;color:#fff;line-height:1.3;text-shadow:0 1px 3px rgba(0,0,0,.8);"></div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button class="manga-mini-btn" onclick="toggleShortVideoPlay()" id="shortvideo-play-btn" title="播放/暂停">⏸</button>
+                <button class="manga-mini-btn" onclick="toggleShortVideoLoopMode()" id="shortvideo-loop-btn" title="循环模式：列表循环（点击切换为单片循环）">🔁</button>
+                <button class="manga-mini-btn" onclick="toggleShortVideoLikeFromPlayer()" id="shortvideo-like-btn" title="点赞">🤍</button>
+                <input type="range" id="shortvideo-seek" min="0" max="1000" value="0" style="flex:1;accent-color:#58a6ff;">
+                <span id="shortvideo-time" style="font-size:11px;color:#eee;min-width:74px;text-align:center;">0:00 / 0:00</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <span id="shortvideo-player-meta" style="font-size:11px;color:#ccc;"></span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <button class="manga-mini-btn" onclick="playShortVideoDelta(-1)" title="上一条">⬅</button>
+                    <button class="manga-mini-btn" onclick="playShortVideoDelta(1)" title="下一条">➡</button>
+                    <span style="width:1px;align-self:stretch;background:rgba(255,255,255,.2);margin:0 4px;"></span>
+                    <button class="manga-mini-btn" onclick="deleteShortVideoFromPlayer()" title="移至回收站" style="margin-left:10px;">🗑️</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 图集查看器（抖音多图作品，原图直接显示，不用转码）——跟视频播放器是独立弹窗 -->
+<div class="manga-modal-backdrop" id="shortvideo-gallery-modal" onclick="if(event.target===this) closeShortVideoGallery()">
+    <div style="background:#000;border:1px solid #30363d;border-radius:12px;overflow:hidden;max-width:420px;width:100%;height:88vh;max-height:88vh;position:relative;box-shadow:0 16px 36px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
+        <button onclick="closeShortVideoGallery()" title="关闭" style="position:absolute;top:8px;right:8px;z-index:3;background:rgba(22,27,34,0.85);border:1px solid #30363d;color:#fff;width:30px;height:30px;border-radius:50%;font-size:15px;cursor:pointer;">×</button>
+
+        <img id="shortvideo-gallery-img" style="width:100%;height:100%;background:#000;display:block;object-fit:contain;">
+
+        <!-- 图内左右热区，点一下切上一张/下一张图（图集内部翻页，不是切换作品） -->
+        <div onclick="galleryImgDelta(-1)" style="position:absolute;left:0;top:0;bottom:64px;width:30%;cursor:pointer;"></div>
+        <div onclick="galleryImgDelta(1)" style="position:absolute;right:0;top:0;bottom:64px;width:30%;cursor:pointer;"></div>
+
+        <div style="position:absolute;left:0;right:0;bottom:0;z-index:2;background:linear-gradient(transparent, rgba(0,0,0,.88) 55%);padding:26px 12px 10px;display:flex;flex-direction:column;gap:7px;">
+            <div id="shortvideo-gallery-title" style="font-size:13px;font-weight:600;color:#fff;line-height:1.3;text-shadow:0 1px 3px rgba(0,0,0,.8);"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <span id="shortvideo-gallery-meta" style="font-size:11px;color:#ccc;"></span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <button class="manga-mini-btn" onclick="toggleShortVideoLikeFromGallery()" id="shortvideo-gallery-like-btn" title="点赞">🤍</button>
+                    <span id="shortvideo-gallery-page" style="font-size:11px;color:#eee;">1 / 1</span>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <button class="manga-mini-btn" onclick="galleryImgDelta(-1)" title="上一张图">◀</button>
+                    <button class="manga-mini-btn" onclick="galleryImgDelta(1)" title="下一张图">▶</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <button class="manga-mini-btn" onclick="galleryWorkDelta(-1)" title="上一条作品">⬅</button>
+                    <button class="manga-mini-btn" onclick="galleryWorkDelta(1)" title="下一条作品">➡</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

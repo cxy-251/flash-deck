@@ -1,0 +1,28 @@
+<!-- 短视频画廊 · {{s.title}}（<收件箱>/{{s.dir_name}}/<{{s.creator}}> 与各资源库 media_library/shortvideo/{{s.dir_name}}） -->
+<div id="media-{{s.id}}-view" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:15px;font-weight:700;color:#f0f6fc;">{{s.icon}} {{s.title}}</span>
+            <span id="{{s.id}}-total-count-badge" style="font-size:12px;color:#58a6ff;background:#1f6feb22;padding:2px 8px;border-radius:12px;border:1px solid #388bfd44;">共 ... 条</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="{{s.id}}-search-input" class="search-input" style="width:220px;" placeholder="🔍 搜索标题或{{s.creator}}..." oninput="onShortVideoSearchInput('{{s.platform}}', this.value)">
+            <button class="manga-mini-btn" onclick="rescanShortVideoLibrary('{{s.platform}}')" title="重新扫描 {{s.dir_name}}">🔄 刷新</button>
+        </div>
+    </div>
+
+    <!-- {{s.creator}}（文件夹名）筛选条 -->
+    <div id="{{s.id}}-folder-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+    <div class="manga-grid" id="{{s.id}}-grid"></div>
+
+    <div id="{{s.id}}-loading-more" style="display:none;text-align:center;padding:20px;color:#8b949e;">
+        <span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> 正在加载更多视频...
+    </div>
+
+    <div id="{{s.id}}-empty-msg" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+        <div style="font-size:36px;margin-bottom:10px;">{{s.icon}}</div>
+        <div style="font-size:15px;font-weight:600;color:#f0f6fc;">还没有扫到 {{s.title}} 视频</div>
+        <div style="font-size:13px;margin-top:6px;">用 ExtensionForge 里的{{s.plugin_hint}}下载几条到 <code>~/Downloads/{{s.dir_name}}/&lt;{{s.creator}}&gt;/</code> 试试，插件按{{s.creator}}名分好文件夹，这里就自动按文件夹分标签。</div>
+    </div>
+</div>

@@ -1,0 +1,30 @@
+/* MEGA 网盘集成专属样式 */
+.mega-file-row {
+    display: grid;
+    grid-template-columns: minmax(200px, 1fr) 110px 150px 240px;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid #21262d;
+    font-size: 13px;
+    color: #c9d1d9;
+    transition: background 0.15s ease;
+}
+.mega-file-row:hover {
+    background: #1c2128;
+}
+.mega-file-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mega-file-clickable {
+    cursor: pointer;
+    color: #58a6ff;
+    font-weight: 600;
+}
+.mega-file-clickable:hover {
+    text-decoration: underline;
+}

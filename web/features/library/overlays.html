@@ -1,0 +1,21 @@
+<!-- 目录选择器（资源库/库外程序路径用） -->
+<div class="manga-modal-backdrop" id="library-picker-modal" onclick="if(event.target===this) closeLibraryPicker()">
+    <div class="manga-modal-content" style="max-width:680px;">
+        <div class="manga-modal-header">
+            <div style="font-size:15px;font-weight:700;color:#f0f6fc;">📁 选择目录</div>
+            <button class="manga-mini-btn" onclick="closeLibraryPicker()" style="font-size:14px;padding:4px 8px;">✕</button>
+        </div>
+        <div class="manga-modal-body">
+            <div id="library-picker-shortcuts" class="lib-shortcuts"></div>
+            <div id="library-picker-path" class="lib-picker-path"></div>
+            <div id="library-picker-list" class="lib-picker-list"></div>
+        </div>
+        <div class="manga-modal-footer">
+            <button class="manga-mini-btn" onclick="libraryPickerUp()">⬆ 上一级</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                <button class="manga-btn" id="library-picker-choose-sub" onclick="libraryPickerChoose('omni_library')">选择 …/omni_library（推荐）</button>
+                <button class="manga-btn manga-btn-primary" onclick="libraryPickerChoose('')">选择当前目录</button>
+            </div>
+        </div>
+    </div>
+</div>

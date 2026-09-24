@@ -1,16 +1,19 @@
 {
-  "_doc": "UI 唯一数据源：大厅门户卡片、分类标签、媒体标签、独立游戏子分类、每个分区的访问级别与资源库键都在这里定义。后端按 access 给该分区的 API 套默认鉴权（omni/core/http/router.py 的 Api），前端 /api/manifest 拉取后渲染导航、生成权限表。access: public=不限 / nsfw=本机或解锁后 / local=仅 Steam Deck 本机。加分区 = 这里加一项 + omni/features/<id>/ + web/features/<id>/。",
+  "_doc": "UI 唯一数据源。后端：每个分区的 access 是它 API 的默认鉴权（omni/core/http/router.py 的 Api）。前端：服务端按这里渲染门户卡片/分类标签/媒体标签/独立游戏子分类，并把各功能目录（web/features/<module>/）的 header/subbar/view/overlays 片段、样式、脚本按 web.modules 顺序组装进页面（omni/core/http/hub.py）；页面里的权限表 ACCESS_RULES 也由这里生成。access: public=不限 / nsfw=本机或解锁后 / local=仅 Steam Deck 本机。module: 该分区由哪个功能目录实现（缺省=分区 id）。加分区 = 这里加一项 + omni/features/<module>/ + web/features/<module>/。",
   "version": 1,
   "groups": [
-    {"id": "games", "title": "游戏中心", "brand": "🎮 Omni Deck Games"},
-    {"id": "media", "title": "媒体专区", "brand": "📖 Omni Deck Media"}
+    {"id": "games", "title": "游戏中心", "brand": "🎮 Omni Deck Games",
+     "portal": ["fav", "rpg", "standalone", "sc2", "retro", "slg", "flash"],
+     "tabs": ["fav", "rpg", "standalone", "retro", "slg", "flash", "sc2"]},
+    {"id": "media", "title": "媒体专区", "brand": "📖 Omni Deck Media",
+     "tabs": ["docs", "manga", "novels", "audio", "shortvideo", "shortvideo-douyin", "shortvideo-tiktok", "mega", "downloads", "library"]}
   ],
   "sections": [
-    {"id": "fav", "group": "games", "title": "我的喜欢", "card_title": "收藏与喜欢", "icon": "⭐", "access": "public",
-     "desc": "随时置顶收藏你最爱玩的神作 · 点击任意游戏卡片上的 ⭐ 即可快速加入或移除", "action": "查看精选", "virtual": true},
-    {"id": "rpg", "group": "games", "title": "RPG Maker", "card_title": "RPG Maker 专区", "icon": "🗡️", "access": "nsfw",
+    {"id": "fav", "group": "games", "module": "games", "title": "我的喜欢", "card_title": "收藏与喜欢", "icon": "⭐", "access": "public",
+     "desc": "随时置顶收藏你最爱玩的神作 · 点击任意游戏卡片上的 ⭐ 即可快速加入或移除", "action": "查看精选", "badge": "0 Favorites"},
+    {"id": "rpg", "group": "games", "module": "games", "title": "RPG Maker", "card_title": "RPG Maker 专区", "icon": "🗡️", "access": "nsfw",
      "desc": "经典回合制与动作 RPG · MV/MZ 引擎 · 原生硬件加速 · 物理 Direct FS 存档直通", "library": ["games.rpg"]},
-    {"id": "standalone", "group": "games", "title": "独立游戏", "card_title": "独立游戏专区", "icon": "🚀", "access": "local",
+    {"id": "standalone", "group": "games", "module": "games", "title": "独立游戏", "card_title": "独立游戏专区", "icon": "🚀", "access": "local",
      "desc": "🎮 Steam 精选 · 缺氧/饥荒/死亡细胞 · Unity/Godot/Unreal · 官方 Linux 原生 & Proton 兼容运行时",
      "subcategories": [
        {"id": "steam",  "title": "Steam 精选", "icon": "🎮", "library": "games.steam"},
@@ -24,11 +27,11 @@
      ]},
     {"id": "sc2", "group": "games", "title": "星际争霸2", "card_title": "星际争霸2", "icon": "⭐", "access": "local",
      "desc": "离线打残酷电脑 · 免登录战网 · 自制 mod（5倍采集等）· 1v1 / 2v2 / 3v3 / 4+v4+ 分队地图", "badge": "离线对战"},
-    {"id": "retro", "group": "games", "title": "街机与卡带", "card_title": "街机与掌机卡带", "icon": "🕹️", "access": "public",
+    {"id": "retro", "group": "games", "module": "games", "title": "街机与卡带", "card_title": "街机与掌机卡带", "icon": "🕹️", "access": "public",
      "desc": "GBA · NDS · PS1 · 街机 Arcade · SFC · MD · WASM 极速加载满帧运行", "library": ["games.retro"]},
-    {"id": "slg", "group": "games", "title": "SLG 策略", "card_title": "SLG 策略与互动", "icon": "♟️", "access": "nsfw",
+    {"id": "slg", "group": "games", "module": "games", "title": "SLG 策略", "card_title": "SLG 策略与互动", "icon": "♟️", "access": "nsfw",
      "desc": "SLG 模拟策略 · 动态互动 · 角色养成 · ACGGW 精选专区", "library": ["games.slg"]},
-    {"id": "flash", "group": "games", "title": "Flash 殿堂", "card_title": "Flash 殿堂神作", "icon": "⚡", "access": "local",
+    {"id": "flash", "group": "games", "module": "games", "title": "Flash 殿堂", "card_title": "Flash 殿堂神作", "icon": "⚡", "access": "local",
      "desc": "王国保卫战 · 狂扁小朋友 · 战争进化史 · 坏冰淇淋 · Pepper Flash 原生硬件加速", "library": ["games.flash"]},
 
     {"id": "docs", "group": "media", "title": "技术文档", "icon": "💻", "access": "public", "library": ["media.docs"], "default": true},
@@ -37,18 +40,31 @@
      "library": ["media.novels.standard", "media.novels.nsfw"]},
     {"id": "audio", "group": "media", "title": "音声画廊", "icon": "🎧", "access": "nsfw",
      "library": ["media.audio.standard", "media.audio.nsfw"]},
-    {"id": "shortvideo", "group": "media", "title": "Kwai", "icon": "📱", "access": "nsfw", "platform": "kuaishou",
+    {"id": "shortvideo", "group": "media", "module": "shortvideo", "title": "Kwai", "icon": "📱", "access": "nsfw",
+     "platform": "kuaishou", "dir_name": "快手", "creator": "主播", "plugin_hint": "快手采集插件",
      "library": ["media.shortvideo.kuaishou"]},
-    {"id": "shortvideo-douyin", "group": "media", "title": "Douyin", "icon": "🎬", "access": "nsfw", "platform": "douyin",
+    {"id": "shortvideo-douyin", "group": "media", "module": "shortvideo", "title": "Douyin", "icon": "🎬", "access": "nsfw",
+     "platform": "douyin", "dir_name": "抖音", "creator": "主播", "plugin_hint": "抖音采集插件(003)",
      "library": ["media.shortvideo.douyin"]},
-    {"id": "shortvideo-tiktok", "group": "media", "title": "TikTok", "icon": "🎵", "access": "nsfw", "platform": "tiktok",
+    {"id": "shortvideo-tiktok", "group": "media", "module": "shortvideo", "title": "TikTok", "icon": "🎵", "access": "nsfw",
+     "platform": "tiktok", "dir_name": "TikTok", "creator": "创作者", "plugin_hint": "TikTok 采集插件(004)",
      "library": ["media.shortvideo.tiktok"]},
     {"id": "mega", "group": "media", "title": "MEGA", "icon": "☁️", "access": "local"},
     {"id": "downloads", "group": "media", "title": "下载中心", "icon": "⬇️", "access": "local"},
     {"id": "library", "group": "media", "title": "存储与游戏库", "icon": "🗄️", "access": "local"}
   ],
   "controls": [
-    {"id": "lan-control", "access": "local"},
-    {"id": "wan-control", "access": "local"}
-  ]
+    {"id": "lan-control", "access": "local", "show_display": "inline-flex"},
+    {"id": "wan-control", "access": "local", "show_display": "inline-flex"}
+  ],
+  "web": {
+    "vendor_styles": ["vendor/katex.min.css"],
+    "vendor_scripts": ["vendor/katex.min.js", "vendor/marked.min.js", "vendor/mermaid.min.js"],
+    "core": ["app/shell.css", "ui/components.css", "ui/gallery.css",
+             "app/core.js", "app/zh.js", "app/access.js", "app/shell.js", "app/events.js", "app/native-bridge.js"],
+    "modules": ["ui/reader", "features/privacy", "features/system", "features/games", "features/sc2",
+                "features/manga", "features/novels", "features/docs", "features/audio", "features/shortvideo",
+                "features/mega", "features/downloads", "features/library"],
+    "tail": ["ui/responsive.css", "app/boot.js"]
+  }
 }

@@ -29,13 +29,13 @@ import subprocess
 import urllib.parse
 from typing import List, Dict, Any, Optional
 
-from omni.core import events, library, media_index, paths, settings
+from omni.core import events, library, manifest, media_index, paths, settings
 
 
+# 平台清单来自 manifest 里 module=shortvideo 的分区（跟前端导航是同一份数据）
 PLATFORMS: Dict[str, Dict[str, str]] = {
-    'kuaishou': {'label': 'Kwai', 'dir_name': '快手', 'kind': 'shortvideo:kuaishou'},
-    'douyin':   {'label': 'Douyin', 'dir_name': '抖音', 'kind': 'shortvideo:douyin'},
-    'tiktok':   {'label': 'TikTok', 'dir_name': 'TikTok', 'kind': 'shortvideo:tiktok'},
+    sec["platform"]: {"label": sec["title"], "dir_name": sec["dir_name"], "kind": f"shortvideo:{sec['platform']}"}
+    for sec in manifest.load()["sections"] if sec.get("module") == "shortvideo"
 }
 DEFAULT_PLATFORM = 'kuaishou'
 

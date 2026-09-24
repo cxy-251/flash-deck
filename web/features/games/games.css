@@ -1,0 +1,167 @@
+/* 一级页面: 分类大厅卡片 */
+#portal-view { display: block; animation: fadeIn 0.15s ease; }
+.portal-hero {
+    background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+    border: 1px solid #30363d; border-radius: 12px; padding: 22px 24px; margin-bottom: 20px;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;
+}
+.portal-hero h2 { font-size: 17px; font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
+.portal-hero p { font-size: 13px; color: #8b949e; }
+
+.category-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px;
+}
+.cat-card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 22px 20px;
+    cursor: pointer; transition: all 0.2s ease; position: relative; overflow: hidden;
+    display: flex; flex-direction: column; justify-content: space-between; min-height: 160px;
+}
+.cat-card:hover {
+    transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+}
+.cat-card:active { transform: scale(0.98); }
+.cat-card.fav-card:hover { border-color: #f1e05a; }
+.cat-card.rpg-card:hover { border-color: #58a6ff; }
+.cat-card.renpy-card:hover { border-color: #bc8cff; }
+.cat-card.retro-card:hover { border-color: #e3b341; }
+.cat-card.slg-card:hover { border-color: #3fb950; }
+.cat-card.flash-card:hover { border-color: #ff9b26; }
+
+.cat-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.cat-title { font-size: 17px; font-weight: 700; color: #f0f6fc; display: flex; align-items: center; gap: 8px; }
+.cat-count {
+    font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 10px;
+}
+.fav-count { background: rgba(241, 224, 90, 0.15); color: #f1e05a; border: 1px solid rgba(241, 224, 90, 0.3); }
+.rpg-count { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.3); }
+.renpy-count { background: rgba(188, 140, 255, 0.15); color: #bc8cff; border: 1px solid rgba(188, 140, 255, 0.3); }
+.retro-count { background: rgba(210, 153, 34, 0.15); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.3); }
+.slg-count { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.3); }
+.flash-count { background: rgba(255, 155, 38, 0.15); color: #ff9b26; border: 1px solid rgba(255, 155, 38, 0.3); }
+
+.cat-desc { font-size: 13px; color: #8b949e; line-height: 1.5; margin-bottom: 16px; }
+.cat-action {
+    font-size: 13px; font-weight: 600; color: #58a6ff; display: flex; align-items: center; gap: 4px;
+}
+.fav-card .cat-action { color: #f1e05a; }
+.renpy-card .cat-action { color: #bc8cff; }
+.retro-card .cat-action { color: #e3b341; }
+.slg-card .cat-action { color: #3fb950; }
+.flash-card .cat-action { color: #ff9b26; }
+
+.all-games-btn {
+    width: 100%; background: #161b22; border: 1px dashed #30363d; border-radius: 10px;
+    padding: 14px 18px; color: #c9d1d9; font-size: 14px; font-weight: 600; cursor: pointer;
+    text-align: center; transition: all 0.15s;
+}
+.all-games-btn:hover { background: #21262d; border-color: #58a6ff; color: #58a6ff; }
+
+/* 收藏星星按钮 */
+.fav-star-btn {
+    background: none; border: none; font-size: 15px; color: #484f58;
+    cursor: pointer; padding: 0 2px; border-radius: 4px; transition: all 0.15s; outline: none;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.fav-star-btn:hover { transform: scale(1.25); color: #f1e05a; }
+.fav-star-btn.is-fav {
+    color: #f1e05a; text-shadow: 0 0 8px rgba(241, 224, 90, 0.5);
+}
+
+.engine-badge {
+    font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase;
+    letter-spacing: 0.5px; flex-shrink: 0;
+}
+.badge-rpg { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.3); }
+.badge-renpy { background: rgba(188, 140, 255, 0.15); color: #bc8cff; border: 1px solid rgba(188, 140, 255, 0.3); }
+.badge-unity { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.3); }
+.badge-godot { background: rgba(88, 166, 255, 0.15); color: #58a6ff; border: 1px solid rgba(88, 166, 255, 0.3); }
+.badge-unreal { background: rgba(210, 153, 34, 0.15); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.3); }
+.badge-wine { background: rgba(248, 81, 73, 0.15); color: #f85149; border: 1px solid rgba(248, 81, 73, 0.3); }
+.badge-app { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.3); }
+.badge-standalone { background: rgba(240, 136, 62, 0.15); color: #f0883e; border: 1px solid rgba(240, 136, 62, 0.3); }
+.badge-retro { background: rgba(210, 153, 34, 0.15); color: #e3b341; border: 1px solid rgba(210, 153, 34, 0.3); }
+.badge-slg { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.3); }
+.badge-flash { background: rgba(255, 155, 38, 0.15); color: #ff9b26; border: 1px solid rgba(255, 155, 38, 0.3); }
+.badge-unsupported { background: rgba(110, 118, 129, 0.15) !important; color: #8b949e !important; border: 1px solid rgba(110, 118, 129, 0.35) !important; }
+
+.sub-tab-btn {
+    background: #161b22;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.sub-tab-btn:hover {
+    color: #f0f6fc;
+    border-color: #58a6ff;
+}
+.sub-tab-btn.active {
+    background: #21262d;
+    border-color: #58a6ff;
+    color: #58a6ff;
+}
+
+/* 同系列大卡片包裹容器 */
+.series-container {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+}
+.series-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 16px 20px;
+    transition: all 0.2s ease;
+    width: 100%;
+}
+.series-card:hover {
+    border-color: #58a6ff;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+.series-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #21262d;
+}
+.series-title-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.series-icon {
+    font-size: 18px;
+}
+.series-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #f0f6fc;
+}
+.series-count-badge {
+    font-size: 11.5px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 10px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b949e;
+}
+.series-game-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+}

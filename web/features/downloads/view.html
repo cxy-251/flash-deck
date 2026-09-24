@@ -1,0 +1,24 @@
+<!-- ================= 下载中心：把 crawlers/ 里能贴链接下载的脚本包装成按钮 ================= -->
+<div id="media-downloads-view" style="display:none;">
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+        <div style="font-size:13px;color:#8b949e;line-height:1.6;">
+            ⬇️ 粘贴链接，自动抓取音频并打包为带章节轨的 <code>.m4b</code> 单文件，下载完成后自动刷新有声书曲库索引，无需手动去终端敲脚本。
+        </div>
+    </div>
+
+    <!-- 下载任务卡片：从 /api/crawler/types 动态生成，新增任务类型不用再手写 HTML -->
+    <div id="crawler-cards-container"></div>
+
+    <!-- 任务队列与日志 -->
+    <div id="crawler-jobs-card" style="background:#161b22;border:1px solid #1f6feb66;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="font-size:14px;font-weight:700;color:#58a6ff;display:flex;align-items:center;gap:8px;">
+                <span>⚡ 下载任务</span>
+            </div>
+            <button class="manga-mini-btn" onclick="refreshCrawlerJobs()">🔄 刷新进度</button>
+        </div>
+        <div id="crawler-jobs-list" style="display:flex;flex-direction:column;gap:10px;">
+            <div style="text-align:center;padding:20px;color:#8b949e;font-size:13px;">暂无下载任务</div>
+        </div>
+    </div>
+</div>

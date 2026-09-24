@@ -1,0 +1,33 @@
+<!-- 二级页面 4: 音声画廊 (Audio Gallery) -->
+<div id="media-audio-view" style="display:none;">
+    <!-- 顶栏统计与控制 -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <span id="audio-heading" style="font-size:15px;font-weight:700;color:#f0f6fc;">📻 有声书与广播剧</span>
+            <span id="audio-total-count-badge" style="font-size:12px;color:#58a6ff;background:#1f6feb22;padding:2px 8px;border-radius:12px;border:1px solid #388bfd44;">共 ... 部</span>
+            <button class="tab-btn" id="audio-nsfw-toggle-btn" onclick="toggleAudioNsfw()" title="开启/关闭 NSFW 音声专区" style="padding:4px 12px;font-size:13px;border-radius:16px;cursor:pointer;transition:all 0.2s;">🔞 NSFW</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="audio-search-input" class="search-input" style="width:240px;" placeholder="🔍 搜索有声书或专辑..." oninput="onAudioSearchInput(this.value)">
+            <button class="manga-mini-btn" onclick="playRandomAudio()" title="随机播放一首">🔀 随机播放</button>
+        </div>
+    </div>
+
+    <!-- 专辑与系列快速分类条 -->
+    <div id="audio-album-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+    <!-- 音频曲目列表 -->
+    <div class="audio-track-list" id="audio-track-list"></div>
+
+    <!-- 加载更多指示器 -->
+    <div id="audio-loading-more" style="display:none;text-align:center;padding:20px;color:#8b949e;">
+        <span style="display:inline-block;animation:spin 1s linear infinite;">⏳</span> 正在加载更多音声...
+    </div>
+
+    <!-- 空状态提示 -->
+    <div id="audio-empty-msg" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+        <div style="font-size:36px;margin-bottom:10px;">📻</div>
+        <div style="font-size:15px;font-weight:600;color:#f0f6fc;">未扫描到音频文件</div>
+        <div id="audio-empty-desc" style="font-size:13px;margin-top:6px;">常规有声书存放在 <code>audio/standard/</code> 目录，支持子文件夹按专辑归档。点击 🔞 NSFW 按钮可切换至 SD 卡绅士音声库。</div>
+    </div>
+</div>

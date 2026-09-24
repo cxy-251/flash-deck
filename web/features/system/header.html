@@ -1,0 +1,43 @@
+<!-- 局域网共享控制组件 (悬停展示气泡与可复制网址) -->
+<div class="nav-net-control" id="lan-control-wrapper">
+    <button id="lan-share-btn" class="nav-net-btn" onclick="toggleLanSharing()" title="点击开启或关闭局域网共享">
+        <span id="lan-share-dot" class="nav-net-dot"></span>
+        <span id="lan-share-text">局域网: 关</span>
+    </button>
+    <div class="nav-net-bubble" id="lan-share-bubble">
+        <div class="bubble-header">
+            <span class="bubble-title">📡 局域网跨设备访问</span>
+            <span class="bubble-status" id="lan-bubble-status">未开启</span>
+        </div>
+        <div class="bubble-body">
+            <div class="bubble-url-box" id="lan-url-box" onclick="copyNetUrl('lan')" title="点击复制局域网网址">
+                <span class="bubble-url-text" id="lan-url-text">http://192.168.0.21:8998</span>
+                <span class="bubble-copy-badge" id="lan-copy-badge">📋 点击复制</span>
+            </div>
+            <div class="bubble-desc">同一 Wi-Fi 下的手机、iPad 或电脑浏览器直接访问此网址，可在线看漫画与玩网页轻量游戏。</div>
+        </div>
+    </div>
+</div>
+
+<!-- 广域网公网穿透控制组件 (Cloudflare Tunnel，悬停展示气泡与可复制网址) -->
+<div class="nav-net-control" id="wan-control-wrapper">
+    <button id="wan-share-btn" class="nav-net-btn" onclick="toggleWanSharing()" title="点击开启或关闭 Cloudflare 广域网公网穿透">
+        <span id="wan-share-dot" class="nav-net-dot"></span>
+        <span id="wan-share-text">广域网: 关</span>
+    </button>
+    <div class="nav-net-bubble" id="wan-share-bubble">
+        <div class="bubble-header">
+            <span class="bubble-title">🌍 Cloudflare 广域网公网隧道</span>
+            <span class="bubble-status" id="wan-bubble-status">未开启</span>
+        </div>
+        <div class="bubble-body">
+            <div class="bubble-url-box" id="wan-url-box" onclick="copyNetUrl('wan')" title="点击复制广域网网址">
+                <span class="bubble-url-text" id="wan-url-text">未启动</span>
+                <span class="bubble-copy-badge" id="wan-copy-badge">📋 点击复制</span>
+            </div>
+            <div class="bubble-desc" id="wan-bubble-desc">开启后自动生成全球可访问的官方 HTTPS 加密通道，出门在外（手机 5G/公司电脑）随时看漫画！</div>
+        </div>
+    </div>
+</div>
+
+<button id="system-log-btn" class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#f0f6fc;font-size:12px;padding:6px 12px;" onclick="openLogModal()">📋 日志</button>

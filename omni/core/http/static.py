@@ -12,12 +12,9 @@ from omni.core.vfs import resolve_case_insensitive_path
 
 W = paths.WEB
 
-# 精确路径 -> 文件（含旧 URL 别名，保持书签、缓存页面与局域网设备可用）
+# 精确路径 -> 文件（含旧 URL 别名，保持书签、缓存页面与局域网设备可用）。
+# 大厅页面本身（/、/hub.html）不是静态文件，由 omni/core/http/hub.py 按 manifest 组装，路由见 system/api.py。
 EXACT = {
-    "/": os.path.join(W, "hub.html"),
-    "/hub.html": os.path.join(W, "hub.html"),
-    "/hub.js": os.path.join(W, "hub.js"),
-    "/assets/hub.js": os.path.join(W, "hub.js"),
     "/marked.min.js": os.path.join(W, "vendor", "marked.min.js"),
     "/mermaid.min.js": os.path.join(W, "vendor", "mermaid.min.js"),
     "/player_retro.html": os.path.join(W, "players", "retro.html"),

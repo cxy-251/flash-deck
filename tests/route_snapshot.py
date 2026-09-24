@@ -53,6 +53,12 @@ def start_server(legacy: bool):
         if os.path.exists(real_settings):
             os.makedirs(os.path.join(state, "config"))
             shutil.copy(real_settings, os.path.join(state, "config", "settings.json"))
+        # 媒体索引也复制一份，免得每次测试都冷建上千本漫画/小说的索引（它只是缓存，复制无副作用）
+        for cand in (os.path.join(REPO, "var", "cache", "media_index.db"), os.path.join(REPO, "cache", "media_index.db")):
+            if os.path.exists(cand):
+                os.makedirs(os.path.join(state, "cache"), exist_ok=True)
+                shutil.copy(cand, os.path.join(state, "cache", "media_index.db"))
+                break
         env["OMNI_STATE_DIR"] = state
         cmd = [PY, "-m", "omni", "--headless", "--no-workers", "--port", str(PORT)]
     proc = subprocess.Popen(cmd, cwd=REPO, env=env, stdout=subprocess.DEVNULL,

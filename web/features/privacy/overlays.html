@@ -1,0 +1,76 @@
+<!-- ================= NSFW 隐私密码与访问控制弹窗 ================= -->
+<div class="manga-modal-backdrop" id="nsfw-lock-modal">
+    <div class="manga-modal-content" style="max-width:440px;">
+        <div class="manga-modal-header">
+            <div style="font-size:16px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                <span id="nsfw-modal-icon">🔐</span>
+                <span id="nsfw-modal-title">NSFW 隐私安全验证</span>
+            </div>
+            <button class="close-btn" onclick="closeNsfwModal()" style="font-size:20px;line-height:1;background:none;border:none;color:#8b949e;cursor:pointer;">×</button>
+        </div>
+        <div class="manga-modal-body" id="nsfw-modal-body">
+            <!-- 视图 1: 解锁输入视图 (当处于锁定状态时) -->
+            <div id="nsfw-view-unlock">
+                <div style="color:#8b949e;font-size:13px;line-height:1.5;">
+                    当前专区包含敏感/成人 NSFW 资源（RPG Maker、SLG、漫画画廊、小说画廊、音声画廊）。为防止局域网设备无意展示，非本机访问已自动隐形。
+                </div>
+                <div style="margin-top:14px;">
+                    <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:6px;">请输入访问密码：</label>
+                    <input type="password" id="nsfw-password-input" class="search-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:9px 12px;" placeholder="初始默认密码: deck888" onkeydown="if(event.key==='Enter')submitNsfwUnlock()" />
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#8b949e;cursor:pointer;">
+                        <input type="checkbox" id="nsfw-remember-checkbox" checked />
+                        记住此设备 (7天内免输密码)
+                    </label>
+                    <a href="javascript:void(0)" onclick="switchNsfwModalView('change')" style="font-size:12px;color:#58a6ff;text-decoration:none;">修改密码 ➔</a>
+                </div>
+                <div id="nsfw-unlock-msg" style="margin-top:10px;font-size:12px;display:none;"></div>
+            </div>
+
+            <!-- 视图 2: 已解锁管理视图 (当已解锁或处于本机时) -->
+            <div id="nsfw-view-unlocked" style="display:none;">
+                <div style="display:flex;align-items:center;gap:8px;color:#3fb950;font-weight:600;font-size:15px;margin-bottom:6px;">
+                    <span>✅</span>
+                    <span id="nsfw-unlocked-title">当前专区已完全解锁</span>
+                </div>
+                <div style="color:#8b949e;font-size:13px;line-height:1.5;" id="nsfw-unlocked-desc">
+                    敏感专区（RPG Maker、SLG、漫画、小说、音声）已全部展示。如需离开或避免他人借用设备，可随时在此重新上锁。
+                </div>
+                <div style="margin-top:16px;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <div style="font-size:13px;font-weight:600;color:#f0f6fc;">访问凭证控制</div>
+                        <div style="font-size:12px;color:#8b949e;margin-top:2px;">支持快速重新隐形或重置密码</div>
+                    </div>
+                    <button class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#58a6ff;font-size:12px;padding:5px 10px;" onclick="switchNsfwModalView('change')">🔑 修改密码</button>
+                </div>
+                <div id="nsfw-unlocked-msg" style="margin-top:10px;font-size:12px;display:none;"></div>
+            </div>
+
+            <!-- 视图 3: 修改密码视图 -->
+            <div id="nsfw-view-change" style="display:none;">
+                <div style="color:#8b949e;font-size:13px;line-height:1.5;margin-bottom:12px;">
+                    修改全局访问密码后，所有非本机局域网/广域网设备解锁时均需输入新密码（初始默认密码为 deck888）。
+                </div>
+                <div style="margin-bottom:10px;">
+                    <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:5px;">原访问密码：</label>
+                    <input type="password" id="nsfw-old-pwd-input" class="search-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 12px;" placeholder="初始默认: deck888" />
+                </div>
+                <div style="margin-bottom:10px;">
+                    <label style="font-size:12px;color:#8b949e;display:block;margin-bottom:5px;">新访问密码：</label>
+                    <input type="password" id="nsfw-new-pwd-input" class="search-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 12px;" placeholder="输入新密码 (至少4位字符)" />
+                </div>
+                <div id="nsfw-change-msg" style="margin-top:10px;font-size:12px;display:none;"></div>
+            </div>
+        </div>
+        <div class="manga-modal-footer">
+            <div id="nsfw-footer-left">
+                <button id="nsfw-btn-back" class="nav-net-btn" style="display:none;" onclick="switchNsfwModalView('back')">← 返回</button>
+            </div>
+            <div style="display:flex;gap:8px;" id="nsfw-footer-right">
+                <button id="nsfw-btn-cancel" class="nav-net-btn" onclick="closeNsfwModal()">取消</button>
+                <button id="nsfw-btn-action" class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:6px 16px;" onclick="submitNsfwAction()">解锁</button>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,89 @@
+/* 移动端全宽瀑布流与自适应优化 */
+@media (max-width: 768px) {
+    #manga-reader-modal {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+    .reader-topbar {
+        padding: 6px 10px !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 4px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    .reader-topbar-tools {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        width: 100% !important;
+        gap: 6px !important;
+    }
+    .reader-title-box {
+        font-size: 13px !important;
+        line-height: 1.35 !important;
+        word-break: break-word !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        color: #f0f6fc !important;
+        width: 100% !important;
+        padding-top: 2px !important;
+        border-top: 1px solid #21262d44 !important;
+    }
+    .reader-back-btn {
+        padding: 4px 8px !important;
+        font-size: 12px !important;
+        flex-shrink: 0 !important;
+    }
+    .reader-topbar-right {
+        gap: 4px !important;
+        flex-shrink: 0 !important;
+    }
+    .reader-topbar-right .manga-btn {
+        padding: 4px 6px !important;
+        font-size: 11px !important;
+    }
+    .reader-ext-text {
+        display: none !important;
+    }
+    .reader-counter {
+        font-size: 11px !important;
+    }
+    .reader-img {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+        box-sizing: border-box !important;
+    }
+    .reader-content {
+        padding: 0 0 40px 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+        box-sizing: border-box !important;
+    }
+    .novel-reader-header {
+        padding: 6px 8px !important;
+        gap: 4px !important;
+    }
+    .novel-reader-title {
+        font-size: 13px !important;
+    }
+    .novel-reader-header .reader-tool-btn {
+        padding: 3px 6px !important;
+        font-size: 11px !important;
+    }
+    .novel-content-view {
+        padding: 0 8px;
+    }
+    .novel-chapter-drawer {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        box-shadow: 4px 0 16px rgba(0,0,0,0.5);
+    }
+}

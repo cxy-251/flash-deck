@@ -1,0 +1,57 @@
+<!-- 全局系统与运行日志弹窗 -->
+<div id="log-modal" class="manga-modal-backdrop" onclick="if(event.target===this) closeLogModal()">
+    <div class="manga-modal-content" style="max-width: 960px; width: 95%; height: 85vh; max-height: 85vh;">
+        <div class="manga-modal-header" style="padding: 12px 18px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:16px;font-weight:700;color:#f0f6fc;">📋 Omni-Deck 运行日志监控</span>
+                <span id="log-status-badge" style="font-size:11px;background:#21262d;color:#58a6ff;padding:2px 8px;border-radius:10px;border:1px solid #30363d;">实时监控</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button class="nav-net-btn" style="padding:4px 10px;font-size:12px;" onclick="refreshLogs()">🔄 刷新</button>
+                <button class="nav-net-btn" style="padding:4px 10px;font-size:12px;" onclick="closeLogModal()">✕ 关闭</button>
+            </div>
+        </div>
+
+        <!-- 过滤器工具栏 -->
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 18px;background:#0d1117;border-bottom:1px solid #21262d;font-size:12px;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <label style="color:#8b949e;">日志源:</label>
+                <select id="log-source-select" class="search-input" style="padding:3px 8px;font-size:12px;width:auto;height:28px;" onchange="onLogSourceChange()">
+                    <option value="global">全系统核心日志 (omni_deck.log)</option>
+                </select>
+
+                <label style="color:#8b949e;margin-left:6px;">等级:</label>
+                <select id="log-level-select" class="search-input" style="padding:3px 8px;font-size:12px;width:auto;height:28px;" onchange="refreshLogs()">
+                    <option value="ALL">全部 (ALL)</option>
+                    <option value="INFO">INFO</option>
+                    <option value="WARN">WARN</option>
+                    <option value="ERROR">ERROR</option>
+                    <option value="DEBUG">DEBUG</option>
+                </select>
+
+                <input type="text" id="log-search-input" class="search-input" style="padding:3px 8px;font-size:12px;width:150px;height:28px;" placeholder="🔍 过滤关键字..." oninput="filterDisplayedLogs()">
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <label style="display:flex;align-items:center;gap:4px;color:#8b949e;cursor:pointer;">
+                    <input type="checkbox" id="log-auto-refresh" onchange="toggleLogAutoRefresh(this.checked)" checked> 自动刷新 (2s)
+                </label>
+                <button class="nav-net-btn" style="padding:3px 8px;font-size:12px;" onclick="copyAllLogs()">📄 复制全部</button>
+                <button class="nav-net-btn" style="padding:3px 8px;font-size:12px;color:#f85149;" onclick="clearLogs()">🗑️ 清空</button>
+            </div>
+        </div>
+
+        <!-- 日志显示区 (终端黑底风格) -->
+        <div id="log-console-container" style="flex:1;background:#05070a;padding:12px 16px;overflow-y:auto;font-family:'Courier New',Consolas,monospace;font-size:12px;line-height:1.5;color:#c9d1d9;white-space:pre-wrap;word-break:break-all;">
+            <div style="color:#8b949e;">正在加载运行日志...</div>
+        </div>
+
+        <!-- 底部状态条 -->
+        <div class="manga-modal-footer" style="padding:8px 18px;font-size:12px;color:#8b949e;">
+            <div id="log-summary-text">共 0 条日志</div>
+            <div style="display:flex;gap:12px;">
+                <span>日志文件: <code style="color:#58a6ff;">omni_deck.log</code></span>
+                <span>进程输出: <code style="color:#58a6ff;">cache/game_*.log</code></span>
+            </div>
+        </div>
+    </div>
+</div>

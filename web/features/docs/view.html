@@ -1,0 +1,25 @@
+<!-- 二级页面 3: 技术文档 (Docs Explorer - 资源管理器式分类层级浏览) -->
+<div id="media-docs-view">
+    <div class="docs-explorer-toolbar">
+        <div class="docs-breadcrumbs-bar" id="docs-breadcrumbs-bar">
+            <span class="docs-crumb-item active" onclick="navigateDocsDir('')">🏠 技术文档根目录</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <div class="filter-tabs" id="doc-filter-tabs">
+                <button class="tab-btn active" data-doc-filter="all" onclick="switchDocFilter('all', this)">全部</button>
+                <button class="tab-btn" data-doc-filter="md" onclick="switchDocFilter('md', this)">📙 Markdown</button>
+                <button class="tab-btn" data-doc-filter="rst" onclick="switchDocFilter('rst', this)">📕 reStructuredText</button>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" id="doc-search-input" class="search-input" style="width:210px;" placeholder="🔍 搜索文档..." oninput="onDocSearchInput(this.value)">
+                <button class="reader-tool-btn" onclick="refreshCurrentDocsDir()" title="刷新当前目录">🔄</button>
+            </div>
+        </div>
+    </div>
+    <div class="docs-explorer-grid" id="docs-explorer-grid"></div>
+    <div id="docs-shelf-empty" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;margin-top:14px;">
+        <div style="font-size:36px;margin-bottom:10px;">📂</div>
+        <div style="font-size:15px;font-weight:600;color:#f0f6fc;">此目录下暂无文档</div>
+        <div style="font-size:13px;margin-top:6px;">可将 Markdown (.md) 或 RST (.rst) 技术手册放入当前目录。</div>
+    </div>
+</div>

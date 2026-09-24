@@ -1,0 +1,118 @@
+<!-- 二级页面 5: MEGA -->
+<div id="media-mega-view" style="display:none;">
+    <!-- 顶栏状态与工具栏 -->
+    <div class="mega-header-card" style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px 20px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+            <div style="display:flex;align-items:center;gap:14px;">
+                <div style="font-size:28px;">☁️</div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:18px;font-weight:700;color:#f0f6fc;">MEGA</span>
+                    <span id="mega-auth-badge" class="badge" style="background:#30363d;color:#8b949e;padding:2px 8px;border-radius:10px;font-size:12px;">正在连接服务...</span>
+                </div>
+            </div>
+            <div id="mega-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <!-- 动态注入按钮: 刷新同步、回收站、登出等 -->
+            </div>
+        </div>
+
+        <!-- 存储容量条 (登录后显示) -->
+        <div id="mega-storage-section" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid #21262d;">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#8b949e;margin-bottom:6px;">
+                <span>云端存储已用空间</span>
+                <span id="mega-storage-text" style="color:#58a6ff;font-weight:600;">-- / --</span>
+            </div>
+            <div style="width:100%;height:6px;background:#21262d;border-radius:3px;overflow:hidden;">
+                <div id="mega-storage-bar" style="width:0%;height:100%;background:linear-gradient(90deg, #58a6ff, #2ea043);border-radius:3px;transition:width 0.3s ease;"></div>
+            </div>
+        </div>
+
+        <!-- 流量配额与解除倒计时栏 (登录后显示，刷新时同步更新) -->
+        <div id="mega-quota-section" style="display:none;margin-top:12px;padding:10px 14px;background:#0d1117;border:1px solid #21262d;border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;">
+                    <span id="mega-quota-icon" style="font-size:15px;">⚡</span>
+                    <span style="color:#8b949e;">免费下载带宽配额:</span>
+                    <span id="mega-quota-badge" class="badge" style="background:#238636;color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;">正常充足</span>
+                </div>
+                <div id="mega-quota-detail" style="font-size:12px;color:#8b949e;">
+                    预计恢复时间: <span id="mega-quota-timer" style="color:#f0883e;font-weight:700;">--</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 未登录视图：提示登录以访问个人网盘与回收站 -->
+    <div id="mega-login-panel" style="background:#161b22;border:1px dashed #30363d;border-radius:12px;padding:32px 24px;text-align:center;margin-bottom:16px;">
+        <div style="font-size:42px;margin-bottom:12px;">🔒</div>
+        <div style="font-size:16px;font-weight:700;color:#f0f6fc;margin-bottom:6px;">登录 MEGA 账户访问个人云盘</div>
+        <div style="font-size:13px;color:#8b949e;max-width:520px;margin:0 auto 20px auto;line-height:1.6;">
+            登录后即可浏览您的网盘资源、在浏览器转存资源后一键刷新秒级同步、一键批量下载到本地，以及管理云端回收站。
+        </div>
+        <div style="max-width:360px;margin:0 auto;display:flex;flex-direction:column;gap:12px;">
+            <input type="email" id="mega-login-email" class="search-input" placeholder="MEGA 邮箱账号 (如 user@example.com)" style="width:100%;">
+            <input type="password" id="mega-login-password" class="search-input" placeholder="MEGA 登录密码" style="width:100%;">
+            <input type="text" id="mega-login-2fa" class="search-input" placeholder="2FA 双重验证码 (未开启可留空)" style="width:100%;">
+            <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;padding:9px 16px;font-weight:600;" onclick="doMegaLogin()" id="mega-login-submit-btn">🔐 登录 MEGA 账户</button>
+            <div id="mega-login-msg" style="font-size:12px;color:#f85149;display:none;margin-top:4px;"></div>
+        </div>
+    </div>
+
+    <!-- 已登录视图：云端文件浏览器 (Cloud File Explorer) -->
+    <div id="mega-explorer-panel" style="display:none;margin-bottom:16px;">
+        <!-- 路径导航栏与快捷操作 -->
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 16px;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+            <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:240px;overflow:hidden;">
+                <button class="manga-mini-btn" onclick="megaNavigateUp()" id="mega-nav-up-btn" title="返回上一级目录">⬆️ 上一级</button>
+                <div style="font-size:13px;color:#8b949e;white-space:nowrap;">当前路径:</div>
+                <div id="mega-breadcrumb-path" style="font-size:13px;font-weight:600;color:#58a6ff;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">/</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" id="mega-filter-input" class="search-input" style="width:180px;padding:5px 10px;font-size:12px;" placeholder="🔍 过滤当前列表..." oninput="filterMegaList(this.value)">
+                <button class="manga-mini-btn" onclick="refreshCurrentMegaFolder()" title="重新读取当前云端目录">🔄 刷新列表</button>
+            </div>
+        </div>
+
+        <!-- 云端文件表格 -->
+        <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:minmax(200px, 1fr) 110px 150px 240px;padding:10px 16px;background:#21262d;font-size:12px;color:#8b949e;font-weight:600;border-bottom:1px solid #30363d;">
+                <div>文件 / 目录名</div>
+                <div>大小</div>
+                <div>修改时间</div>
+                <div style="text-align:right;">操作</div>
+            </div>
+            <div id="mega-file-list" style="min-height:160px;max-height:600px;overflow-y:auto;">
+                <!-- 文件项目行 -->
+            </div>
+            <div id="mega-explorer-empty" style="display:none;text-align:center;padding:48px 20px;color:#8b949e;">
+                <div style="font-size:36px;margin-bottom:8px;">📂</div>
+                <div style="font-size:14px;color:#f0f6fc;font-weight:600;">当前目录下没有文件或文件夹</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 倒数第二个：快速下载公开链接卡片 (支持免登录直下) -->
+    <div id="mega-public-downloader-card" style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:600;color:#c9d1d9;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+            <span>🔗 公开分享链接极速直下 (支持直接解析外部 mega.nz 链接高速下载到 Downloads 目录)</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="mega-public-url-input" class="search-input" style="flex:1;min-width:260px;" placeholder="粘贴 MEGA 分享链接，例如 https://mega.nz/file/... 或 https://mega.nz/folder/...">
+            <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:8px 18px;font-weight:600;" onclick="downloadMegaPublicUrl()">📥 开始高速下载</button>
+        </div>
+    </div>
+
+    <!-- 最下面：活跃下载传输卡片 (有活跃任务时自动显示) -->
+    <div id="mega-transfers-card" style="display:none;background:#161b22;border:1px solid #1f6feb66;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="font-size:14px;font-weight:700;color:#58a6ff;display:flex;align-items:center;gap:8px;">
+                <span style="display:inline-block;">⚡</span>
+                <span>传输队列 (<span id="mega-transfers-count">0</span> 个进行中)</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button class="manga-mini-btn" onclick="cancelMegaTransfer('all')" style="color:#f85149;border-color:#f8514955;">✕ 全部取消</button>
+                <button class="manga-mini-btn" onclick="refreshMegaTransfers()">🔄 刷新进度</button>
+            </div>
+        </div>
+        <div id="mega-transfers-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+</div>

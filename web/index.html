@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Omni Deck — 全能游戏控制中心</title>
+    <!--
+        页面外壳：本文件不直接对外提供，由 omni/core/http/hub.py 按 omni/manifest.json 组装——
+        {{nav:*}} 渲染导航，{{slot:*}} 依次拼入各功能目录（web/features/<module>/）的
+        header / subbar / view / overlays 片段，{{styles}} / {{scripts}} 按 manifest.web 的顺序引入。
+    -->
+    {{vendor}}
+    <script>window.OMNI_MANIFEST = {{manifest_json}};</script>
+    <script>
+        // 带 ?category= 直达二级列表时，首帧就把门户页藏掉（脚本还没加载，避免闪一下门户）
+        (function() {
+            var params = new URLSearchParams(window.location.search);
+            var cat = params.get('category');
+            var savedSec = 'games';
+            try { savedSec = localStorage.getItem('omni_primary_section') || 'games'; } catch(e) {}
+            if (savedSec !== 'media' && cat && cat !== 'portal') {
+                var style = document.createElement('style');
+                style.className = 'cat-init-style';
+                style.id = 'cat-init-style';
+                var extra = '';
+                if (cat !== 'rpg') {
+                    extra = ' body:not(.section-media) .tab-btn[data-tab="rpg"] { background: transparent !important; color: #8b949e !important; border-color: #30363d !important; } body:not(.section-media) .tab-btn[data-tab="' + cat + '"] { background: #21262d !important; color: #58a6ff !important; border-color: #58a6ff !important; }';
+                }
+                style.textContent = 'body:not(.section-media) #portal-view { display: none !important; } body:not(.section-media) #list-view { display: block !important; } body:not(.section-media) #list-controls { display: flex !important; } body:not(.section-media) #nav-back-btn { display: flex !important; }' + extra;
+                document.head.appendChild(style);
+            }
+        })();
+    </script>
+    {{styles}}
+    <script>
+        (function() {
+            try {
+                var savedSec = localStorage.getItem('omni_primary_section');
+                if (savedSec === 'media' || savedSec === 'manga') {
+                    document.body ? document.body.classList.add('section-media') : document.documentElement.classList.add('section-media');
+                    document.write('<style id="sec-init-style">#games-section { display: none !important; } #media-section { display: block !important; } #list-controls { display: none !important; } #nav-back-btn { display: none !important; }</style>');
+                }
+                // 首屏防闪：脚本加载前先按 manifest 里 access=nsfw 的分区把入口藏起来；解锁后由
+                // updateNsfwUI() 移除，之后的显隐统一交给 app/access.js 的 ACCESS_RULES（同样由 manifest 生成）。
+                var isDeckLocal = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost');
+                var token = localStorage.getItem('omni_nsfw_token');
+                if (!isDeckLocal && !token) {
+                    document.write('<style id="nsfw-init-style">{{nsfw_init_selectors}} { display: none !important; }</style>');
+                }
+            } catch(e) {}
+        })();
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="sticky-header">
+            <div class="top-navbar">
+                <div class="nav-title" id="nav-title-box">
+                    <span id="header-brand-title">🎮 Omni Deck Games</span>
+                    <span class="badge-total" id="total-badge">0 款游戏</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    {{slot:header}}
+                    <button id="primary-section-btn" class="primary-section-btn" onclick="togglePrimarySection()">📖 媒体专区</button>
+                    <button class="back-btn" id="nav-back-btn" style="display:none;" onclick="showPortalView()">🏠 返回大厅</button>
+                </div>
+            </div>
+            {{slot:subbar}}
+        </div>
+
+        {{slot:games}}
+
+        <!-- ================= 一级板块 B: 媒体专区 ================= -->
+        <div id="media-section" style="display:none;">
+            <div class="media-nav-bar" id="media-nav-bar">
+                <div class="filter-tabs">
+                    {{nav:media-tabs}}
+                </div>
+                <div style="font-size:13px;color:#8b949e;" id="media-sub-stats">共 0 部作品</div>
+            </div>
+            {{slot:media}}
+        </div>
+    </div>
+
+    {{slot:overlays}}
+
+    <!-- 全站通用 Toast（历史原因 id 带 mega-） -->
+    <div id="mega-toast" style="position:fixed;top:24px;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:12px 24px;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.7);font-size:14px;font-weight:600;z-index:99999;display:none;align-items:center;gap:10px;transition:opacity 0.25s ease;pointer-events:none;border:1px solid rgba(255,255,255,0.15);">
+        <span id="mega-toast-icon" style="font-size:18px;">✅</span>
+        <span id="mega-toast-msg">消息内容</span>
+    </div>
+
+    <!-- 全局浮动回到顶部按钮 -->
+    <button id="scroll-to-top-btn" class="scroll-to-top-btn" onclick="scrollToTop()" title="回到顶部 (Scroll to Top)" aria-label="回到顶部">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"></polyline>
+        </svg>
+        <span class="scroll-top-text">顶部</span>
+    </button>
+
+    {{scripts}}
+</body>
+</html>

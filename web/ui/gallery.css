@@ -1,0 +1,365 @@
+/* 漫画区核心样式 */
+#manga-section { animation: fadeIn 0.2s ease; }
+
+.manga-btn {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #f0f6fc;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.manga-btn:hover { background: #30363d; border-color: #58a6ff; }
+.manga-btn-primary {
+    background: #238636;
+    border-color: #2ea043;
+    color: #fff;
+}
+.manga-btn-primary:hover { background: #2ea043; }
+.manga-btn-purple {
+    background: #8957e5;
+    border-color: #a371f7;
+    color: #fff;
+}
+.manga-btn-purple:hover { background: #9e6ffb; }
+
+.manga-tag-pill {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 4px 11px;
+    border-radius: 14px;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    outline: none;
+}
+.manga-tag-pill:hover {
+    background: #30363d;
+    border-color: #bc8cff;
+    color: #f0f6fc;
+    transform: translateY(-1px);
+}
+.manga-tag-pill:active { transform: scale(0.95); }
+
+.manga-btn-in-queue {
+    background: #1f6feb22 !important;
+    border-color: #388bfd !important;
+    color: #58a6ff !important;
+}
+
+.manga-sort-select {
+    background: #161b22;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.15s;
+}
+.manga-sort-select:hover, .manga-sort-select:focus {
+    border-color: #58a6ff;
+    color: #f0f6fc;
+    background: #21262d;
+}
+
+.manga-rank-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: #ffffff;
+    z-index: 2;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    letter-spacing: 0.5px;
+}
+.rank-top-1 {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    border: 1px solid #fbbf24;
+    color: #ffffff;
+}
+.rank-top-2 {
+    background: linear-gradient(135deg, #94a3b8, #64748b);
+    border: 1px solid #cbd5e1;
+    color: #ffffff;
+}
+.rank-top-3 {
+    background: linear-gradient(135deg, #b45309, #78350f);
+    border: 1px solid #d97706;
+    color: #ffffff;
+}
+.rank-other {
+    background: rgba(13, 17, 23, 0.85);
+    border: 1px solid #30363d;
+    color: #8b949e;
+}
+
+/* 漫画卡片网格 */
+.manga-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+    gap: 18px;
+    margin-bottom: 30px;
+    min-height: 40px;
+    /* 卡片一张都还没生成出来之前（切标签到数据真正渲染进去这一小段空档），网格
+       容器本身是透明的，直接透出页面背景 #0d1117——这才是那"最后一下"没盖住的
+       地方。垫上跟卡片占位色一致的底色，从切标签那一刻起就没有纯黑可露了。 */
+    background: #1c2128;
+    border-radius: 12px;
+}
+.manga-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+.manga-card:hover {
+    transform: translateY(-4px);
+    border-color: #bc8cff;
+    box-shadow: 0 8px 24px rgba(188, 140, 255, 0.22);
+}
+.manga-cover-wrap {
+    width: 100%;
+    aspect-ratio: 3/4;
+    /* 图片加载出来之前的占位色——之前跟页面背景(#0d1117)几乎一样黑，一整屏卡片的
+       封面图还没弹出来之前，看着就像"黑屏闪了一下"（短视频网格新建 DOM 一次性
+       铺出几十张卡片时最明显）。换成跟卡片本身背景(#161b22)更接近的灰，占位状态
+       看着像"卡片还没填满"而不是"变黑了"。 */
+    background: #1c2128;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.manga-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+.manga-card:hover .manga-cover { transform: scale(1.04); }
+.manga-cover-fallback {
+    font-size: 38px;
+    color: #8b949e;
+}
+.manga-badge-cbz {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(35, 134, 54, 0.92);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 6px;
+    backdrop-filter: blur(4px);
+}
+.manga-badge-online {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(137, 87, 229, 0.92);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 6px;
+    backdrop-filter: blur(4px);
+}
+.manga-info {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+}
+.manga-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #f0f6fc;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.manga-meta {
+    font-size: 11.5px;
+    color: #8b949e;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+}
+.manga-actions-hover {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: none;
+    gap: 5px;
+}
+.manga-card:hover .manga-actions-hover { display: flex; }
+.manga-mini-btn {
+    background: rgba(22, 27, 34, 0.9);
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 4px 7px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: all 0.15s;
+}
+.manga-mini-btn:hover { background: #30363d; color: #fff; }
+.manga-tag-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1.5px 6px;
+    font-size: 10.5px;
+    background: rgba(188, 140, 255, 0.12);
+    color: #d2a8ff;
+    border: 1px solid rgba(188, 140, 255, 0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    user-select: none;
+}
+.manga-tag-pill:hover {
+    background: rgba(188, 140, 255, 0.28);
+    border-color: #bc8cff;
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+.manga-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 3px;
+    overflow: hidden;
+    max-height: 22px;
+}
+
+/* 任务实时进度面板 */
+.manga-tasks-card {
+    background: #161b22;
+    border: 1px solid #388bfd;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    animation: fadeIn 0.2s;
+}
+.manga-task-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.progress-bar-bg {
+    background: #21262d;
+    border-radius: 6px;
+    height: 8px;
+    width: 100%;
+    overflow: hidden;
+}
+.progress-bar-fill {
+    background: linear-gradient(90deg, #1f6feb, #238636);
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.3s ease;
+}
+
+.novel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 30px;
+}
+.novel-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 6px;
+    position: relative;
+}
+.novel-card:hover {
+    transform: translateY(-2px);
+    border-color: #58a6ff;
+    background: #1c2128;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.novel-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.novel-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.novel-badge-txt { background: #1f6feb22; color: #58a6ff; border: 1px solid #388bfd44; }
+.novel-badge-md { background: #d2992222; color: #e3b341; border: 1px solid #d2992244; }
+.novel-badge-rst { background: #8957e522; color: #bc8cff; border: 1px solid #8957e544; }
+.novel-title {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: #f0f6fc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.novel-excerpt {
+    font-size: 12.5px;
+    color: #8b949e;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    background: #0d1117;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #21262d;
+}
+.novel-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11.5px;
+    color: #8b949e;
+    margin-top: auto;
+}

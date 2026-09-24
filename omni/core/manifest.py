@@ -1,19 +1,19 @@
-"""读取 omni/manifest.json（UI 唯一数据源）。"""
+"""读取 omni/manifest.json（UI 唯一数据源），文件改动后自动重新加载。"""
 import json
 import os
 
-_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "manifest.json")
-_cache = None
+PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "manifest.json")
+_cache = {"mtime": None, "data": None}
 
 
 def load() -> dict:
-    global _cache
-    if _cache is None:
-        with open(_PATH, "r", encoding="utf-8") as f:
+    mtime = os.path.getmtime(PATH)
+    if _cache["data"] is None or _cache["mtime"] != mtime:
+        with open(PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         data.pop("_doc", None)
-        _cache = data
-    return _cache
+        _cache.update(mtime=mtime, data=data)
+    return _cache["data"]
 
 
 def section(section_id: str):

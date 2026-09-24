@@ -1,0 +1,62 @@
+<!-- 全局常驻浮动音频播放底栏 (音声画廊播放器) -->
+<div id="global-audio-player-bar">
+    <audio id="main-audio-element" preload="auto"></audio>
+
+    <!-- 左侧：唱片 + 标题 + 格式标签 (已移除冗余时间) -->
+    <div class="player-left">
+        <div class="player-disc" id="player-disc-icon">🎧</div>
+        <div class="player-track-info">
+            <div class="player-title" id="player-track-title">未播放音声</div>
+            <div class="player-sub-badge" id="player-track-badge">音声画廊 · 正在播放</div>
+        </div>
+    </div>
+
+    <!-- 中间：控制按钮 + 时间轴进度条 -->
+    <div class="player-center">
+        <div class="player-controls">
+            <button class="player-icon-btn" onclick="cycleAudioMode()" id="player-mode-quick-btn" title="播放模式">🔁 列表</button>
+            <button class="player-ctrl-btn" onclick="playPrevAudio()" title="上一首">⏮</button>
+            <button class="player-play-btn" id="player-play-btn" onclick="toggleAudioPlay()" title="播放 / 暂停">▶</button>
+            <button class="player-ctrl-btn" onclick="playNextAudio()" title="下一首">⏭</button>
+            <button class="player-icon-btn" onclick="cycleAudioSpeed()" id="player-speed-quick-btn" title="播放倍速">1.0x</button>
+        </div>
+        <div class="player-progress-wrap">
+            <span class="player-time-num" id="player-cur-time">00:00</span>
+            <div class="player-slider-container">
+                <input type="range" id="player-seek-bar" class="player-slider" min="0" max="100" value="0" oninput="onAudioSeek(this.value)">
+            </div>
+            <span class="player-time-num" id="player-total-time">00:00</span>
+        </div>
+    </div>
+
+    <!-- 右侧：定时/音量/选集/关闭 -->
+    <div class="player-right">
+        <button class="player-pill-btn" id="player-chapters-btn" onclick="toggleAudioChaptersModal()" title="查看各回章节目录" style="display:none;background:#23863622;color:#3fb950;border-color:#2ea04366;">📑 选集 (<span id="player-chapter-badge">0</span>)</button>
+        <button class="player-pill-btn" id="player-sleep-btn" onclick="cycleSleepTimer()" title="定时关闭">⏳ 定时</button>
+        <div class="player-volume-box">
+            <span style="font-size:14px;color:#8b949e;">🔊</span>
+            <input type="range" id="player-vol-slider" class="player-slider player-vol-slider" min="0" max="1" step="0.05" value="1" oninput="setAudioVolume(this.value)" title="音量调节">
+        </div>
+        <button class="player-close-btn" onclick="hideGlobalAudioPlayer()" title="关闭播放器">✕</button>
+    </div>
+</div>
+
+<!-- ================= 音频选集与章节目录浮动抽屉 (Audio Chapters Drawer) ================= -->
+<div class="manga-modal-backdrop" id="audio-chapters-modal" onclick="closeAudioChaptersModal(event)">
+    <div class="manga-modal-content" style="max-width:540px;max-height:82vh;" onclick="event.stopPropagation()">
+        <div class="manga-modal-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:16px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                <span>📑</span>
+                <span id="audio-chapters-modal-title">章节选集目录</span>
+            </div>
+            <button class="close-btn" onclick="closeAudioChaptersModal()" style="font-size:20px;line-height:1;background:none;border:none;color:#8b949e;cursor:pointer;">×</button>
+        </div>
+        <div class="manga-modal-body" style="padding:16px 20px;overflow-y:auto;max-height:65vh;">
+            <div style="font-size:12px;color:#8b949e;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+                <span id="audio-chapters-summary">共 0 回</span>
+                <span style="color:#58a6ff;">💡 点击任意回目即刻瞬移定位播放</span>
+            </div>
+            <div id="audio-chapters-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+    </div>
+</div>

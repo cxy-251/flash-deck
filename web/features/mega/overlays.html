@@ -1,0 +1,24 @@
+<!-- MEGA 云端回收站模态弹窗 -->
+<div class="manga-modal-backdrop" id="mega-trash-modal">
+    <div class="manga-modal-content" style="max-width:720px;">
+        <div class="manga-modal-header">
+            <div style="font-size:15px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                <span>🗑️ MEGA 云端回收站 (Rubbish Bin)</span>
+                <span id="mega-trash-modal-badge" style="font-size:12px;color:#58a6ff;font-weight:600;">(0 个项目)</span>
+            </div>
+            <button class="manga-mini-btn" onclick="closeMegaTrashModal()" style="font-size:14px;padding:4px 8px;">✕</button>
+        </div>
+        <div class="manga-modal-body" style="max-height:450px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+            <div id="mega-trash-empty-msg" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                <div style="font-size:32px;margin-bottom:8px;">✨</div>
+                <div style="font-size:14px;color:#c9d1d9;font-weight:600;">回收站空空如也</div>
+                <div style="font-size:12px;color:#8b949e;margin-top:6px;">当您在云盘中删除文件时，文件会被安全移至此处。</div>
+            </div>
+            <div id="mega-trash-items-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+        <div class="manga-modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+            <button class="manga-btn" onclick="doEmptyMegaTrash()" id="mega-trash-empty-btn" style="background:#b62324;border-color:#da3633;color:#fff;">🧹 一键彻底清空回收站</button>
+            <button class="manga-btn" onclick="closeMegaTrashModal()">关闭</button>
+        </div>
+    </div>
+</div>

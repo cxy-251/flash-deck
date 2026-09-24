@@ -1,0 +1,147 @@
+/* 资源管理器式技术文档 (Docs Explorer) 专属样式 */
+.docs-explorer-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+    background: #161b22;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #30363d;
+}
+.docs-breadcrumbs-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 13px;
+}
+.docs-crumb-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #8b949e;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 6px;
+    transition: all 0.15s;
+    font-weight: 500;
+}
+.docs-crumb-item:hover {
+    background: #21262d;
+    color: #58a6ff;
+}
+.docs-crumb-item.active {
+    color: #f0f6fc;
+    font-weight: 700;
+    cursor: default;
+    background: #1f6feb22;
+    border: 1px solid #388bfd44;
+}
+.docs-crumb-sep {
+    color: #484f58;
+    font-size: 12px;
+    user-select: none;
+}
+.docs-explorer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+}
+.docs-folder-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+.docs-folder-card:hover {
+    background: #1f242c;
+    border-color: #58a6ff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.docs-folder-icon {
+    font-size: 30px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.docs-folder-info {
+    overflow: hidden;
+    flex: 1;
+}
+.docs-folder-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #f0f6fc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.docs-folder-meta {
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.docs-file-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 115px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.docs-file-card:hover {
+    background: #1f242c;
+    border-color: #388bfd;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.docs-file-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+.docs-file-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f0f6fc;
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+}
+.docs-file-path-hint {
+    font-size: 11px;
+    color: #8b949e;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.docs-file-meta {
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 6px;
+}

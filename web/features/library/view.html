@@ -1,0 +1,51 @@
+<!-- 存储与游戏库（仅本机）：资源库根目录清单、添加/修复骨架、收件箱与外部工具路径 -->
+<div id="media-library-view" style="display:none;">
+    <div class="lib-header">
+        <div>
+            <div class="lib-title">🗄️ 存储与游戏库</div>
+            <div class="lib-sub">像 Steam 的「游戏库文件夹」一样登记多个资源库（内置存储、SD 卡、移动硬盘……）。每个库都是同一套目录骨架，添加时自动建好；游戏与媒体会从所有在线的库里合并展示，新下载写入默认库。</div>
+        </div>
+        <button class="manga-btn" onclick="loadLibraryOverview()">🔄 刷新</button>
+    </div>
+
+    <div id="library-dup-warning" class="lib-warning" style="display:none;"></div>
+    <div id="library-list" class="lib-list"></div>
+
+    <div class="lib-card">
+        <div class="lib-card-title">➕ 添加资源库</div>
+        <div class="lib-row">
+            <input type="text" id="library-add-path" class="search-input lib-grow" placeholder="资源库根目录，例如 /run/media/deck/SD卡/omni_library" oninput="libraryPreviewDebounced()">
+            <button class="manga-mini-btn" onclick="openLibraryPicker('library-add-path')">📁 浏览…</button>
+        </div>
+        <div class="lib-row">
+            <input type="text" id="library-add-label" class="search-input lib-grow" placeholder="名称（可选，如：SD 卡）">
+            <label class="lib-check"><input type="checkbox" id="library-add-default"> 设为默认库（新下载写入这里）</label>
+        </div>
+        <div id="library-add-preview" class="lib-preview"></div>
+        <div class="lib-row">
+            <button class="manga-btn manga-btn-primary" onclick="libraryAdd()">建立目录骨架并添加</button>
+        </div>
+    </div>
+
+    <div class="lib-card">
+        <div class="lib-card-title">📥 收件箱与外部工具</div>
+        <div class="lib-card-desc">收件箱是浏览器插件 / MEGA 的原始下载落点（短视频画廊也会读它），不是资源库，不参与游戏扫描。</div>
+        <div id="library-settings-form" class="lib-form"></div>
+        <div class="lib-row">
+            <button class="manga-btn manga-btn-primary" onclick="librarySaveSettings()">💾 保存设置</button>
+        </div>
+    </div>
+
+    <div class="lib-card">
+        <div class="lib-card-title">🪟 库外游戏 / 应用</div>
+        <div class="lib-card-desc">装在资源库之外、需要单独登记的程序（例如 Proton 容器里的软件），会出现在「独立游戏」对应的子分类里。</div>
+        <div id="library-external-list" class="lib-external-list"></div>
+        <div class="lib-row">
+            <input type="text" id="library-ext-id" class="search-input" style="width:180px;" placeholder="名称/ID">
+            <input type="text" id="library-ext-path" class="search-input lib-grow" placeholder="程序所在目录">
+            <button class="manga-mini-btn" onclick="openLibraryPicker('library-ext-path')">📁</button>
+            <select id="library-ext-category" class="search-input" style="width:150px;"></select>
+            <button class="manga-mini-btn" onclick="libraryAddExternal()">➕ 登记</button>
+        </div>
+    </div>
+</div>

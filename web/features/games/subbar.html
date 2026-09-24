@@ -1,0 +1,16 @@
+    <!-- 二级页面控制栏 (分类标签 + 统计 + 独立游戏内搜索框) -->
+    <div class="list-controls" id="list-controls" style="display:none;flex-direction:column;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+            <div class="filter-tabs">
+                {{nav:game-tabs}}
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <input type="text" id="game-search-input" class="search-input" style="width:230px;" placeholder="🔍 搜索游戏或编号 (如 001)..." oninput="onGameSearchInput(this.value)">
+                <div style="font-size:13px;color:#8b949e;" id="filter-stats">共 0 款游戏</div>
+            </div>
+        </div>
+        <div class="sub-filter-bar" id="standalone-sub-filters" style="display:none;margin-top:6px;gap:8px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:12px;color:#8b949e;margin-right:2px;">引擎/专区:</span>
+            {{nav:standalone-subtabs}}
+        </div>
+    </div>

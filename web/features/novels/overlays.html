@@ -1,0 +1,27 @@
+<!-- 小说专属待下载列表模态弹窗 -->
+<div class="manga-modal-backdrop" id="novel-download-queue-modal">
+    <div class="manga-modal-content" style="max-width:560px;">
+        <div class="manga-modal-header">
+            <div style="font-size:15px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                <span>📖 小说待下载列表</span>
+                <span id="novel-queue-modal-badge" style="font-size:12px;color:#58a6ff;font-weight:600;">(共 0 部)</span>
+            </div>
+            <button class="manga-mini-btn" onclick="closeNovelQueueModal()" style="font-size:14px;padding:4px 8px;">✕</button>
+        </div>
+        <div class="manga-modal-body" style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+            <div id="novel-queue-empty-msg" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                <div style="font-size:32px;margin-bottom:8px;">📭</div>
+                <div style="font-size:14px;color:#c9d1d9;font-weight:600;">小说待下载列表为空</div>
+                <div style="font-size:12px;color:#8b949e;margin-top:6px;">在小说专区搜索框输入书名或作者，检索出作品后点击【➕ 加入待下载列表】即可加入此处批量封箱为 EPUB。</div>
+            </div>
+            <div id="novel-queue-items-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+        <div class="manga-modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+            <button class="manga-btn" onclick="clearNovelDownloadQueue()" id="novel-queue-clear-btn">🧹 清空列表</button>
+            <div style="display:flex;gap:10px;">
+                <button class="manga-btn" onclick="closeNovelQueueModal()">关闭</button>
+                <button class="manga-btn manga-btn-primary" id="novel-queue-start-download-btn" onclick="startNovelQueueBatchDownload()">📥 开始批量打包 EPUB (<span id="novel-queue-btn-count">0</span>)</button>
+            </div>
+        </div>
+    </div>
+</div>

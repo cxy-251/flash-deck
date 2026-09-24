@@ -44,6 +44,15 @@ def mem(req):
     return req.json(info)
 
 
+def _hub(req):
+    from omni.core.http import hub
+    return req.send(200, hub.render().encode("utf-8"), "text/html; charset=utf-8")
+
+
+api.get("/")(_hub)
+api.get("/hub.html")(_hub)
+
+
 @api.get("/api/manifest")
 def get_manifest(req):
     return req.json(manifest.load())

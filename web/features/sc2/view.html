@@ -1,0 +1,35 @@
+<!-- 星际争霸2 对战专属面板：不是游戏卡片网格，是选图/选mod/开局的操作台 -->
+<div id="sc2-panel" style="display:none;">
+    <div id="sc2-settings" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+         background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+        <div class="sc2-race-group" data-role="race">
+            <span style="color:#8b949e;font-size:13px;margin-right:6px;">你的种族</span>
+        </div>
+        <div id="sc2-mods-row" style="display:flex;gap:12px;align-items:center;"></div>
+        <button class="sc2-btn sc2-btn-secondary" onclick="sc2OpenEditor()">🛠️ 打开银河编辑器</button>
+        <div style="margin-left:auto;font-size:13px;color:#8b949e;">↓ 点地图卡片配置对手，全是电脑，玩家只有你一个</div>
+    </div>
+    <div id="sc2-team-tabs" style="display:flex;gap:8px;margin-bottom:14px;"></div>
+    <div id="sc2-status-banner" style="display:none;margin-bottom:14px;padding:12px 16px;border-radius:8px;font-size:14px;"></div>
+    <div id="sc2-map-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;"></div>
+    <div id="sc2-match-modal" class="sc2-modal-overlay" style="display:none;">
+        <div class="sc2-modal">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                <div id="sc2-modal-title" style="font-size:16px;font-weight:600;color:#f0f6fc;"></div>
+                <button class="sc2-modal-x" onclick="sc2CloseModal()">×</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                <span style="color:#8b949e;font-size:13px;">电脑对手数量</span>
+                <button class="sc2-stepper-btn" onclick="sc2ChangeOppCount(-1)">−</button>
+                <span id="sc2-opp-count-label" style="min-width:1.2em;text-align:center;color:#f0f6fc;"></span>
+                <button class="sc2-stepper-btn" onclick="sc2ChangeOppCount(1)">+</button>
+                <span id="sc2-opp-count-hint" style="color:#8b949e;font-size:12px;"></span>
+            </div>
+            <div id="sc2-opp-rows"></div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
+                <button class="sc2-btn sc2-btn-secondary" onclick="sc2CloseModal()">取消</button>
+                <button class="sc2-btn sc2-btn-primary" onclick="sc2ConfirmPlay()">开始对局</button>
+            </div>
+        </div>
+    </div>
+</div>

@@ -209,11 +209,13 @@ def ensure_skeleton(root: str) -> list:
 
 def mount_points() -> list:
     """可移动存储的挂载点（SD 卡、U 盘……），给目录选择器当快捷入口。"""
-    out = []
+    out, seen = [], set()
     for base in ("/run/media", "/media"):
-        for mount in sorted(glob.glob(os.path.join(base, "*", "*"))):
-            if os.path.isdir(mount):
-                out.append(mount)
+        for cand in sorted(glob.glob(os.path.join(base, "*")) + glob.glob(os.path.join(base, "*", "*"))):
+            real = os.path.realpath(cand)
+            if real not in seen and os.path.ismount(real):
+                seen.add(real)
+                out.append(real)
     return out
 
 

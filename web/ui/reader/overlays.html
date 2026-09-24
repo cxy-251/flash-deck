@@ -1,0 +1,38 @@
+<!-- 全能文本阅读器全屏视口 (TXT / Markdown / RST) -->
+<div id="novel-reader-modal" class="novel-theme-dark">
+    <div class="novel-reader-container">
+        <div class="novel-reader-header">
+            <div style="display:flex;align-items:center;gap:10px;overflow:hidden;flex:1;">
+                <button class="reader-tool-btn" onclick="closeNovelReader()">◀ 返回中枢</button>
+                <span id="novel-reader-ext-badge" class="novel-badge novel-badge-txt">TXT</span>
+                <span id="novel-reader-title" class="novel-reader-title">文档标题</span>
+                <span id="novel-reader-meta" style="font-size:12px;color:#8b949e;white-space:nowrap;"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                <button id="novel-chapter-btn" class="reader-tool-btn" onclick="toggleChapterDrawer()">📋 目录</button>
+                <button class="reader-tool-btn" onclick="changeFontSize(-1)" title="缩小字号">A-</button>
+                <button class="reader-tool-btn" onclick="changeFontSize(1)" title="放大字号">A+</button>
+                <button class="reader-tool-btn" id="novel-theme-btn" onclick="cycleReaderTheme()" title="切换配色">🌙 暗夜</button>
+                <button class="reader-tool-btn" id="novel-fullscreen-btn" onclick="toggleNovelFullscreen()">⛶ 全屏</button>
+                <button class="manga-mini-btn" onclick="closeNovelReader()" style="font-size:16px;padding:4px 10px;">✕</button>
+            </div>
+        </div>
+        <div class="novel-reader-body">
+            <div class="novel-chapter-drawer" id="novel-chapter-drawer" style="display:none;">
+                <div style="font-weight:700;padding:12px 14px;border-bottom:1px solid var(--novel-border);color:var(--novel-heading);">📑 章节目录 (<span id="novel-chapter-count">0</span>)</div>
+                <div id="novel-chapter-list" style="overflow-y:auto;flex:1;padding:8px;"></div>
+            </div>
+            <div class="novel-content-scroll" id="novel-content-scroll">
+                <div class="novel-content-view" id="novel-content-view">
+                    <div style="text-align:center;padding:40px;color:#8b949e;">正在加载文档...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 技术文档全局图片悬浮全屏放大灯箱 (Lightbox) -->
+<div id="doc-image-lightbox" onclick="closeDocImageLightbox()">
+    <div id="doc-lightbox-close" onclick="closeDocImageLightbox()" title="关闭 (ESC)">✕</div>
+    <img id="doc-lightbox-img" src="" alt="全屏预览" onclick="event.stopPropagation()">
+</div>

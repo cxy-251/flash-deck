@@ -1,0 +1,85 @@
+<!-- 二级页面 1: 漫画画廊 (Manga View) -->
+<div id="media-manga-view" style="display:none;">
+    <!-- 异步任务进度面板 (有下载任务时自动展现) -->
+    <div id="manga-tasks-container" style="display:none;margin-bottom:16px;">
+        <div class="manga-tasks-card" id="manga-tasks-card"></div>
+    </div>
+
+    <!-- 漫画区专属顶栏：子标签 (本地已收录 / 每周必看 / 每月必看) + 右侧搜索框与待下载列表 -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+        <div class="filter-tabs" id="manga-sub-tabs">
+            <button class="tab-btn active" id="manga-subtab-shelf" onclick="switchMangaSubTab('shelf', this)">📚 本地已收录 <span id="manga-local-count" style="font-size:12px;opacity:0.85;font-weight:normal;">(...)</span></button>
+            <button class="tab-btn" id="manga-subtab-week" onclick="switchMangaSubTab('week', this)">🔥 每周必看</button>
+            <button class="tab-btn" id="manga-subtab-month" onclick="switchMangaSubTab('month', this)">🏆 每月必看</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="manga-search-input" class="search-input" style="width:260px;" placeholder="🔍 搜索漫画或输入编号 (回车全网检索)..." oninput="onMangaSearchInput(this.value)" onkeydown="if(event.key==='Enter')onMangaSearchEnter()">
+            <button class="primary-section-btn" style="background:#21262d;border-color:#30363d;color:#f0f6fc;font-size:12px;padding:6px 12px;" onclick="openMangaQueueModal()">📋 待下载列表 (<span id="manga-queue-badge-count">0</span>)</button>
+        </div>
+    </div>
+
+    <!-- 漫画一体化展示大厅 (本地书架 + 热门榜单 + 在线检索) -->
+    <div id="manga-main-container">
+        <!-- 1. 本地漫画书架 -->
+        <div id="manga-local-section">
+            <!-- 本地漫画分类标签快速筛选条 -->
+            <div id="manga-tag-filter-bar" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;"></div>
+            <!-- 连载更新与未完漫画一键补充下载提示工具栏 -->
+            <div id="manga-incomplete-banner" style="display:none;margin-bottom:16px;"></div>
+            <div class="manga-grid" id="manga-shelf-grid"></div>
+            <div id="manga-shelf-empty" style="display:none;text-align:center;padding:50px 20px;color:#8b949e;background:#161b22;border:1px dashed #30363d;border-radius:12px;">
+                <div style="font-size:36px;margin-bottom:10px;">📖</div>
+                <div style="font-size:15px;font-weight:600;color:#f0f6fc;" id="manga-empty-title">本地暂无收录的漫画</div>
+                <div style="font-size:13px;margin-top:6px;">切换上方【🔥 每周必看】或【🏆 每月必看】榜单，或在右侧搜索框输入漫画名/编号即可一键批量下载！</div>
+            </div>
+        </div>
+
+        <!-- 2. 热门必看榜单板块 (每周/每月 TOP 80) -->
+        <div id="manga-ranking-section" style="display:none;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                <div style="font-size:16px;font-weight:700;color:#f0f6fc;display:flex;align-items:center;gap:8px;">
+                    <span id="manga-ranking-heading">🔥 每周必看榜单</span>
+                    <span style="font-size:12px;color:#8b949e;font-weight:normal;">(禁漫天堂官方全网热度 TOP 80 · 点击封面沉浸阅读或一键下载)</span>
+                </div>
+            </div>
+            <div id="manga-ranking-loading" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                <div style="font-size:28px;animation:spin 1s linear infinite;display:inline-block;margin-bottom:8px;">⏳</div>
+                <div>正在连接禁漫服务器获取热门榜单，请稍候...</div>
+            </div>
+            <div class="manga-grid" id="manga-ranking-grid"></div>
+        </div>
+
+        <!-- 2. 线上漫画搜索结果板块 (搜索时自动展开) -->
+        <div id="manga-online-section" style="display:none;margin-top:24px;border-top:1px solid #21262d;padding-top:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:16px;font-weight:700;color:#f0f6fc;">🌐 线上漫画搜索结果</span>
+                    <span id="manga-search-kw-label" style="font-size:12px;color:#58a6ff;font-weight:normal;"></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:12px;color:#8b949e;">排序方式:</span>
+                    <select id="manga-sort-select" class="manga-sort-select" onchange="onMangaSortChange(this.value)">
+                        <option value="mv" selected>🔥 最多点击 (热度最高)</option>
+                        <option value="mr">⏱️ 最新收录 (最近更新)</option>
+                        <option value="tf">⭐ 最多收藏</option>
+                        <option value="tr">👍 最多点赞</option>
+                        <option value="mp">📑 最多页数</option>
+                        <option value="md">💬 最多评论</option>
+                    </select>
+                </div>
+            </div>
+            <div id="manga-online-loading" style="display:none;text-align:center;padding:40px 20px;color:#8b949e;">
+                <div style="font-size:28px;animation:spin 1s linear infinite;display:inline-block;margin-bottom:8px;">⏳</div>
+                <div>正在连接禁漫服务器检索作品，请稍候...</div>
+            </div>
+            <div class="manga-grid" id="manga-online-grid"></div>
+            <div id="manga-online-more-loading" style="display:none;text-align:center;padding:24px 20px;color:#8b949e;">
+                <span style="font-size:20px;display:inline-block;animation:spin 1s linear infinite;margin-right:8px;">⏳</span>
+                <span style="font-size:13px;">正在加载下一轮热门作品...</span>
+            </div>
+            <div id="manga-online-end-tip" style="display:none;text-align:center;padding:30px 20px;color:#484f58;font-size:13px;">
+                —— 已展示全网全部搜索结果 ——
+            </div>
+        </div>
+    </div>
+</div>

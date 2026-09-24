@@ -1,0 +1,23 @@
+<!-- ================= 一级板块 A: 游戏中心 (Games) ================= -->
+<div id="games-section">
+    <!-- 一级页面: 分类专区大厅 -->
+    <div id="portal-view">
+        <div class="portal-hero">
+            <div>
+                <h2>欢迎使用 Omni Deck Games</h2>
+                <p>已接入 RPG Maker、PC 独立游戏 (Unity / Ren'Py / Godot / Unreal / Wine / 3DS 模拟器)、复古街机掌机、SLG 策略 与 Flash 经典神作，即点即玩。</p>
+            </div>
+        </div>
+
+        <div class="category-grid">
+            {{nav:portal-cards}}
+        </div>
+    </div>
+
+    <!-- 二级页面: 游戏网格列表 -->
+    <div id="list-view">
+        <div class="game-grid" id="game-grid"></div>
+
+{{slot:games-list}}
+    </div>
+</div>
