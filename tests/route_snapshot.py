@@ -13,6 +13,8 @@
 """
 import argparse
 import hashlib
+import shutil
+import tempfile
 import http.client
 import json
 import os
@@ -44,7 +46,15 @@ def start_server(legacy: bool):
     if legacy:
         cmd = [PY, "-c", _LEGACY_BOOT.format(repo=REPO, port=PORT)]
     else:
-        cmd = [PY, "-m", "omni", "--headless", "--port", str(PORT)]
+        # 独立的临时状态目录：不碰正在运行的实例的 var/（浏览器 profile、索引库……），
+        # 只把真实的 settings.json 复制过去，保证资源库配置一致。
+        state = tempfile.mkdtemp(prefix="omni-test-state-")
+        real_settings = os.path.join(REPO, "var", "config", "settings.json")
+        if os.path.exists(real_settings):
+            os.makedirs(os.path.join(state, "config"))
+            shutil.copy(real_settings, os.path.join(state, "config", "settings.json"))
+        env["OMNI_STATE_DIR"] = state
+        cmd = [PY, "-m", "omni", "--headless", "--no-workers", "--port", str(PORT)]
     proc = subprocess.Popen(cmd, cwd=REPO, env=env, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, start_new_session=True)
     deadline = time.time() + 90
@@ -69,7 +79,16 @@ def stop_server(proc):
         pass
 
 
+# 重构中有意改名的接口：用旧快照比对时，新代码按新地址请求（用例名不变，才能对上旧记录）
+RENAMES = {"/api/crawler/": "/api/downloads/"}
+LEGACY_MODE = False
+
+
 def request(method, path, body=None, headers=None, timeout=60):
+    if not LEGACY_MODE:
+        for old, new in RENAMES.items():
+            if path.startswith(old):
+                path = new + path[len(old):]
     conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=timeout)
     data = json.dumps(body).encode() if isinstance(body, (dict, list)) else body
     hdrs = dict(headers or {})
@@ -277,6 +296,8 @@ def main():
     c.add_argument("--legacy", action="store_true")
     args = ap.parse_args()
 
+    global LEGACY_MODE
+    LEGACY_MODE = args.legacy
     results = record(args.legacy)
     if args.cmd == "record":
         os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)

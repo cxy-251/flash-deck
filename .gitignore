@@ -1,50 +1,31 @@
+# 运行环境
 /.venv/
 /.venv_flash/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# 本机状态：配置（含密码哈希/域名/资源库清单）、浏览器 profile、缓存、日志，全部在 var/ 下，
+# 路径见 omni/core/paths.py。整个目录可以拷走迁移，但绝不进库。
+/var/
+
+# v2 的旧状态位置——启动时由 omni/core/migrate.py 自动搬进 var/，这里只防止残留被误提交
 /cache/
 /data/
-*.log
-uv.lock
-
-# 运行时配置（NSFW 密码哈希、局域网/公网共享开关等本机状态，含敏感信息，整个目录不进库）
 /config/
-
-# 本机专属常量真实值（资源库根路径、广域网域名、NSFW 默认密码等）——见 services/app_config.py
-# 顶部说明；services/local_settings.example.py 是随代码分发的模板，没有真实值，仍然要进库。
+/cookies.txt
 /services/local_settings.py
 
-# 代码/资源分离：所有游戏内容都搬到仓库外部了（~/Games/standalone_games/、SD 卡等，
-# 见 services/app_config.py 统一管理的资源库根路径），这里彻底不追踪任何游戏文件/占位符——
-# 只保留 omni-deck 自带、随代码一起分发的运行时基础设施（模拟器核心、Flash 播放器）。
-*_games/*
-!retro_games/emulatorjs/
-!retro_games/emulatorjs/**
-!flash_games/plugins/
-!flash_games/plugins/**
+# 下载中心调用的个人爬虫脚本（含站点 cookie/账号相关逻辑），按个人工具处理，不进库
+/tools/crawlers/
 
-# Documentation subfolders (keep root docs files tracked)
-docs/*/
-
-# 漫画/小说/有声书库同理，全是资源，不进仓库
-manga/
-novels/
-audio/
+# 游戏与媒体资源一律不在仓库里——资源库位置在 var/config/settings.json，见 omni/core/library.py
 *.cbz
 *.cbr
 *.epub
 
-# crawlers/ 目前仍按"个人脚本，不进仓库"处理——但下载中心 UI（crawler_service.py）
-# 现在会在运行时调用这里的脚本，如果哪天要把仓库搬到别的机器/重新 clone，下载中心的
-# 按钮会在，脚本不会在。要不要把这个目录也开始追踪，看用户自己的意愿再定。
-crawlers/
-
-# Local configs / secrets / runtime
-cookies.txt
-boot.log
-
-# OS & Editor Artifacts
+*.log
+.ropeproject/
 .DS_Store
 Thumbs.db
 *.swp

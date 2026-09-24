@@ -23,9 +23,9 @@ export DISABLE_VK_LAYER_VALVE_steam_fossilize_1=1
 export QTWEBENGINE_CHROMIUM_FLAGS="--enable-features=WebAssemblyThreads,SharedArrayBuffer --enable-webgl --ignore-gpu-blocklist --enable-gpu-rasterization"
 
 # 启动计时落盘（boot.log 里 Python 侧 +0.00s 之前那段 = venv/uv 冷启动）
-mkdir -p "$SCRIPT_DIR/cache"
+mkdir -p "$SCRIPT_DIR/var/logs"
 printf '%s  [run.sh] LD_PRELOAD/Steam overlay 已清，exec python\n' "$(date --iso-8601=seconds)" \
-    >> "$SCRIPT_DIR/cache/boot.log" 2>/dev/null || true
+    >> "$SCRIPT_DIR/var/logs/boot.log" 2>/dev/null || true
 
 echo "[*] 正在启动 Omni Deck (Native Linux on SteamOS)..."
 
