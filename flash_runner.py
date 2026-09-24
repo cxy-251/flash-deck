@@ -10,7 +10,6 @@ flash_runner.py - Omni Deck 独立 Flash 运行引擎 (PyQt5 隔离环境)
 import sys
 import os
 import traceback
-import urllib.parse
 import json
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -58,7 +57,7 @@ chromium_flags = [
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join(chromium_flags)
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 
-from PyQt5.QtCore import QUrl, Qt, QTimer
+from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QPushButton, QShortcut
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineProfile, QWebEnginePage, QWebEngineSettings

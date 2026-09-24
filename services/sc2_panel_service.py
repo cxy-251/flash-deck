@@ -11,7 +11,6 @@ mod 依赖表（MOD_DEPS/MOD_INFO）和把 mod 烘焙进地图副本（StormLib 
 """
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import os

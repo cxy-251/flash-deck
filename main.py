@@ -1187,13 +1187,13 @@ def register_slg_folder(folder_path, custom_id=None):
         if sh_files:
             exe_path = os.path.join(folder_path, sh_files[0])
             try: os.chmod(exe_path, 0o755)
-            except: pass
+            except Exception: pass
         else:
             py_files = [f for f in sorted(os.listdir(folder_path)) if f.endswith('.py') and not f.startswith('.')]
             if py_files:
                 exe_path = os.path.join(folder_path, py_files[0])
                 try: os.chmod(exe_path, 0o755)
-                except: pass
+                except Exception: pass
             else:
                 exe_files = [f for f in sorted(os.listdir(folder_path)) if f.endswith('.exe') and not f.startswith('.')]
                 if exe_files:
@@ -1234,7 +1234,7 @@ def register_flash_folder(folder_path, custom_id=None):
                 if info.get('type') == 'web_flash' and info.get('url'):
                     engine = 'web_flash'
                     url = info.get('url')
-        except: pass
+        except Exception: pass
     
     swf_file = None
     if engine == 'swf':
@@ -1659,20 +1659,20 @@ def launch_standalone_game_process(game_id: str, title: str, on_exit_callback=No
         if exe_path and os.path.exists(exe_path):
             if exe_path.endswith('.sh') or exe_path.endswith('.py'):
                 try: os.chmod(exe_path, 0o755)
-                except: pass
+                except Exception: pass
                 cmd = [exe_path]
             elif exe_path.endswith('.exe'):
                 cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
         elif os.path.exists(RENPY_SDK_PATH):
             cmd = [RENPY_SDK_PATH, root]
     elif engine == '3ds':
-        lime_app = '/home/deck/Applications/Lime3DS/Lime3DS.AppImage'
+        lime_app = os.path.join(HOME_DIR, 'Applications', 'Lime3DS', 'Lime3DS.AppImage')
         if not os.path.exists(lime_app):
-            lime_app = shutil.which('lime3ds') or '/home/deck/.local/bin/lime3ds'
+            lime_app = shutil.which('lime3ds') or os.path.join(HOME_DIR, '.local', 'bin', 'lime3ds')
         if exe_path and os.path.exists(exe_path):
             if exe_path.endswith('.sh') or exe_path.endswith('.AppImage'):
                 try: os.chmod(exe_path, 0o755)
-                except: pass
+                except Exception: pass
                 cmd = [exe_path]
             else:
                 # 正常窗口化启动 3DS ROM（不强制全屏，方便手柄与分屏调节）
@@ -1683,8 +1683,12 @@ def launch_standalone_game_process(game_id: str, title: str, on_exit_callback=No
                 cmd, run_env = get_wine_or_proton_runner(exe_path, game_id=game_id)
             else:
                 try: os.chmod(exe_path, 0o755)
-                except: pass
+                except Exception: pass
                 cmd = [exe_path]
+                if game_id == '012 - Oxygen Not Included':
+                    # 缺氧不开声音，加 -nosound 让 Unity 音频子系统整个不初始化，
+                    # 避免 FMOD 持续流式读取 StreamingAssets 下的 .bank 音效文件。
+                    cmd.append('-nosound')
 
     if not cmd:
         log_omni("ERROR", f"未找到可用的独立游戏/软件运行时 (Wine/Proton 未就绪) ({game_id})", tag="Launcher")
@@ -2403,6 +2407,16 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             return
 
         # --- Crawler Download Panel Routes ---
+        # 下载中心会直接拉起 crawlers/ 里的脚本抓取/解压任务，仅限 Steam Deck 本机操作，
+        # 局域网/广域网设备一律不放行（不受 NSFW 解锁状态影响，跟 MEGA 是同一个安全模型）。
+        if self.path.startswith('/api/crawler/') and not self.check_is_local():
+            self.send_response(403)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b'{"error": "Forbidden: download center is local-only"}')
+            return
+
         if self.path.startswith('/api/crawler/types'):
             self.send_response(200)
             self.send_header('Content-type', 'application/json; charset=utf-8')
@@ -2526,8 +2540,8 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
             return
 
         # --- 短视频画廊（Downloads/快手/<主播>/*.mp4，来自 ExtensionForge 002 插件）---
-        # 内容是私人下的主播视频，跟其它 NSFW 分区一个安全模型：本机随便看，
-        # 非本机（局域网/广域网）要过 privacy_service 的 token 校验。
+        # 跟其它 NSFW 分区同一个安全模型：本机随便看，非本机（局域网/广域网）要带有效
+        # token 过 check_nsfw_authorized() 才放行——不再是"不管解不解锁都不放行"那档更严的规则。
         if self.path.startswith(('/api/shortvideo/library', '/api/shortvideo/thumb', '/api/shortvideo/stream', '/api/shortvideo/transcode_status', '/api/shortvideo/gallery_image')):
             if not self.check_nsfw_authorized():
                 self.send_response(403)
@@ -3162,6 +3176,13 @@ class MultiGameRequestHandler(SimpleHTTPRequestHandler):
         覆盖下载中心任务提交、存档写入、隐私鉴权、局域网/广域网开关切换等所有写操作接口。
         """
         if self.path.startswith('/api/crawler/start'):
+            if not self.check_is_local():
+                self.send_response(403)
+                self.send_header('Content-Type', 'application/json; charset=utf-8')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'{"error": "Forbidden: download center is local-only"}')
+                return
             content_length = int(self.headers.get('Content-Length', 0))
             payload = json.loads(self.rfile.read(content_length).decode('utf-8')) if content_length > 0 else {}
             job_type = payload.get('type', '')

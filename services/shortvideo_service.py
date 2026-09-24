@@ -234,11 +234,19 @@ def _rich_parse_video(full_p: str) -> Dict[str, Any]:
 
 
 def _extract_frame_bytes(full_p: str) -> Optional[bytes]:
-    """ffmpeg 抽一帧当封面（JPEG bytes），失败就返回 None，前端用占位图兜底。"""
+    """ffmpeg 抽一帧当封面（JPEG bytes），失败就返回 None，前端用占位图兜底。
+
+    批量补缩略图时外层信号量（_THUMB_GEN_SEM）已经把并发压到 3，但每个 ffmpeg
+    进程本身默认会按核心数自动开解码线程，3 个进程 x 好几个线程照样能把整机吃满。
+    这里用 nice/ionice 降低这类后台低优先级任务的调度/IO 优先级，再用 -threads 1
+    把单个 ffmpeg 钉死在一个核上，"并发 3" 才名副其实地约等于"最多占 3 个核"，
+    不会跟前台的网页请求/正在播放的视频抢资源。
+    """
     for at_sec in ('1.0', '0.1'):  # 极短的片子 1s 处可能已经过了结尾，退到 0.1s 再试一次
         try:
             cmd = [
-                'ffmpeg', '-y', '-ss', at_sec, '-i', full_p, '-frames:v', '1',
+                'nice', '-n', '15', 'ionice', '-c3',
+                'ffmpeg', '-y', '-threads', '1', '-ss', at_sec, '-i', full_p, '-frames:v', '1',
                 '-vf', 'scale=360:-2', '-f', 'image2pipe', '-vcodec', 'mjpeg', 'pipe:1'
             ]
             out = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=20)

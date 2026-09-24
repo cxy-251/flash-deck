@@ -26,10 +26,9 @@ Chromium 开源发布版本为了不背专利费责任故意不带）。但同�
 """
 import json
 import time
-from PyQt6.QtCore import Qt, QUrl, QObject, QEvent, QTimer, QPropertyAnimation, QEasingCurve, pyqtSlot, pyqtSignal
+from PyQt6.QtCore import Qt, QUrl, QObject, QEvent, QTimer, pyqtSlot, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QLabel, QComboBox, QFrame,
-    QGraphicsOpacityEffect
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QLabel, QComboBox, QFrame
 )
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -109,9 +108,6 @@ class NativePlayerWidget(QWidget):
         self.transition_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.transition_label.setStyleSheet("QLabel{background:#000;color:#58a6ff;font-size:64px;}")
         self.transition_label.hide()
-        self._trans_fx = QGraphicsOpacityEffect(self.transition_label)
-        self.transition_label.setGraphicsEffect(self._trans_fx)
-        self._trans_anim = QPropertyAnimation(self._trans_fx, b"opacity", self)
         self._trans_timeout = QTimer(self)
         self._trans_timeout.setSingleShot(True)
         self._trans_timeout.timeout.connect(self._end_transition)
@@ -291,7 +287,13 @@ class NativePlayerWidget(QWidget):
         self.transition_label.setGeometry(0, 0, self.width(), video_h)
 
     def _start_transition(self, direction: int):
-        """播放一次"方向箭头淡出"的切换动效（音频模式下不显示）。
+        """显示切换方向箭头遮罩，全程保持完全不透明（音频模式下不显示）。
+
+        之前这里带一个 320ms 淡到 25% 不透明度的动画，但新视频源加载/解码经常撑不到
+        这么快（下面 1500ms 的超时兜底本身就承认了最坏情况要等这么久）——遮罩淡成
+        接近透明之后，新内容却还没画出来，底下的东西就会透出来，这正是切视频"闪一下"
+        的根因。所以改成不淡出：新内容没真正开始播放（_end_transition 触发）之前，
+        遮罩死死保持完全不透明，宁可牺牲一点淡出的视觉效果，也不允许"不确定期"透光。
 
         Args:
             direction: 正数显示右箭头（下一条），负数显示左箭头（上一条）。
@@ -302,22 +304,13 @@ class NativePlayerWidget(QWidget):
         self._position_transition_overlay()
         self.transition_label.raise_()
         self.transition_label.show()
-        self._trans_anim.stop()
-        self._trans_fx.setOpacity(1.0)
-        self._trans_anim.setDuration(320)
-        self._trans_anim.setStartValue(1.0)
-        self._trans_anim.setEndValue(0.25)
-        self._trans_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._trans_anim.start()
         # 保险：万一新视频一直没触发 PlayingState（比如文件有问题），别让箭头卡死一直挡着
         self._trans_timeout.start(1500)
 
     def _end_transition(self):
-        """提前结束切换动效并隐藏方向箭头遮罩（正常播放开始或超时兜底都会调用这个）。"""
+        """结束切换遮罩，直接隐藏（正常播放开始或超时兜底都会调用这个）。"""
         self._trans_timeout.stop()
-        if self.transition_label.isVisible():
-            self._trans_anim.stop()
-            self.transition_label.hide()
+        self.transition_label.hide()
 
     def resizeEvent(self, event):
         """窗口尺寸变化时，若切换动效遮罩正显示着，跟着重新定位。
@@ -487,12 +480,11 @@ class NativePlayerWidget(QWidget):
             self.player.setPosition(start_ms)
 
     def stop_and_hide(self):
-        """停止播放、清空媒体源、停掉所有定时器/动画，但不隐藏控件本身（外部决定何时隐藏/复用）。"""
+        """停止播放、清空媒体源、停掉所有定时器，但不隐藏控件本身（外部决定何时隐藏/复用）。"""
         self.player.stop()
         self.player.setSource(QUrl())
         self._sleep_timer.stop()
         self._trans_timeout.stop()
-        self._trans_anim.stop()
         self.transition_label.hide()
 
     def close_player(self):

@@ -2449,23 +2449,12 @@
         body.section-media .sub-filter-bar {
             display: none !important;
         }
-        /* NSFW 隐私模式：敏感专区卡片与导航标签完全隐形 */
-        body.nsfw-locked .rpg-card,
-        body.nsfw-locked .slg-card,
-        body.nsfw-locked .tab-btn[data-tab="rpg"],
-        body.nsfw-locked .tab-btn[data-tab="slg"],
-        body.nsfw-locked #media-tab-manga,
-        body.nsfw-locked #media-tab-novels,
-        body.nsfw-locked #media-tab-audio,
-        html.nsfw-locked .rpg-card,
-        html.nsfw-locked .slg-card,
-        html.nsfw-locked .tab-btn[data-tab="rpg"],
-        html.nsfw-locked .tab-btn[data-tab="slg"],
-        html.nsfw-locked #media-tab-manga,
-        html.nsfw-locked #media-tab-novels,
-        html.nsfw-locked #media-tab-audio {
-            display: none !important;
-        }
+        /* NSFW 解锁态 / 局域网可见性受控的分区卡片与标签：显示与隐藏统一由 hub.js 的
+           ACCESS_RULES/applyAccessRules() 通过内联 style.display 控制，这里不再重复一份
+           基于 body/html 类名的隐藏规则（曾经两套机制各管一半，互相不知道对方存在，
+           导致状态切换时出现该显示的没显示、该隐藏的没隐藏的错位）。仅剩 <head> 里那份
+           document.write 注入的 #nsfw-init-style 用于首次渲染前防止内容闪一下，
+           一解锁就会被移除，交棒给上面的 JS 权限表。 */
         /* 非本机访客（局域网/广域网）：藏掉一切联网搜索 / 榜单 / 下载类控件，只留浏览本地媒体 */
         body.remote-client #manga-subtab-week,
         body.remote-client #manga-subtab-month,
@@ -2517,10 +2506,13 @@
                     document.body ? document.body.classList.add('section-media') : document.documentElement.classList.add('section-media');
                     document.write('<style id="sec-init-style">#games-section { display: none !important; } #media-section { display: block !important; } #list-controls { display: none !important; } #nav-back-btn { display: none !important; }</style>');
                 }
+                // 这份硬编码选择器只用于"首屏渲染前防止内容闪一下"这一次性场景（此刻 hub.js
+                // 还没加载，摸不到它那份 ACCESS_RULES 权限表）；解锁后由 updateNsfwUI() 移除
+                // 这个 <style> 标签，之后的显示/隐藏全部交给 hub.js 的 ACCESS_RULES/
+                // applyAccessRules() 统一判断——那边才是唯一权威来源，这里改了记得两边一起改。
                 var isDeckLocal = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost');
                 var token = localStorage.getItem('omni_nsfw_token');
                 if (!isDeckLocal && !token) {
-                    document.documentElement.classList.add('nsfw-locked');
                     document.write('<style id="nsfw-init-style">.rpg-card, .slg-card, .tab-btn[data-tab="rpg"], .tab-btn[data-tab="slg"], #media-tab-manga, #media-tab-novels, #media-tab-audio, #media-tab-shortvideo, #media-tab-shortvideo-douyin, #media-tab-shortvideo-tiktok { display: none !important; }</style>');
                 }
             } catch(e) {}
@@ -3204,38 +3196,8 @@
                     </div>
                 </div>
 
-                <!-- Bilibili 广播剧下载卡片 -->
-                <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
-                    <div style="font-size:13px;font-weight:600;color:#c9d1d9;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
-                        <span>📺 Bilibili 广播剧音频下载</span>
-                    </div>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-                        <input type="text" id="crawler-bili-bvid" class="search-input" style="flex:1;min-width:200px;" placeholder="BV号，例如 BV1xx411c7mD（必填）">
-                        <input type="text" id="crawler-bili-album" class="search-input" style="flex:1;min-width:200px;" placeholder="专辑名（留空默认：鬼吹灯之精绝古城）">
-                    </div>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-                        <input type="number" id="crawler-bili-start" class="search-input" style="width:110px;" placeholder="起始P" value="1">
-                        <input type="number" id="crawler-bili-end" class="search-input" style="width:110px;" placeholder="结束P" value="6">
-                        <input type="text" id="crawler-bili-output" class="search-input" style="flex:1;min-width:200px;" placeholder="输出文件名（可选，留空自动命名）">
-                        <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:8px 18px;font-weight:600;" onclick="startCrawlerJob('bilibili_audiobook')">📥 开始下载</button>
-                    </div>
-                </div>
-
-                <!-- YouTube 广播剧下载卡片 -->
-                <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
-                    <div style="font-size:13px;font-weight:600;color:#c9d1d9;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
-                        <span>▶️ YouTube 广播剧音频下载</span>
-                    </div>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-                        <input type="text" id="crawler-yt-url" class="search-input" style="flex:1;min-width:260px;" placeholder="YouTube 视频链接（必填）">
-                        <input type="text" id="crawler-yt-album" class="search-input" style="flex:1;min-width:200px;" placeholder="专辑名（留空默认：鬼吹灯之精绝古城）">
-                    </div>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-                        <input type="text" id="crawler-yt-cookies" class="search-input" style="flex:1;min-width:200px;" placeholder="Cookies来源（可选，浏览器名如 chrome，或 cookies.txt 路径）">
-                        <input type="text" id="crawler-yt-output" class="search-input" style="flex:1;min-width:200px;" placeholder="输出文件名（可选，留空自动命名）">
-                        <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:8px 18px;font-weight:600;" onclick="startCrawlerJob('youtube_audiobook')">📥 开始下载</button>
-                    </div>
-                </div>
+                <!-- 下载任务卡片：从 /api/crawler/types 动态生成，新增任务类型不用再手写 HTML -->
+                <div id="crawler-cards-container"></div>
 
                 <!-- 任务队列与日志 -->
                 <div id="crawler-jobs-card" style="background:#161b22;border:1px solid #1f6feb66;border-radius:12px;padding:14px 18px;margin-bottom:16px;">

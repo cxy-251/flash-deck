@@ -48,10 +48,8 @@ function updateNsfwUI() {
     const gameText = document.getElementById('game-nsfw-lock-text');
 
     if (isNsfwUnlocked) {
-        document.body.classList.remove('nsfw-locked');
-        document.documentElement.classList.remove('nsfw-locked');
         const initStyle = document.getElementById('nsfw-init-style');
-        if (initStyle) initStyle.remove();
+        if (initStyle) initStyle.remove();   // 首次解锁：拿掉 <head> 里那份防闪烁用的早期隐藏样式
 
         const btnLabel = isDeckLocal ? '实体机已解锁' : '隐私已解锁';
         if (gameIcon) gameIcon.textContent = '🔓';
@@ -61,27 +59,16 @@ function updateNsfwUI() {
             gameBtn.title = isDeckLocal ? 'Steam Deck 实体机免密完全放行' : '当前设备已授权解锁 NSFW 专区';
         }
     } else {
-        document.body.classList.add('nsfw-locked');
-        document.documentElement.classList.add('nsfw-locked');
-
         if (gameIcon) gameIcon.textContent = '🔒';
         if (gameText) gameText.textContent = '隐私锁定';
         if (gameBtn) {
             gameBtn.classList.remove('active');
             gameBtn.title = 'NSFW 专区已锁定并隐形，点击输入密码解锁';
         }
-
-        // 若当前处于敏感页面，强制重定向至安全区域
-        if (typeof activePrimarySection !== 'undefined' && activePrimarySection === 'games') {
-            if (currentTab === 'rpg' || currentTab === 'slg') {
-                showPortalView();
-            }
-        } else if (typeof activePrimarySection !== 'undefined' && activePrimarySection === 'media') {
-            if (activeMediaTab === 'manga' || activeMediaTab === 'novels' || activeMediaTab === 'audio') {
-                switchMediaTab('docs');
-            }
-        }
     }
+    // 展示/隐藏 + "正停留在刚变得不可见的分区" 的退避逻辑，统一交给权限表处理
+    // （见 ACCESS_RULES/applyAccessRules，覆盖 rpg/slg/manga/novels/audio 等所有解锁态受控入口）。
+    if (typeof applyAccessRules === 'function') applyAccessRules();
 }
 
 function checkNsfwStatus() {
@@ -360,6 +347,76 @@ function submitNsfwAction() {
 
 // 客户端位置判定：默认本机（Steam Deck）优先，由后端 /api/lan/status 根据物理 Socket 来源 IP 权威仲裁
 let isRemoteClient = false;
+
+// 局域网设备只能玩大厅 webview 能直接渲染的游戏；PC 独立大作 (standalone)、
+// Flash 的 web_flash 引擎、SLG 分区里用 Ren'Py 原生子进程跑的那部分，都是在 Deck 本机
+// 单独开一个窗口/子进程，局域网设备连不上、看不见，所以要在游戏网格与数量统计里统一剔除。
+function isLanUnplayableGame(g) {
+    return g.type === 'standalone' || g.type === 'flash' || (g.type === 'slg' && g.slg_engine === 'renpy');
+}
+
+// ============ 分区/标签展示权限总表 ============
+// 每一个会被"未解锁隐私密码"或"局域网/远程设备"限制显示的入口，只登记在这一张表里——
+// 显示/隐藏、以及点击时是弹密码框还是静默拒绝，全部走 isAccessAllowed()/applyAccessRules()，
+// 不要再各自散着写一遍 if(isRemoteClient)/if(!isNsfwUnlocked)。加新入口只需要在这里加一行。
+//   selectors:          门面卡片 / 分类标签 / 媒体标签按钮的 CSS 选择器，命中的元素一起隐藏。
+//   requiresNsfwUnlock: 需要先解锁隐私密码才能看到（点击时弹密码框）。
+//   requiresLocal:      仅 Steam Deck 本机可用，局域网及以外设备一律隐藏，不受解锁状态影响
+//                       （点击时静默无视，不弹提示——见 openCategory/switchTab/switchMediaTab）。
+//   showDisplay:        展示时用的 display 值，省略则用 ''（交还给样式表决定）；像
+//                       lan/wan 控制按钮这种本来就是靠内联样式撑 inline-flex 布局的例外情况才需要填。
+const ACCESS_RULES = {
+    rpg:                 { selectors: ['.rpg-card', '.tab-btn[data-tab="rpg"]'], requiresNsfwUnlock: true },
+    slg:                 { selectors: ['.slg-card', '.tab-btn[data-tab="slg"]'], requiresNsfwUnlock: true },
+    standalone:          { selectors: ['.standalone-card', '.tab-btn[data-tab="standalone"]'], requiresLocal: true },
+    flash:               { selectors: ['.flash-card', '.tab-btn[data-tab="flash"]'], requiresLocal: true },
+    sc2:                 { selectors: ['.sc2-card', '.tab-btn[data-tab="sc2"]'], requiresLocal: true },
+    manga:               { selectors: ['#media-tab-manga'], requiresNsfwUnlock: true },
+    novels:              { selectors: ['#media-tab-novels'], requiresNsfwUnlock: true },
+    audio:               { selectors: ['#media-tab-audio'], requiresNsfwUnlock: true },
+    mega:                { selectors: ['#media-tab-mega'], requiresLocal: true },
+    // 短视频：跟漫画/小说/音声同一个安全模型——本机随便看，局域网/广域网设备解锁密码后也能看
+    // （之前是"不管解不解锁都不放行"的更严规则，现改成跟其它 NSFW 分区一致，后端网关见
+    // main.py 里 /api/shortvideo/* 那几条，已经从 check_is_local() 改回 check_nsfw_authorized()）。
+    shortvideo:          { selectors: ['#media-tab-shortvideo'], requiresNsfwUnlock: true },
+    'shortvideo-douyin': { selectors: ['#media-tab-shortvideo-douyin'], requiresNsfwUnlock: true },
+    'shortvideo-tiktok': { selectors: ['#media-tab-shortvideo-tiktok'], requiresNsfwUnlock: true },
+    // 下载中心：会直接拉起本机脚本抓取/解压任务，仅限本机操作，不受解锁状态影响
+    // （后端网关见 main.py 里的 /api/crawler/* 本机校验）。
+    crawler:             { selectors: ['#media-tab-crawler'], requiresLocal: true },
+    'lan-control':       { selectors: ['#lan-control-wrapper'], requiresLocal: true, showDisplay: 'inline-flex' },
+    'wan-control':       { selectors: ['#wan-control-wrapper'], requiresLocal: true, showDisplay: 'inline-flex' }
+};
+
+function isAccessAllowed(key) {
+    const rule = ACCESS_RULES[key];
+    if (!rule) return true;
+    if (rule.requiresLocal && isRemoteClient) return false;
+    if (rule.requiresNsfwUnlock && !isNsfwUnlocked) return false;
+    return true;
+}
+
+// 按当前的 isRemoteClient / isNsfwUnlocked 重新过一遍权限表，该藏的藏、该露的露；
+// 谁在改变这两个状态之一（NSFW 解锁/重新锁定、LAN 状态轮询），改完了都调一次这个函数。
+function applyAccessRules() {
+    for (const key in ACCESS_RULES) {
+        const rule = ACCESS_RULES[key];
+        const allowed = isAccessAllowed(key);
+        rule.selectors.forEach(sel => {
+            const el = document.querySelector(sel);
+            if (el) el.style.display = allowed ? (rule.showDisplay || '') : 'none';
+        });
+    }
+    // 当前正停留在一个刚变得不可见的分区/标签里：跳回安全位置，不留一个空列表页
+    const listView = document.getElementById('list-view');
+    if (ACCESS_RULES[currentTab] && !isAccessAllowed(currentTab) && listView && listView.style.display !== 'none') {
+        showPortalView();
+    }
+    if (typeof activeMediaTab !== 'undefined' && ACCESS_RULES[activeMediaTab] && !isAccessAllowed(activeMediaTab)) {
+        switchMediaTab('docs');
+    }
+}
+
 let allGames = [];
 const _initUrlCat = new URLSearchParams(window.location.search).get('category');
 let currentTab = (_initUrlCat && _initUrlCat !== 'portal')
@@ -370,6 +427,9 @@ let currentSearchQuery = '';
 let currentGameSearchQuery = '';
 
 
+        // 局域网/远程设备限定的分区显示/隐藏全部走 ACCESS_RULES/applyAccessRules()；
+        // 这两个函数现在只剩"表里没有的、remote-client 特有的杂项"：body 类名（驱动
+        // #manga-subtab-week 等另一批 CSS 规则）、搜索框占位文案、门面卡片上的数字徽章。
         function applyRemoteClientRestrictions() {
             if (!isRemoteClient) return;
             document.body.classList.add('remote-client');   // 驱动 CSS 隐藏联网/下载类控件
@@ -377,184 +437,20 @@ let currentGameSearchQuery = '';
             if (mSearch) mSearch.placeholder = '🔍 搜索本机已收录的漫画...';
             const nSearch = document.getElementById('novel-search-input');
             if (nSearch) nSearch.placeholder = '🔍 搜索本机已收录的小说...';
-
-            // 1. 灰显并禁用大厅门面的独立大作卡片
-            const standaloneCard = document.querySelector('.standalone-card');
-            if (standaloneCard) {
-                standaloneCard.style.opacity = '0.42';
-                standaloneCard.style.filter = 'grayscale(0.85)';
-                standaloneCard.style.cursor = 'not-allowed';
-                standaloneCard.style.borderColor = '#30363d';
-                standaloneCard.title = '🔒 独立大作属于大型 PC/Wine 程序，仅限 Steam Deck 本机实体机窗口运行。';
-                const actionEl = standaloneCard.querySelector('.cat-action');
-                if (actionEl) {
-                    actionEl.innerHTML = '🔒 仅限本机运行 (局域网禁用)';
-                    actionEl.style.color = '#8b949e';
-                }
-                const badgeEl = standaloneCard.querySelector('.standalone-count');
-                if (badgeEl) badgeEl.textContent = '🔒 本机独占';
-            }
-
-            // 2. 灰显并禁用大厅门面的 Flash 殿堂卡片
-            const flashCard = document.querySelector('.flash-card');
-            if (flashCard) {
-                flashCard.style.opacity = '0.42';
-                flashCard.style.filter = 'grayscale(0.85)';
-                flashCard.style.cursor = 'not-allowed';
-                flashCard.style.borderColor = '#30363d';
-                flashCard.title = '🔒 Flash 游戏依赖 Steam Deck 本地 Pepper Flash 插件环境，外部浏览器不支持 Flash 运行。';
-                const actionEl = flashCard.querySelector('.cat-action');
-                if (actionEl) {
-                    actionEl.innerHTML = '🔒 仅限本机运行 (外部不支持 Flash)';
-                    actionEl.style.color = '#8b949e';
-                }
-                const badgeEl = flashCard.querySelector('#flash-count-badge');
-                if (badgeEl) badgeEl.textContent = '🔒 本机独占';
-            }
-
-            // 2b. 灰显并禁用大厅门面的星际争霸2卡片（对战只能在 Steam Deck 实体机屏幕上跑）
-            const sc2Card = document.querySelector('.sc2-card');
-            if (sc2Card) {
-                sc2Card.style.opacity = '0.42';
-                sc2Card.style.filter = 'grayscale(0.85)';
-                sc2Card.style.cursor = 'not-allowed';
-                sc2Card.style.borderColor = '#30363d';
-                sc2Card.title = '🔒 星际争霸2 对战仅限 Steam Deck 实体机屏幕运行，局域网禁止远程拉起。';
-                const actionEl = sc2Card.querySelector('.cat-action');
-                if (actionEl) {
-                    actionEl.innerHTML = '🔒 仅限本机运行 (局域网禁用)';
-                    actionEl.style.color = '#8b949e';
-                }
-                const badgeEl = sc2Card.querySelector('#sc2-count-badge');
-                if (badgeEl) badgeEl.textContent = '🔒 本机独占';
-            }
-
-            // 3. 灰显并禁用分类切换栏中的独立游戏标签和 Flash 标签
-            const standaloneTabBtn = document.querySelector('.tab-btn[data-tab="standalone"]');
-            if (standaloneTabBtn) {
-                standaloneTabBtn.style.opacity = '0.38';
-                standaloneTabBtn.style.cursor = 'not-allowed';
-                standaloneTabBtn.style.filter = 'grayscale(0.85)';
-                standaloneTabBtn.title = '🔒 独立游戏专区仅限 Steam Deck 本机运行 (局域网已禁用)';
-            }
-            const flashTabBtn = document.querySelector('.tab-btn[data-tab="flash"]');
-            if (flashTabBtn) {
-                flashTabBtn.style.opacity = '0.38';
-                flashTabBtn.style.cursor = 'not-allowed';
-                flashTabBtn.style.filter = 'grayscale(0.85)';
-                flashTabBtn.title = '🔒 Flash 殿堂仅限 Steam Deck 本机运行 (外部浏览器不支持 Flash)';
-            }
-            const sc2TabBtn = document.querySelector('.tab-btn[data-tab="sc2"]');
-            if (sc2TabBtn) {
-                sc2TabBtn.style.opacity = '0.38';
-                sc2TabBtn.style.cursor = 'not-allowed';
-                sc2TabBtn.style.filter = 'grayscale(0.85)';
-                sc2TabBtn.title = '🔒 星际争霸2 对战仅限 Steam Deck 本机运行 (局域网已禁用)';
-            }
-
-            // 4. 隐藏网络能力开关 (局域网与广域网)：远程访客严禁操作服务端的网络能力，同时为移动端界面释放宝贵顶栏空间
-            const lanControl = document.getElementById('lan-control-wrapper');
-            const wanControl = document.getElementById('wan-control-wrapper');
-            if (lanControl) lanControl.style.display = 'none';
-            if (wanControl) wanControl.style.display = 'none';
-
-            // 5. 局域网设备严禁访问个人 MEGA 网盘（保护个人账号凭证与隐私云盘数据）
-            const megaTabBtn = document.getElementById('media-tab-mega');
-            if (megaTabBtn) megaTabBtn.style.display = 'none';
-            const megaView = document.getElementById('media-mega-view');
-            if (megaView && typeof activeMediaTab !== 'undefined' && activeMediaTab === 'mega') {
-                switchMediaTab('docs');
-            }
+            applyAccessRules();
         }
 
         function removeRemoteClientRestrictions() {
             // Steam Deck 本机环境：彻底恢复独立大作卡片与专区原本的生机与互动能力
             document.body.classList.remove('remote-client');
-            const standaloneCard = document.querySelector('.standalone-card');
-            if (standaloneCard) {
-                standaloneCard.style.opacity = '';
-                standaloneCard.style.filter = '';
-                standaloneCard.style.cursor = '';
-                standaloneCard.style.borderColor = '';
-                standaloneCard.title = '';
-                const actionEl = standaloneCard.querySelector('.cat-action');
-                if (actionEl) {
-                    actionEl.innerHTML = '进入专区 →';
-                    actionEl.style.color = '';
-                }
-                const badgeEl = standaloneCard.querySelector('.standalone-count');
-                if (badgeEl) {
-                    const cnt = allGames.filter(g => g.type === 'standalone').length;
-                    badgeEl.textContent = cnt + ' Games';
-                }
-            }
+            applyAccessRules();
 
-            const flashCard = document.querySelector('.flash-card');
-            if (flashCard) {
-                flashCard.style.opacity = '';
-                flashCard.style.filter = '';
-                flashCard.style.cursor = '';
-                flashCard.style.borderColor = '';
-                flashCard.title = '';
-                const actionEl = flashCard.querySelector('.cat-action');
-                if (actionEl) {
-                    actionEl.innerHTML = '进入专区 →';
-                    actionEl.style.color = '';
-                }
-                const badgeEl = flashCard.querySelector('#flash-count-badge');
-                if (badgeEl) {
-                    const cnt = allGames.filter(g => g.type === 'flash').length;
-                    badgeEl.textContent = cnt + ' Games';
-                }
-            }
-
-            const sc2Card = document.querySelector('.sc2-card');
-            if (sc2Card) {
-                sc2Card.style.opacity = '';
-                sc2Card.style.filter = '';
-                sc2Card.style.cursor = '';
-                sc2Card.style.borderColor = '';
-                sc2Card.title = '';
-                const actionEl = sc2Card.querySelector('.cat-action');
-                if (actionEl) {
-                    actionEl.innerHTML = '进入专区 →';
-                    actionEl.style.color = '';
-                }
-                const badgeEl = sc2Card.querySelector('#sc2-count-badge');
-                if (badgeEl) badgeEl.textContent = '离线对战';
-            }
-
-            const standaloneTabBtn = document.querySelector('.tab-btn[data-tab="standalone"]');
-            if (standaloneTabBtn) {
-                standaloneTabBtn.style.opacity = '';
-                standaloneTabBtn.style.cursor = '';
-                standaloneTabBtn.style.filter = '';
-                standaloneTabBtn.title = '';
-            }
-            const flashTabBtn = document.querySelector('.tab-btn[data-tab="flash"]');
-            if (flashTabBtn) {
-                flashTabBtn.style.opacity = '';
-                flashTabBtn.style.cursor = '';
-                flashTabBtn.style.filter = '';
-                flashTabBtn.title = '';
-            }
-            const sc2TabBtn = document.querySelector('.tab-btn[data-tab="sc2"]');
-            if (sc2TabBtn) {
-                sc2TabBtn.style.opacity = '';
-                sc2TabBtn.style.cursor = '';
-                sc2TabBtn.style.filter = '';
-                sc2TabBtn.title = '';
-            }
-
-            // 恢复本机网络能力控制按钮显示
-            const lanControl = document.getElementById('lan-control-wrapper');
-            const wanControl = document.getElementById('wan-control-wrapper');
-            if (lanControl) lanControl.style.display = 'inline-flex';
-            if (wanControl) wanControl.style.display = 'inline-flex';
-
-            // 恢复本机 MEGA 标签页显示
-            const megaTabBtn = document.getElementById('media-tab-mega');
-            if (megaTabBtn) megaTabBtn.style.display = '';
+            const standaloneBadgeEl = document.querySelector('.standalone-card .standalone-count');
+            if (standaloneBadgeEl) standaloneBadgeEl.textContent = allGames.filter(g => g.type === 'standalone').length + ' Games';
+            const flashBadgeEl = document.querySelector('.flash-card #flash-count-badge');
+            if (flashBadgeEl) flashBadgeEl.textContent = allGames.filter(g => g.type === 'flash').length + ' Games';
+            const sc2BadgeEl = document.querySelector('.sc2-card #sc2-count-badge');
+            if (sc2BadgeEl) sc2BadgeEl.textContent = '离线对战';
         }
 
         // 一级板块状态 ('games' 或 'manga')
@@ -805,21 +701,13 @@ let currentGameSearchQuery = '';
         }
 
         function openCategory(cat) {
-            if (!isNsfwUnlocked && (cat === 'rpg' || cat === 'slg')) {
+            const rule = ACCESS_RULES[cat];
+            if (rule && rule.requiresNsfwUnlock && !isNsfwUnlocked) {
                 openNsfwModal();
                 return;
             }
-            if (isRemoteClient && cat === 'standalone') {
-                alert('🔒 独立大作专区属于大型 PC / Windows / Wine 程序，仅限 Steam Deck 实体机本机窗口游玩。\n\n局域网访问已禁用此专区，防止外部并发唤醒导致掌机卡顿！');
-                return;
-            }
-            if (isRemoteClient && cat === 'flash') {
-                alert('🔒 Flash 殿堂专区依赖 Steam Deck 本地 Pepper Flash 插件环境，外部浏览器不支持运行。\n\n局域网访问已禁用此专区。');
-                return;
-            }
-            if (isRemoteClient && cat === 'sc2') {
-                alert('🔒 星际争霸2 对战仅限在 Steam Deck 实体机屏幕上运行，局域网禁止远程拉起。');
-                return;
+            if (rule && rule.requiresLocal && isRemoteClient) {
+                return;   // 局域网不可用分区：卡片已隐藏，这里只是兜底（URL 直连等场景）
             }
             cleanupCatInitStyle();
             document.getElementById('portal-view').style.display = 'none';
@@ -846,21 +734,13 @@ let currentGameSearchQuery = '';
         }
 
         function switchTab(tab, el) {
-            if (!isNsfwUnlocked && (tab === 'rpg' || tab === 'slg')) {
+            const rule = ACCESS_RULES[tab];
+            if (rule && rule.requiresNsfwUnlock && !isNsfwUnlocked) {
                 openNsfwModal();
                 return;
             }
-            if (isRemoteClient && tab === 'standalone') {
-                alert('🔒 独立大作专区属于大型 PC / Windows / Wine 程序，仅限 Steam Deck 实体机本机窗口游玩。\n\n局域网访问已禁用此专区，防止外部并发唤醒导致掌机卡顿！');
-                return;
-            }
-            if (isRemoteClient && tab === 'flash') {
-                alert('🔒 Flash 殿堂专区依赖 Steam Deck 本地 Pepper Flash 插件环境，外部浏览器不支持运行。\n\n局域网访问已禁用此专区。');
-                return;
-            }
-            if (isRemoteClient && tab === 'sc2') {
-                alert('🔒 星际争霸2 对战仅限在 Steam Deck 实体机屏幕上运行，局域网禁止远程拉起。');
-                return;
+            if (rule && rule.requiresLocal && isRemoteClient) {
+                return;   // 局域网不可用分区：标签已隐藏，这里只是兜底（URL 直连等场景）
             }
             cleanupCatInitStyle();
             currentTab = tab;
@@ -1031,8 +911,8 @@ let currentGameSearchQuery = '';
                 // NSFW 隐私过滤：未解锁时彻底剔除 RPG 与 SLG 敏感游戏
                 if (!isNsfwUnlocked && (g.type === 'rpg' || g.type === 'slg' || g.category === 'rpg' || g.category === 'slg')) return false;
 
-                // 局域网访问安全隔离：外部设备严禁搜索与显示 PC 独立大作与 Flash 游戏，防止 Deck 误唤醒或因外部无 Flash 插件报错
-                if (isRemoteClient && (g.type === 'standalone' || g.type === 'flash')) return false;
+                // 局域网访问安全隔离：外部设备严禁搜索与显示"只能在 Deck 本机开一个独立窗口"的游戏
+                if (isRemoteClient && isLanUnplayableGame(g)) return false;
 
                 const name = g.name || g.id || '';
                 const matchesQuery = !currentSearchQuery || g.id.toLowerCase().includes(currentSearchQuery) || name.toLowerCase().includes(currentSearchQuery);
@@ -1566,12 +1446,12 @@ let currentGameSearchQuery = '';
             const rpgCount = games.filter(g => g.type === 'rpg').length;
             const standaloneCount = games.filter(g => g.type === 'standalone').length;
             const retroCount = games.filter(g => g.type === 'retro').length;
-            const slgCount = games.filter(g => g.type === 'slg').length;
+            const slgCount = isRemoteClient ? games.filter(g => g.type === 'slg' && !isLanUnplayableGame(g)).length : games.filter(g => g.type === 'slg').length;
             const flashCount = games.filter(g => g.type === 'flash').length;
-            
+
             if (activePrimarySection === 'games') {
                 if (isRemoteClient) {
-                    const playable = games.filter(g => g.type !== 'standalone' && g.type !== 'flash').length;
+                    const playable = games.filter(g => !isLanUnplayableGame(g)).length;
                     document.getElementById('total-badge').textContent = playable + ' 款网页轻量游戏 (局域网)';
                 } else {
                     document.getElementById('total-badge').textContent = games.length + ' 款游戏';
@@ -1688,15 +1568,13 @@ let currentGameSearchQuery = '';
         let currentDocFilter = 'all';
 
         function switchMediaTab(tab, btnEl) {
-            if (!isNsfwUnlocked && tab === 'manga') {
+            const rule = ACCESS_RULES[tab];
+            if (rule && rule.requiresNsfwUnlock && !isNsfwUnlocked) {
                 openNsfwModal();
                 return;
             }
-            if (isRemoteClient && tab === 'mega') {
-                if (typeof showMegaToast === 'function') {
-                    showMegaToast('🔒 MEGA 个人网盘仅限 Steam Deck 本机访问，局域网禁止访问', true);
-                }
-                return;
+            if (rule && rule.requiresLocal && isRemoteClient) {
+                return;   // 局域网不可用标签：按钮已隐藏，这里只是兜底（URL 直连等场景）
             }
             activeMediaTab = tab;
             document.querySelectorAll('.media-nav-bar .tab-btn').forEach(b => b.classList.remove('active'));
@@ -1808,36 +1686,65 @@ let currentGameSearchQuery = '';
                 refreshMegaTransfers();
             } else if (activeMediaTab === 'crawler') {
                 document.getElementById('total-badge').textContent = '下载中心';
-                if (subStats) subStats.textContent = '把 crawlers/ 脚本包装成贴链接下载的按钮';
+                if (subStats) subStats.textContent = '把 crawlers/ 脚本包装成贴链接下载/一键运行的按钮';
+                loadCrawlerTypes();
                 refreshCrawlerJobs();
             }
         }
 
         let crawlerJobsPollTimer = null;
+        let crawlerTypesLoaded = false;
+
+        function loadCrawlerTypes() {
+            // 任务类型列表基本不变，加载过一次就不用每次切标签页都重新拉取
+            if (crawlerTypesLoaded) return;
+            fetch('/api/crawler/types?t=' + Date.now())
+                .then(r => r.json())
+                .then(types => {
+                    crawlerTypesLoaded = true;
+                    renderCrawlerCards(types || []);
+                })
+                .catch(() => {});
+        }
+
+        function renderCrawlerCards(types) {
+            const container = document.getElementById('crawler-cards-container');
+            if (!container) return;
+            container.innerHTML = types.map(t => {
+                const fieldsHtml = (t.fields || []).map(f => {
+                    const fieldId = `crawler-field-${t.id}-${f.name}`;
+                    if (f.options) {
+                        const opts = f.options.map(o => `<option value="${escapeAttr(o)}"${o === f.default ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('');
+                        return `<select id="${fieldId}" class="search-input" style="flex:1;min-width:150px;" title="${escapeAttr(f.label)}">${opts}</select>`;
+                    }
+                    const placeholder = escapeAttr(f.label + (f.required ? '（必填）' : (f.default ? `（留空默认：${f.default}）` : '（可选）')));
+                    const value = f.default ? ` value="${escapeAttr(f.default)}"` : '';
+                    return `<input type="text" id="${fieldId}" class="search-input" style="flex:1;min-width:180px;" placeholder="${placeholder}"${value}>`;
+                }).join('');
+                const hint = t.fields && t.fields.length
+                    ? ''
+                    : `<div style="font-size:12px;color:#8b949e;margin-bottom:10px;">一键运行，没有可填的参数——脚本内部固定清单/全站分类，直接点按钮开始。</div>`;
+                return `
+                    <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+                        <div style="font-size:13px;font-weight:600;color:#c9d1d9;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+                            <span>${escapeHtml(t.label)}</span>
+                        </div>
+                        ${hint}
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                            ${fieldsHtml}
+                            <button class="primary-section-btn" style="background:#238636;border-color:#2ea043;color:#fff;font-size:13px;padding:8px 18px;font-weight:600;" onclick="startCrawlerJob('${t.id}')">📥 ${t.fields && t.fields.length ? '开始' : '运行'}</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
 
         function startCrawlerJob(jobType) {
-            let params = {};
-            if (jobType === 'bilibili_audiobook') {
-                params = {
-                    bvid: document.getElementById('crawler-bili-bvid').value.trim(),
-                    album: document.getElementById('crawler-bili-album').value.trim(),
-                    start: document.getElementById('crawler-bili-start').value.trim(),
-                    end: document.getElementById('crawler-bili-end').value.trim(),
-                    output: document.getElementById('crawler-bili-output').value.trim(),
-                };
-                if (!params.bvid) { alert('请填写 BV 号'); return; }
-            } else if (jobType === 'youtube_audiobook') {
-                params = {
-                    url: document.getElementById('crawler-yt-url').value.trim(),
-                    album: document.getElementById('crawler-yt-album').value.trim(),
-                    cookies: document.getElementById('crawler-yt-cookies').value.trim(),
-                    output: document.getElementById('crawler-yt-output').value.trim(),
-                };
-                if (!params.url) { alert('请填写视频链接'); return; }
-            } else {
-                return;
-            }
-
+            const params = {};
+            document.querySelectorAll(`[id^="crawler-field-${jobType}-"]`).forEach(el => {
+                const fieldName = el.id.slice(`crawler-field-${jobType}-`.length);
+                params[fieldName] = el.value.trim();
+            });
             fetch('/api/crawler/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

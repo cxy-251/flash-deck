@@ -1,14 +1,21 @@
 """
-爬虫任务管理：把 crawlers/ 目录下"贴链接下载"的脚本包装成"提交任务 -> 轮询状态/日志"的
-后台任务，供 hub.js 的下载面板调用。
+爬虫任务管理：把 crawlers/ 目录下的脚本包装成"提交任务 -> 轮询状态/日志"的后台任务，
+供 hub.js 的下载中心面板调用。
 
 每个任务用 subprocess 起一个独立的 crawlers/xxx.py 子进程（复用脚本自身已经写好的下载/
-打包/归档逻辑，不重复实现），后台线程读取它的 stdout 逐行追加进内存日志，前端轮询 GET 接口
+打包/解压逻辑，不重复实现），后台线程读取它的 stdout 逐行追加进内存日志，前端轮询 GET 接口
 拿状态和日志增量，不需要 websocket。
 
-crawlers/ 目录里其余脚本（xbookcn_* 全站分类爬取、download_1000ji/fenghuang/guichuideng、
-build_english_*、extract_all_apk_books、process_archives）都是一次性/固定清单批量脚本，
-没有"每次换一个链接"的输入，不适合这种"输入框+下载按钮"的交互形式，所以没有收进 JOB_TYPES。
+JOB_TYPES 里的任务分两种形态：
+- 带 fields 的（如 bilibili/youtube 下载、伪装压缩包解压）：前端渲染成输入框表单，
+  "action" 对应脚本 argparse 的子命令（没有子命令的脚本 action 留 None）。
+- fields 为空列表的（如 xbookcn 全站爬取、guichuideng/1000ji/fenghuang 有声书批量下载）：
+  这几个脚本本身没有 argparse，每次运行走的是脚本内置的固定清单/全站分类，前端只渲染一个
+  "一键运行"按钮，没有输入框。
+
+crawlers/ 目录里剩下 3 个脚本（build_english_books.py、build_english_module.py、
+extract_all_apk_books.py）没收进 JOB_TYPES——它们是纯本地内容生成器，没有下载/爬取这一步，
+输出内容确定且已经生成过，重新跑一遍不会产生任何新结果，收进"下载中心"没有意义。
 """
 import os
 import subprocess
@@ -49,6 +56,54 @@ JOB_TYPES = {
             {"name": "output", "label": "输出文件名（可选）", "required": False},
         ],
     },
+    "archive_extract": {
+        "label": "伪装压缩包游戏解压（.mp4/.mkv 还原成游戏文件夹）",
+        "script": "process_archives.py",
+        "action": None,
+        "fields": [
+            {"name": "type", "label": "伪装容器类型", "default": "mp4", "options": ["mp4", "mkv"]},
+            {"name": "source", "label": "伪装文件完整路径", "required": True},
+            {"name": "category", "label": "目标专区", "default": "renpy",
+             "options": ["renpy", "steam", "unity", "godot", "unreal", "wine", "app", "rpg", "slg"]},
+            {"name": "name", "label": "游戏文件夹名（如 043 - New Game Title）", "required": True},
+        ],
+    },
+    "guichuideng_audiobook": {
+        "label": "《鬼吹灯》有声书批量下载（支持断点续传）",
+        "script": "download_guichuideng.py",
+        "action": None,
+        "fields": [],
+    },
+    "1000ji_audiobook": {
+        "label": "《你都1000级了外面最高30级》有声书批量下载",
+        "script": "download_1000ji.py",
+        "action": None,
+        "fields": [],
+    },
+    "fenghuang_audiobook": {
+        "label": "《新鬼吹灯之凤凰神殿》有声书批量下载",
+        "script": "download_fenghuang.py",
+        "action": None,
+        "fields": [],
+    },
+    "xbookcn_official": {
+        "label": "小书屋 官方32分类全站抓取",
+        "script": "xbookcn_downloader.py",
+        "action": None,
+        "fields": [],
+    },
+    "xbookcn_long": {
+        "label": "小书屋 长篇小说全站抓取",
+        "script": "xbookcn_long_downloader.py",
+        "action": None,
+        "fields": [],
+    },
+    "xbookcn_wave2": {
+        "label": "小书屋 第二波18分类抓取",
+        "script": "xbookcn_wave2_downloader.py",
+        "action": None,
+        "fields": [],
+    },
 }
 
 
@@ -80,7 +135,9 @@ def _build_cmd(job_type, params):
         list[str]: 传给 subprocess.Popen 的完整命令行参数列表。
     """
     spec = JOB_TYPES[job_type]
-    cmd = [PYTHON_BIN, os.path.join(CRAWLERS_DIR, spec["script"]), spec["action"]]
+    cmd = [PYTHON_BIN, os.path.join(CRAWLERS_DIR, spec["script"])]
+    if spec.get("action"):
+        cmd.append(spec["action"])
     for f in spec["fields"]:
         name = f["name"]
         val = params.get(name)

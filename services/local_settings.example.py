@@ -22,3 +22,9 @@ WAN_DOMAIN = None
 # NSFW 内容锁的默认密码，仅在第一次使用、还没设置过密码时生效——请务必在 App 内的
 # 「NSFW 解锁」弹窗里把密码改成非默认值，不要让这个值一直生效。
 NSFW_DEFAULT_PASSWORD = "changeme"
+
+# MEGA 命令行客户端 (mega-cmd) 的安装目录，按自己机器上的实际安装路径填。
+MEGA_APP_DIR = "~/Applications/mega-cmd"
+
+# 伪装压缩包游戏（.mp4/.mkv 里塞了加密 7z）的解压密码，按实际来源站点的密码填。
+ARCHIVE_EXTRACT_PASSWORD = "changeme"

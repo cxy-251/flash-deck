@@ -4,7 +4,6 @@ import zipfile
 import html
 import os
 import re
-import io
 import time
 import json
 import logging
@@ -587,7 +586,7 @@ def fetch_and_parse_gutenberg_book(book_id: int, full_title: str) -> List[Dict[s
                 raw_text = resp.read().decode('utf-8', errors='ignore')
                 if len(raw_text) > 500:
                     break
-        except Exception as e:
+        except Exception:
             continue
 
     if not raw_text:
@@ -618,7 +617,7 @@ def fetch_and_parse_gutenberg_book(book_id: int, full_title: str) -> List[Dict[s
 
     def flush_para():
         """把当前逐行累积的 cur_buf 合并、清洗成一个段落，追加进 cur_paragraphs 并清空缓冲区。"""
-        nonlocal cur_buf, cur_paragraphs
+        nonlocal cur_buf
         if cur_buf:
             para_text = ''.join(cur_buf).strip()
             para_text = re.sub(r'[\s\u3000]+', ' ', para_text)
@@ -628,7 +627,7 @@ def fetch_and_parse_gutenberg_book(book_id: int, full_title: str) -> List[Dict[s
 
     def flush_chapter():
         """收尾当前正在累积的一章：flush 掉残留段落，做标题/副标题识别，追加进 chapters。"""
-        nonlocal cur_title, cur_num, cur_subtitle, cur_paragraphs, chapters
+        nonlocal cur_title, cur_subtitle, cur_paragraphs
         flush_para()
         if cur_paragraphs:
             # 如果标题缺失副标题对联，且第一段为对联短句，自动提升为标题

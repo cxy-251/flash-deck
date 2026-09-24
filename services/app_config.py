@@ -25,6 +25,8 @@ _LOCAL_SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 LIBRARY_ROOTS_DEFAULT = [os.path.expanduser("~/Games")]
 WAN_DOMAIN_DEFAULT = None
 NSFW_DEFAULT_PASSWORD_DEFAULT = "changeme"
+MEGA_APP_DIR_DEFAULT = os.path.expanduser("~/Applications/mega-cmd")
+ARCHIVE_EXTRACT_PASSWORD_DEFAULT = "changeme"
 
 _cached_mtime = None
 _cached_module = None
@@ -139,3 +141,25 @@ def get_nsfw_default_password():
     module = _load_local_settings()
     value = getattr(module, "NSFW_DEFAULT_PASSWORD", None) if module else None
     return value if value else NSFW_DEFAULT_PASSWORD_DEFAULT
+
+
+def get_mega_app_dir():
+    """MEGA 命令行客户端 (mega-cmd) 的安装目录。
+
+    Returns:
+        str: mega-cmd 安装目录路径。
+    """
+    module = _load_local_settings()
+    value = getattr(module, "MEGA_APP_DIR", None) if module else None
+    return value if value else MEGA_APP_DIR_DEFAULT
+
+
+def get_archive_extract_password():
+    """伪装压缩包游戏（.mp4/.mkv 里塞了加密 7z）的解压密码。
+
+    Returns:
+        str: 解压密码字符串。
+    """
+    module = _load_local_settings()
+    value = getattr(module, "ARCHIVE_EXTRACT_PASSWORD", None) if module else None
+    return value if value else ARCHIVE_EXTRACT_PASSWORD_DEFAULT
