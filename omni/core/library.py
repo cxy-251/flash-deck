@@ -102,7 +102,8 @@ def _relocate(lib: dict):
         for cand in glob.glob(os.path.join(pattern, MARKER)):
             marker = read_marker(os.path.dirname(cand))
             if marker and marker.get("id") == lib["id"]:
-                return os.path.dirname(cand)
+                # 用真实路径：/run/media 下可能有指向挂载点的符号链接，写回链接路径就压缩不成 {sd}/... 了
+                return os.path.realpath(os.path.dirname(cand))
     return None
 
 
