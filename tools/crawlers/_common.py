@@ -121,8 +121,9 @@ def fetch_text(url: str, referer: str = None, retries: int = 3, min_len: int = 0
                 host = urllib.parse.urlparse(url).hostname
                 if host not in _warned_hosts:
                     _warned_hosts.add(host)
+                    key = next((k for k in endpoints.DEFAULTS if endpoints.host(k) == host), host)
                     print(f"⚠️ {host} 返回了 Cloudflare 验证页：请在浏览器里打开该站，把新的 cf_clearance 填进 "
-                          f"var/config/crawler_secrets.json 的 sites.{host}.cookies（UA 也要与该浏览器一致）")
+                          f"var/config/crawler_secrets.json 的 sites.{key}.cookies（UA 也要与该浏览器一致）")
                 return ""
             if res.stdout and len(res.stdout) > min_len:
                 return res.stdout

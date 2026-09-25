@@ -12,7 +12,7 @@
            blog_novels.py books --index https://example.blog/ --exclude 分类A --exclude 联系我们
 
 站点需要的 Cookie（如 Cloudflare 的 cf_clearance）与 UA 放在 var/config/crawler_secrets.json 的
-sites.<域名>.cookies / http.user_agent 里。输出到默认资源库 media_library/novels/<standard|nsfw>/<子目录>/。
+sites.<站点键或域名>.cookies / http.user_agent 里（站点键见 omni/core/endpoints.py，如 xbookcn_blog）。输出到默认资源库 media_library/novels/<standard|nsfw>/<子目录>/。
 """
 import argparse
 import os
