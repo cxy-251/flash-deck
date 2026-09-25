@@ -265,6 +265,17 @@ function initMarkdownAndMermaidEngines() {
 
 initMarkdownAndMermaidEngines();
 
+// 文档生成时 "\\to" "\\text" "\\frac" 之类常被当成字符串转义写坏成 Tab/换页符等控制字符，
+// 公式里不可能出现这些字符，渲染前还原回反斜杠命令。
+function repairTexEscapes(tex) {
+    return String(tex).replace(/[\t\f\x08\v\r](?=[a-zA-Z])/g, c => '\\' + ({ '\t': 't', '\f': 'f', '\x08': 'b', '\v': 'v', '\r': 'r' })[c]);
+}
+
+function renderTex(tex, display) {
+    const html = katex.renderToString(repairTexEscapes(tex).trim(), { displayMode: !!display, throwOnError: false, strict: false });
+    return display ? `<div class="katex-display">${html}</div>` : html;
+}
+
 function renderLatexMath(text) {
     if (!text) return text;
     if (!window.katex) return text;
@@ -273,7 +284,7 @@ function renderLatexMath(text) {
         text = text.replace(/(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])/g, function(match, m1, m2) {
             let formula = (m1 || m2 || '').trim();
             try {
-                return `<div class="katex-display">${katex.renderToString(formula, { displayMode: true, throwOnError: false })}</div>`;
+                return renderTex(formula, true);
             } catch(e) {
                 return match;
             }
@@ -283,7 +294,7 @@ function renderLatexMath(text) {
             let formula = (m1 || m2 || '').trim();
             if (!formula || formula.length < 1) return match;
             try {
-                return katex.renderToString(formula, { displayMode: false, throwOnError: false });
+                return renderTex(formula, false);
             } catch(e) {
                 return match;
             }
@@ -504,22 +515,23 @@ function parseRstToHtml(rst) {
     function parseRstInline(text) {
         if (!text) return '';
         const mathTokens = [];
-        // 1. 提取 :math:`...` 公式并生成占位符
-        let s = text.replace(/:math:`([^`]+)`/g, function(match, mathCode) {
+        function hold(html) {
             const token = '___KATEX_PH_' + mathTokens.length + '___';
-            let rendered = '';
-            if (window.katex) {
-                try {
-                    rendered = katex.renderToString(mathCode.trim(), { displayMode: false, throwOnError: false });
-                } catch(e) {
-                    rendered = `<code>${escapeHtml(mathCode)}</code>`;
-                }
-            } else {
-                rendered = `<code>${escapeHtml(mathCode)}</code>`;
-            }
-            mathTokens.push({ token: token, html: rendered });
+            mathTokens.push({ token: token, html: html });
             return token;
-        });
+        }
+        function mathHtml(code, display) {
+            if (window.katex) {
+                try { return renderTex(code, display); } catch(e) {}
+            }
+            return `<code>${escapeHtml(code)}</code>`;
+        }
+        // 1. 先把 ``行内代码`` 收起来（里面的 $ 不是公式），再提取公式并生成占位符：
+        //    :math:`...`（标准 RST）、$$...$$ 与 $...$（很多文档混用了 Markdown 写法）
+        let s = text.replace(/``([^`]+)``/g, (m, code) => hold(`<code>${escapeHtml(code)}</code>`));
+        s = s.replace(/:math:`([^`]+)`/g, (m, code) => hold(mathHtml(code, false)));
+        s = s.replace(/\$\$([\s\S]+?)\$\$/g, (m, code) => hold(mathHtml(code, true)));
+        s = s.replace(/(?<![\\$\w])\$(?![ \n])([^$\n]+?)(?<![ \\])\$(?![\d\w])/g, (m, code) => hold(mathHtml(code, false)));
 
         // 2. 基础转义与行内语法
         s = escapeHtml(s);
@@ -649,16 +661,21 @@ function parseRstToHtml(rst) {
         // 5. 检查指令: .. math:: (LaTeX 数学公式块)
         let matchMath = trimmed.match(/^\.\.\s+math::/i);
         if (matchMath) {
+            // 公式体 = 比指令行缩进更深的连续行（中间可有空行）；指令本身可能缩进在列表项里
+            const baseIndent = line.match(/^ */)[0].length;
+            const deeper = l => /^ */.exec(l)[0].length > baseIndent || (l.startsWith('\t') && baseIndent === 0);
             i++;
             let mathLines = [];
-            while (i < lines.length && (lines[i].startsWith('   ') || lines[i].startsWith('\t') || !lines[i].trim())) {
-                mathLines.push(lines[i].trim());
+            while (i < lines.length && (!lines[i].trim() || deeper(lines[i]))) {
+                // 只去掉缩进空格：行首的 Tab 可能是写坏的 "\t"（如 \text），留给 repairTexEscapes 还原
+                mathLines.push(lines[i].replace(/^ +/, '').trimEnd());
                 i++;
             }
-            let mathCode = mathLines.join('\n').trim();
+            // 指令选项（:label: / :nowrap: 等）不是公式内容
+            let mathCode = mathLines.filter(l => !/^:[a-z-]+:/.test(l)).join('\n').trim();
             if (window.katex) {
                 try {
-                    html.push(`<div class="katex-display">${katex.renderToString(mathCode, { displayMode: true, throwOnError: false })}</div>`);
+                    html.push(renderTex(mathCode, true));
                     continue;
                 } catch(e) {}
             }
