@@ -20,9 +20,13 @@
 站点 Cookie、代理、YouTube 登录方式放在 **`var/config/crawler_secrets.json`**，格式见
 [`secrets.example.json`](secrets.example.json)：
 
-* `sites.<域名>.cookies` —— 抓网页时按域名自动带上（例如 Cloudflare 的 `cf_clearance`；过期后脚本会提示更新）；
+* `sites.<站点键或域名>.cookies` —— 抓网页时按域名自动带上（例如 Cloudflare 的 `cf_clearance`；过期后脚本会打印获取步骤）；
 * `http.user_agent` / `http.proxy` —— 网页抓取用；
 * `ytdlp.cookies_file` / `ytdlp.cookies_from_browser` / `ytdlp.proxy` —— yt-dlp 用；都没配时默认用 `var/config/cookies.txt`。
+
+**获取 `cf_clearance`**（Cloudflare 拦截时脚本也会打印这段）：浏览器打开该站并通过验证 → F12 → Application
+（Firefox：存储）→ Cookies → 复制 `cf_clearance`；Console 里执行 `navigator.userAgent` 复制 UA → 分别填进
+`sites.<站点键>.cookies.cf_clearance` 与 `http.user_agent`。它绑定 UA 和出口 IP，换网络/代理后可能要重取。
 
 命令行参数（`--cookies`、`--proxy`）优先于这里。游戏解压密码在 `var/config/settings.json` 的 `archive_extract_password`。
 

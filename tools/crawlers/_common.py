@@ -122,8 +122,7 @@ def fetch_text(url: str, referer: str = None, retries: int = 3, min_len: int = 0
                 if host not in _warned_hosts:
                     _warned_hosts.add(host)
                     key = next((k for k in endpoints.DEFAULTS if endpoints.host(k) == host), host)
-                    print(f"⚠️ {host} 返回了 Cloudflare 验证页：请在浏览器里打开该站，把新的 cf_clearance 填进 "
-                          f"var/config/crawler_secrets.json 的 sites.{key}.cookies（UA 也要与该浏览器一致）")
+                    print(CF_COOKIE_HELP.format(host=host, key=key))
                 return ""
             if res.stdout and len(res.stdout) > min_len:
                 return res.stdout
@@ -134,6 +133,17 @@ def fetch_text(url: str, referer: str = None, retries: int = 3, min_len: int = 0
 
 
 _warned_hosts = set()
+
+
+CF_COOKIE_HELP = """⚠️ {host} 返回了 Cloudflare 验证页，站点 Cookie 缺失或已过期。更新方法：
+  1. 用电脑/Deck 上的浏览器打开 https://{host} ，等「正在验证你是否是真人」通过、能看到正文；
+  2. 按 F12 打开开发者工具 → Application（Firefox 叫「存储」）→ Cookies → https://{host}，
+     复制 cf_clearance 的值（其它 Cookie 一般不需要）；
+  3. 同一个开发者工具的 Console 里执行 navigator.userAgent，复制输出的 UA 字符串；
+  4. 写进 var/config/crawler_secrets.json（没有就从 tools/crawlers/secrets.example.json 复制一份）：
+       "http":  {{"user_agent": "<第 3 步的 UA>"}},
+       "sites": {{"{key}": {{"cookies": {{"cf_clearance": "<第 2 步的值>"}}}}}}
+  cf_clearance 绑定浏览器 UA 和出口 IP：UA 必须一致，换网络/开关代理后可能要重新获取；一般几天到几周过期。"""
 
 
 def is_challenge(page: str) -> bool:
