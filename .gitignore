@@ -22,6 +22,9 @@ __pycache__/
 *.cbr
 *.epub
 
+# 路由快照会记下本机资源库里的真实文件名/挂载点，每台机器自己生成（tests/route_snapshot.py record）
+/tests/snapshots/
+
 *.log
 .ropeproject/
 .DS_Store

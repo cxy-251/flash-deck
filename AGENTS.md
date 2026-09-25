@@ -117,6 +117,7 @@ omni-deck/
 ./run.sh                                        # 启动（Steam 游戏模式同款）
 .venv/bin/python -m omni --headless --port 8997 --no-workers   # 只起 HTTP 服务调试
 .venv/bin/python tests/test_path_guard.py       # 路径守卫
+.venv/bin/python tests/route_snapshot.py record --out tests/snapshots/v3.json      # 改动前在本机录基线（不进 git）
 .venv/bin/python tests/route_snapshot.py compare --against tests/snapshots/v3.json   # 路由回归
 .venv/bin/python tests/ui_smoke.py              # 前端冒烟（offscreen QtWebEngine，截图在 /tmp/omni-ui-smoke）
 uv lock / uv sync                               # 依赖管理

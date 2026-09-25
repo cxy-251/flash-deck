@@ -70,6 +70,6 @@ graph TB
 
 ## 6. 测试
 
-* `tests/route_snapshot.py`：起独立端口 + 临时状态目录的无界面实例，请求全部路由，比对状态码/类型/JSON 结构（`tests/snapshots/v3.json`）。
+* `tests/route_snapshot.py`：起独立端口 + 临时状态目录的无界面实例，请求全部路由，比对状态码/类型/JSON 结构（基线 `tests/snapshots/*.json` 在本机录制，含真实资源名，不进 git）。
 * `tests/ui_smoke.py`：offscreen QtWebEngine 逐个进入各分区，检查渲染与 JS 报错，并截图。
 * `tests/test_path_guard.py`：写死路径守卫。
