@@ -35,7 +35,10 @@
  "args": ["https://youtu.be/xxx|第一部", "--album", "某书", "--min-mb", "10"]}
 ```
 
-参数里的 `{tasks}` 会替换成任务目录（剧本、角色配置、书名映射等数据文件放在 `{tasks}/data/`），`{inbox}` 替换成收件箱目录。
+参数（命令行、任务文件、secrets 里都一样，见 `_common.expand`）支持占位符：`{url:站点键}` 替换成
+`omni/core/endpoints.py` 里的站点根地址（如 `{url:youtube}/watch?v=…`、`{url:xbookcn_blog}`），`{tasks}` 替换成任务目录
+（剧本、角色配置、书名映射等数据文件放在 `{tasks}/data/`），`{inbox}` 替换成收件箱目录，`{home}` `{games}` `{sd}` 等
+替换成 settings 的基础目录。secrets 的 `sites` 键可以写站点键（如 `xbookcn_blog`），换域名时不用改。
 另外所有脚本都支持 `@参数文件`（每行一个参数）：`media_fetch.py @我的参数.args`。
 
 ## 约定

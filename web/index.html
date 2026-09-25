@@ -10,7 +10,7 @@
         header / subbar / view / overlays 片段，{{styles}} / {{scripts}} 按 manifest.web 的顺序引入。
     -->
     {{vendor}}
-    <script>window.OMNI_MANIFEST = {{manifest_json}};</script>
+    <script>window.OMNI_MANIFEST = {{manifest_json}}; window.OMNI_ENDPOINTS = {{endpoints_json}};</script>
     <script>
         // 带 ?category= 直达二级列表时，首帧就把门户页藏掉（脚本还没加载，避免闪一下门户）
         (function() {

@@ -2,14 +2,15 @@
 访问控制的唯一实现：请求来自哪（本机 / 局域网 / Cloudflare 广域网）、能不能看 NSFW 内容、
 局域网/广域网开关关着时整站闸门。路由上的 access="nsfw"/"local" 最终都落到这里。
 """
+from omni.core import endpoints
 from omni.network import lan, wan
 
-LOOPBACK = ("127.0.0.1", "localhost", "::1")
+LOOPBACK = (endpoints.LOOPBACK, "localhost", "::1")
 
 
 def client_ip(handler) -> str:
     addr = getattr(handler, "client_address", None)
-    return addr[0] if addr else "127.0.0.1"
+    return addr[0] if addr else endpoints.LOOPBACK
 
 
 def is_cloudflare(handler) -> bool:

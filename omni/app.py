@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 
-from omni.core import paths
+from omni.core import endpoints, paths
 
 DEFAULT_PORT = 8998
 
@@ -80,7 +80,7 @@ def _port_in_use(port) -> bool:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(0.5)
     try:
-        return s.connect_ex(("127.0.0.1", port)) == 0
+        return s.connect_ex((endpoints.LOOPBACK, port)) == 0
     except Exception:
         return False
     finally:
@@ -98,7 +98,7 @@ def ensure_single_instance(port):
     from omni.features.system.api import INSTANCE_MAGIC
     boot("ensure_single_instance: probing /api/_alive …")
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=1.5)
+        conn = http.client.HTTPConnection(endpoints.LOOPBACK, port, timeout=1.5)
         conn.request("GET", "/api/_alive")
         data = json.loads(conn.getresponse().read() or b"{}")
         conn.close()

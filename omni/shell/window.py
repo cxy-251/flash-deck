@@ -10,7 +10,7 @@ import threading
 import subprocess
 import urllib.parse
 
-from omni.core import paths, process, settings
+from omni.core import endpoints, paths, process, settings
 from omni.core.log import boot, log
 from omni.features.games import launcher, registry
 from omni.network import lan
@@ -716,7 +716,7 @@ class MainWindow(QMainWindow):
         self.btn_pure.hide()
         self.setWindowTitle("Omni Deck")
         self.webview.stop()
-        self.webview.load(QUrl(f"http://127.0.0.1:{lan.PORT}/hub.html"))
+        self.webview.load(QUrl(endpoints.local_url(lan.PORT, "hub.html")))
         self.webview.setFocus()
 
     def load_category(self):
@@ -746,7 +746,7 @@ class MainWindow(QMainWindow):
         self.btn_pure.hide()
         self.setWindowTitle("Omni Deck")
         self.webview.stop()
-        self.webview.load(QUrl(f"http://127.0.0.1:{lan.PORT}/hub.html?category={cat}"))
+        self.webview.load(QUrl(endpoints.local_url(lan.PORT, f"hub.html?category={cat}")))
         self.webview.setFocus()
 
     def launch_game(self, game_id: str, title: str):
@@ -794,7 +794,7 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"{title} — Omni Deck")
             system_core = game_data.get('system', 'gba')
             rom_file = game_data.get('rom_file', '')
-            target_url = QUrl(f"http://127.0.0.1:{lan.PORT}/player_retro.html?id={urllib.parse.quote(game_id)}&system={system_core}&rom={urllib.parse.quote(rom_file)}")
+            target_url = QUrl(endpoints.local_url(lan.PORT, f"player_retro.html?id={urllib.parse.quote(game_id)}&system={system_core}&rom={urllib.parse.quote(rom_file)}"))
             self.webview.load(target_url)
             self.webview.setFocus()
             self.btn_pure.hide()
@@ -812,7 +812,7 @@ class MainWindow(QMainWindow):
             self.current_game_id = game_id
             self.setWindowTitle(f"{title} — Omni Deck")
             entry = game_data.get('entry_html', 'index.html')
-            target_url = QUrl(f"http://127.0.0.1:{lan.PORT}/game/{urllib.parse.quote(game_id)}/{entry}?engine=renpy&type=slg")
+            target_url = QUrl(endpoints.local_url(lan.PORT, f"game/{urllib.parse.quote(game_id)}/{entry}?engine=renpy&type=slg"))
             self.webview.load(target_url)
             self.webview.setFocus()
             self.btn_pure.hide()
@@ -880,7 +880,7 @@ class MainWindow(QMainWindow):
                 self.is_external_game = False   # swf 走内置 Ruffle，在大厅 webview 里，胶囊要留着
                 self.btn_pure.hide()
                 swf_file = game_data.get('swf_file', '')
-                target_url = QUrl(f"http://127.0.0.1:{lan.PORT}/player_flash.html?id={urllib.parse.quote(game_id)}&file={urllib.parse.quote(swf_file)}")
+                target_url = QUrl(endpoints.local_url(lan.PORT, f"player_flash.html?id={urllib.parse.quote(game_id)}&file={urllib.parse.quote(swf_file)}"))
                 self.webview.load(target_url)
                 
                 self.webview.setFocus()
@@ -895,7 +895,7 @@ class MainWindow(QMainWindow):
         self.current_game_id = game_id
         self.setWindowTitle(f"{title} — Omni Deck")
         
-        target_url = QUrl(f"http://127.0.0.1:{lan.PORT}/game/{urllib.parse.quote(game_id)}/index.html")
+        target_url = QUrl(endpoints.local_url(lan.PORT, f"game/{urllib.parse.quote(game_id)}/index.html"))
         self.webview.load(target_url)
         self.webview.setFocus()
         

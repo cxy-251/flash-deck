@@ -21,6 +21,7 @@ def _changed():
 def _overview():
     cfg = settings.load()
     return {
+        "dirs": {k: {"value": v, "resolved": settings.resolve("{%s}" % k)} for k, v in (cfg.get("dirs") or {}).items()},
         "libraries": library.status(),
         "layout": library.LAYOUT,
         "duplicates": library.duplicates(),
@@ -94,9 +95,19 @@ api.post("/api/library/repair", deny=LOCAL_ONLY)(_op(lambda b: library.repair(b[
 def update_settings(req):
     """更新收件箱 / 外部工具路径 / 库外游戏等配置（只接受已知的顶层键）。"""
     b = req.json_body()
-    allowed = {k: b[k] for k in ("inbox_dir", "tools", "external_games", "wan_domain") if k in b}
+    allowed = {k: b[k] for k in ("inbox_dir", "tools", "external_games", "wan_domain", "dirs") if k in b}
+    # 基础目录先落盘，下面其它路径才能按新的 dirs 压缩
+    if "dirs" in allowed:
+        settings.update({"dirs": {k: v.strip() for k, v in allowed.pop("dirs").items()
+                                  if isinstance(v, str) and v.strip()}})
+    # 路径一律存成「基础目录占位」形式（{games}/...），以后挪动基础目录只改 dirs 一处
     if "tools" in allowed:
-        allowed["tools"] = {k: v for k, v in allowed["tools"].items() if k in settings.DEFAULTS["tools"]}
+        allowed["tools"] = {k: settings.compact(v) if v else v
+                            for k, v in allowed["tools"].items() if k in settings.DEFAULTS["tools"]}
+    if allowed.get("inbox_dir"):
+        allowed["inbox_dir"] = settings.compact(allowed["inbox_dir"])
+    if "external_games" in allowed:
+        allowed["external_games"] = [{**g, "path": settings.compact(g.get("path", ""))} for g in allowed["external_games"]]
     settings.update(allowed)
     _changed()
     return req.json({"success": True, **_overview()})

@@ -2,7 +2,8 @@
 """
 运行保存好的任务：var/config/crawler_tasks/<名字>.task.json
     {"label": "说明", "script": "media_fetch.py", "args": ["...", "--album", "..."]}
-参数里可以用占位符：{tasks} = 任务目录（放剧本/映射表等数据文件），{inbox} = 收件箱目录。
+参数里可以用占位符（见 _common.expand）：{url:站点键} = endpoints 里的站点根地址，
+{tasks} = 任务目录（放剧本/映射表等数据文件），{inbox} = 收件箱目录，{home}/{games}/{sd}… = 基础目录。
 
     run_task.py --list
     run_task.py audio_fenghuang
@@ -55,12 +56,7 @@ def main():
     script = os.path.join(HERE, task["script"])
     if not os.path.exists(script) or os.path.dirname(os.path.abspath(script)) != HERE:
         raise SystemExit(f"任务引用的脚本不存在：{task['script']}")
-    subst = {"{tasks}": c.paths.CRAWLER_TASKS, "{inbox}": c.settings.get("inbox_dir")}
-    argv = []
-    for a in task.get("args", []):
-        for k, v in subst.items():
-            a = a.replace(k, v)
-        argv.append(a)
+    argv = c.expand(list(task.get("args", [])))
     print(f"▶ {task.get('label', name)}")
     sys.stdout.flush()
     raise SystemExit(subprocess.call([sys.executable, "-u", script] + argv, cwd=HERE))

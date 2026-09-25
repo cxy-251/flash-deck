@@ -16,7 +16,7 @@ import subprocess
 import threading
 import time
 
-from omni.core import paths, process, settings
+from omni.core import endpoints, paths, process, settings
 from omni.core.log import log
 from omni.network import state
 
@@ -26,7 +26,7 @@ CLOUDFLARE_EDGE_IPS = [
     "198.41.200.13", "198.41.200.23", "198.41.200.33", "198.41.200.43",
     "198.41.200.53", "198.41.200.113", "198.41.200.193", "198.41.200.233",
 ]
-DNS_HELPER_ADDR = ("127.0.0.1", 53535)
+DNS_HELPER_ADDR = (endpoints.LOOPBACK, 53535)
 UPSTREAM_DNS = ("223.5.5.5", 53)
 
 _enabled = bool(state.load().get("wan", False))

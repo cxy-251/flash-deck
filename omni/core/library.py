@@ -25,34 +25,34 @@ from omni.core import settings
 MARKER = "omnilibrary.json"
 LAYOUT_VERSION = 1
 
+# 库根下的两棵顶层目录与默认库文件夹名——改名只改这里（LAYOUT 全部由它们拼出）
+GAMES_ROOT = "standalone_games"
+MEDIA_ROOT = "media_library"
+DEFAULT_DIR_NAME = "omni_library"
+
+# 游戏分类：逻辑键 games.<分类> -> <GAMES_ROOT>/<分类>_games
+GAME_CATEGORIES = ["rpg", "retro", "slg", "flash", "steam", "renpy", "unity", "godot", "unreal", "wine", "3ds", "app"]
+
+# 媒体：逻辑键 media.<...> -> <MEDIA_ROOT>/<相对路径>
+MEDIA_LAYOUT = {
+    "manga":               "manga",
+    "novels":              "novels",
+    "novels.standard":     "novels/standard",
+    "novels.nsfw":         "novels/nsfw",
+    "audio":               "audio",
+    "audio.standard":      "audio/standard",
+    "audio.nsfw":          "audio/nsfw",
+    "shortvideo":          "shortvideo",
+    "shortvideo.kuaishou": "shortvideo/快手",
+    "shortvideo.douyin":   "shortvideo/抖音",
+    "shortvideo.tiktok":   "shortvideo/TikTok",
+    "docs":                "docs",
+}
+
 # 逻辑键 -> 库根目录下的相对路径
 LAYOUT = {
-    # 游戏
-    "games.rpg":     "standalone_games/rpg_games",
-    "games.retro":   "standalone_games/retro_games",
-    "games.slg":     "standalone_games/slg_games",
-    "games.flash":   "standalone_games/flash_games",
-    "games.steam":   "standalone_games/steam_games",
-    "games.renpy":   "standalone_games/renpy_games",
-    "games.unity":   "standalone_games/unity_games",
-    "games.godot":   "standalone_games/godot_games",
-    "games.unreal":  "standalone_games/unreal_games",
-    "games.wine":    "standalone_games/wine_games",
-    "games.3ds":     "standalone_games/3ds_games",
-    "games.app":     "standalone_games/app_games",
-    # 媒体
-    "media.manga":             "media_library/manga",
-    "media.novels":            "media_library/novels",
-    "media.novels.standard":   "media_library/novels/standard",
-    "media.novels.nsfw":       "media_library/novels/nsfw",
-    "media.audio":             "media_library/audio",
-    "media.audio.standard":    "media_library/audio/standard",
-    "media.audio.nsfw":        "media_library/audio/nsfw",
-    "media.shortvideo":        "media_library/shortvideo",
-    "media.shortvideo.kuaishou": "media_library/shortvideo/快手",
-    "media.shortvideo.douyin":   "media_library/shortvideo/抖音",
-    "media.shortvideo.tiktok":   "media_library/shortvideo/TikTok",
-    "media.docs":              "media_library/docs",
+    **{f"games.{c}": f"{GAMES_ROOT}/{c}_games" for c in GAME_CATEGORIES},
+    **{f"media.{k}": f"{MEDIA_ROOT}/{v}" for k, v in MEDIA_LAYOUT.items()},
 }
 
 # 独立游戏专区的子分类（顺序即前端子标签顺序）
@@ -95,7 +95,8 @@ def _save(libs: list, default_id=None) -> None:
 
 
 def _relocate(lib: dict):
-    """库根目录不在了：到 /run/media 下找带同 id 标记文件的目录（SD 卡换了挂载点的情况）。"""
+    """库根目录不在了：到 /run/media 下找带同 id 标记文件的目录（SD 卡换了挂载点的情况）。
+    找到后写回的是 compact 后的形式；若库路径写的是 {sd}/... 这类占位，更推荐直接改 dirs.sd。"""
     patterns = ["/run/media/*/*", "/run/media/*/*/*", "/media/*/*", "/media/*/*/*"]
     for pattern in patterns:
         for cand in glob.glob(os.path.join(pattern, MARKER)):
@@ -113,12 +114,12 @@ def libraries() -> list:
         changed = False
         out = []
         for lib in libs:
-            path = os.path.expanduser(lib["path"])
+            path = settings.resolve(lib["path"])
             online = os.path.isdir(path)
             if not online:
                 moved = _relocate(lib)
                 if moved:
-                    lib["path"], path, online, changed = moved, moved, True, True
+                    lib["path"], path, online, changed = settings.compact(moved), moved, True, True
             out.append({
                 "id": lib["id"],
                 "path": path,
@@ -170,9 +171,9 @@ def candidates(key: str) -> list:
 
 
 def primary(key: str, *sub: str) -> str:
-    """默认库里该键对应的路径（新内容写入位置）；没有任何库时退回到 ~/Games/omni_library。"""
+    """默认库里该键对应的路径（新内容写入位置）；没有任何库时退回到 {games}/<DEFAULT_DIR_NAME>。"""
     lib = default_library()
-    root = lib["path"] if lib else os.path.expanduser("~/Games/omni_library")
+    root = lib["path"] if lib else settings.resolve("{games}/" + DEFAULT_DIR_NAME)
     return os.path.join(root, _rel(key), *sub)
 
 
@@ -193,13 +194,13 @@ def locate(abs_path: str):
 
 def plan_skeleton(root: str) -> list:
     """该库根目录下还缺哪些骨架目录（相对路径列表）。"""
-    root = os.path.expanduser(root)
+    root = settings.resolve(root)
     return [rel for rel in sorted(set(LAYOUT.values())) if not os.path.isdir(os.path.join(root, rel))]
 
 
 def ensure_skeleton(root: str) -> list:
     """补齐缺失的骨架目录（只建空目录，绝不动已有文件），返回新建的相对路径列表。"""
-    root = os.path.expanduser(root)
+    root = settings.resolve(root)
     created = []
     for rel in plan_skeleton(root):
         os.makedirs(os.path.join(root, rel), exist_ok=True)
@@ -224,12 +225,12 @@ def mount_points() -> list:
 def add(path: str, label: str = None, make_default: bool = False) -> dict:
     """登记一个新库：建根目录与骨架、写标记文件。已登记的路径不会重复添加。"""
     with _lock:
-        path = os.path.abspath(os.path.expanduser(path.strip()))
+        path = os.path.abspath(settings.resolve(path.strip()))
         if not path or path == "/":
             raise ValueError("无效的路径")
         libs = _stored()
         for lib in libs:
-            if os.path.realpath(os.path.expanduser(lib["path"])) == os.path.realpath(path):
+            if os.path.realpath(settings.resolve(lib["path"])) == os.path.realpath(path):
                 raise ValueError("这个目录已经是资源库了")
         marker = read_marker(path) if os.path.isdir(path) else None
         lib_id = (marker or {}).get("id") or uuid.uuid4().hex[:8]
@@ -239,7 +240,7 @@ def add(path: str, label: str = None, make_default: bool = False) -> dict:
         os.makedirs(path, exist_ok=True)
         created = ensure_skeleton(path)
         _write_marker(path, lib_id, label)
-        libs.append({"id": lib_id, "path": path, "label": label})
+        libs.append({"id": lib_id, "path": settings.compact(path), "label": label})
         default_id = lib_id if (make_default or len(libs) == 1) else None
         _save(libs, default_id)
         return {"id": lib_id, "path": path, "label": label, "created": created}
@@ -265,7 +266,7 @@ def rename(lib_id: str, label: str) -> None:
         for lib in libs:
             if lib["id"] == lib_id:
                 lib["label"] = label.strip() or lib.get("label")
-                path = os.path.expanduser(lib["path"])
+                path = settings.resolve(lib["path"])
                 if os.path.isdir(path):
                     _write_marker(path, lib_id, lib["label"])
         _save(libs)

@@ -19,7 +19,7 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
-from omni.core import library, paths, settings  # noqa: E402
+from omni.core import endpoints, library, paths, settings  # noqa: E402
 
 DEFAULT_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
               "Chrome/151.0.0.0 Safari/537.36")
@@ -27,9 +27,46 @@ DEFAULT_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like G
 
 # --------------------------------------------------------------------------- 参数与私密配置
 
+_TOKEN = re.compile(r"\{(url:)?([a-z_][a-z0-9_]*)\}")
+
+
+def expand(value):
+    """展开参数/任务文件/secrets 里的占位符，让它们只写「键」不写死地址：
+      {url:站点键}  -> omni/core/endpoints.py 的站点根地址，如 {url:youtube}/watch?v=xxx
+      {tasks}       -> 任务目录 var/config/crawler_tasks（剧本/映射表等数据文件）
+      {inbox}       -> 收件箱目录（settings.inbox_dir）
+      {home} {games} {sd} …  -> settings.json 的 dirs 基础目录
+    不认识的占位符原样保留。列表/字典递归处理。"""
+    if isinstance(value, list):
+        return [expand(v) for v in value]
+    if isinstance(value, dict):
+        return {k: expand(v) for k, v in value.items()}
+    if not isinstance(value, str) or "{" not in value:
+        return value
+
+    def sub(m):
+        is_url, key = m.group(1), m.group(2)
+        if is_url:
+            return endpoints.get(key) if key in endpoints.DEFAULTS else m.group(0)
+        if key == "tasks":
+            return paths.CRAWLER_TASKS
+        if key == "inbox":
+            return settings.resolve(settings.get("inbox_dir"))
+        return settings.resolve(m.group(0))
+    return _TOKEN.sub(sub, value)
+
+
+class _Parser(argparse.ArgumentParser):
+    def parse_args(self, *a, **kw):
+        ns = super().parse_args(*a, **kw)
+        for k, v in vars(ns).items():
+            setattr(ns, k, expand(v))
+        return ns
+
+
 def parser(description: str) -> argparse.ArgumentParser:
-    """统一的参数解析器：支持 @文件 读参数（每行一个），便于保存/复用一组参数。"""
-    p = argparse.ArgumentParser(description=description, fromfile_prefix_chars="@")
+    """统一的参数解析器：支持 @文件 读参数（每行一个），便于保存/复用一组参数；参数里的占位符见 expand()。"""
+    p = _Parser(description=description, fromfile_prefix_chars="@")
     p.convert_arg_line_to_args = lambda line: [line.strip()] if line.strip() and not line.startswith("#") else []
     return p
 
@@ -38,7 +75,7 @@ def secrets() -> dict:
     try:
         with open(paths.CRAWLER_SECRETS, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        return expand(data) if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
 
@@ -52,9 +89,13 @@ def http_proxy():
 
 
 def site_cookies(url: str) -> dict:
-    """按域名取 Cookie（secrets.sites.<host>.cookies），没配置返回空。"""
+    """按域名取 Cookie（secrets.sites.<域名 或 endpoints 站点键>.cookies），没配置返回空。"""
     host = urllib.parse.urlparse(url).hostname or ""
-    return ((secrets().get("sites") or {}).get(host) or {}).get("cookies") or {}
+    sites = secrets().get("sites") or {}
+    for key, conf in sites.items():
+        if key == host or (key in endpoints.DEFAULTS and endpoints.host(key) == host):
+            return (conf or {}).get("cookies") or {}
+    return {}
 
 
 # --------------------------------------------------------------------------- 网页抓取

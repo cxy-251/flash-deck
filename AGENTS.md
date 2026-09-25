@@ -21,7 +21,12 @@
   外部工具路径与本机配置只从 `omni/core/settings.py` 取。
 * 业务代码里**禁止**写死 `/home/...`、`/run/media/...`、`expanduser(...)`、`SCRIPT_DIR` 拼路径——
   `tests/test_path_guard.py` 会拦截。新增配置项 = 在 `settings.DEFAULTS` 加一行；新增资源分类 = 在
-  `library.LAYOUT` 加一行。
+  `library.GAME_CATEGORIES` / `library.MEDIA_LAYOUT` 加一行（库顶层目录名是 `GAMES_ROOT` / `MEDIA_ROOT` 常量）。
+* 配置里的路径写成「基础目录占位」形式：`{home}` `{apps}` `{games}` `{steam}` `{sd}` 定义在 settings 的 `dirs`，
+  由 `settings.resolve()` 展开、`settings.compact()` 压缩——挪动一个基础目录只改 `dirs` 一处（资源库页面可编辑）。
+* 外部站点与本机地址只从 `omni/core/endpoints.py` 取：代码里写 `endpoints.url("站点键", 路径…)`，本机回环用
+  `endpoints.LOOPBACK` / `endpoints.local_url()`；前端用 `Omni.url('站点键', …)` / `Omni.host()`（`endpoints.PUBLIC`
+  里的键才下发）。换域名/镜像在 settings.json 的 `endpoints` 覆盖。
 
 ### 4. 资源与项目分离
 * 仓库里**不放任何游戏/媒体资源**。资源在「资源库」里（见下），状态在 `var/`，两者都不进 git。

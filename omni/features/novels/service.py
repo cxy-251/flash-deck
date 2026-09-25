@@ -14,7 +14,7 @@ import urllib.parse
 import ssl
 from typing import List, Dict, Any, Optional, Tuple
 
-from omni.core import events, library, media_index, paths
+from omni.core import endpoints, events, library, media_index, paths
 
 logger = logging.getLogger("novel_service")
 
@@ -558,10 +558,10 @@ CLASSIC_FULL_MAP = {
 def fetch_and_parse_gutenberg_book(book_id: int, full_title: str) -> List[Dict[str, str]]:
     """从古腾堡镜像自动下载真实全本长篇文本，智能配对多行回目标题，重组自然段落并转换为简体中文"""
     urls = [
-        f"https://www.gutenberg.org/ebooks/{book_id}.txt.utf-8",
-        f"https://gutenberg.org/cache/epub/{book_id}/pg{book_id}.txt",
-        f"https://www.gutenberg.org/files/{book_id}/{book_id}-0.txt",
-        f"https://raw.githubusercontent.com/gutenberg-org/{book_id}/master/{book_id}.txt"
+        endpoints.url("gutenberg", "ebooks", f"{book_id}.txt.utf-8"),
+        endpoints.url("gutenberg_alt", "cache/epub", book_id, f"pg{book_id}.txt"),
+        endpoints.url("gutenberg", "files", book_id, f"{book_id}-0.txt"),
+        endpoints.url("gutenberg_raw", book_id, "master", f"{book_id}.txt")
     ]
     raw_text = ""
     for u in urls:
@@ -756,8 +756,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '明代世情', '四大奇书', '长篇足本', '全本精校'],
         'intro': '明代四大奇书之一，全景式展现晚明市井风貌、人情世态与情欲纠葛的世情小说巅峰之作。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 100,
         'rating': '9.9',
         'is_nsfw': True
@@ -769,8 +769,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '明清艳情', '李笠翁', '古典名篇', '全本精校'],
         'intro': '清代戏剧家、文学家李渔所著古典白话情色小说代表作，讲述未央生因色悟道之警世传奇。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 20,
         'rating': '9.8',
         'is_nsfw': True
@@ -782,8 +782,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '古典艳情', '神魔幻化', '全本精校'],
         'intro': '明末清初白话短篇神魔艳情小说，讲述灯草幻化为人涉足红尘情海之奇幻故事。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 12,
         'rating': '9.7',
         'is_nsfw': True
@@ -795,8 +795,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '清代世情', '梨园情韵', '长篇足本'],
         'intro': '清代世情小说名作，描摹京城梨园伶人生活与士人交往，文笔典雅细腻。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 60,
         'rating': '9.7',
         'is_nsfw': True
@@ -808,8 +808,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '清代禁书', '长篇巨著', '神怪世情'],
         'intro': '清代雍正年间长篇世情艳情小说，构思宏大奇崛，被誉为清代世情小说之旷世奇书。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 24,
         'rating': '9.8',
         'is_nsfw': True
@@ -821,8 +821,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '明代艳情', '世情短篇', '全本精校'],
         'intro': '明代万历年间艳情小说，作者为明代著名戏曲家吕天成，文笔流畅生动。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 4,
         'rating': '9.6',
         'is_nsfw': True
@@ -834,8 +834,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '明代艳史', '文言短篇'],
         'intro': '明代文言艳情小说名篇，以自叙口吻回忆情海生平，笔调诙谐冷峻。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 2,
         'rating': '9.5',
         'is_nsfw': True
@@ -847,8 +847,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '清代佳人', '才子艳情', '全本精校'],
         'intro': '清代才子佳人与艳情结合的白话小说，叙述柳生与多位佳人的风流韵事。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 18,
         'rating': '9.6',
         'is_nsfw': True
@@ -860,8 +860,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '清初艳情', '因果世情', '全本精校'],
         'intro': '清初白话艳情小说集，分四集每集五回，宣扬情欲因果与惩恶扬善。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 20,
         'rating': '9.5',
         'is_nsfw': True
@@ -873,8 +873,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '明代话本', '市井艳闻', '全本精校'],
         'intro': '明末拟话本短篇小说集，生动描绘市井男女在爱情与情欲中的悲欢离合。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 24,
         'rating': '9.7',
         'is_nsfw': True
@@ -886,8 +886,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '明代艳情', '风月世情', '全本精校'],
         'intro': '明代白话艳情小说，写孙氏一门风流风月因果，情节跌宕起伏。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 14,
         'rating': '9.5',
         'is_nsfw': True
@@ -899,8 +899,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '清代艳情', '上元灯节', '全本精校'],
         'intro': '清代艳情小说名作，借上元灯节游玩生发出的风流奇遇。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 21,
         'rating': '9.6',
         'is_nsfw': True
@@ -912,8 +912,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '历史情色',
         'tags': ['历史情色', '明代艳情', '长篇足本', '风月奇观'],
         'intro': '明代著名的长篇艳情小说，讲述梅素先与李氏等人的情海风浪与快意恩仇。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/历史情色',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/历史情色',
         'chapters_count': 40,
         'rating': '9.7',
         'is_nsfw': True
@@ -925,8 +925,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '长篇巨著',
         'tags': ['长篇巨著', '晚清谴责', '青楼世情', '十里洋场', '全本典藏'],
         'intro': '晚清著名长篇小说，全景式展现清末上海十里洋场的青楼浮华与官场百态。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/长篇巨著',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/长篇巨著',
         'chapters_count': 192,
         'rating': '9.8',
         'is_nsfw': True
@@ -938,8 +938,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '现代都市',
         'tags': ['现代都市', '经典传奇', '青春往事', '都市情色', '全本精校'],
         'intro': '华人网络成人文学开山鼻祖级长篇巨著，描绘少年阿宾从校园到社会的成长与情欲历程。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/现代都市',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/现代都市',
         'chapters_count': 36,
         'rating': '9.9',
         'is_nsfw': True
@@ -951,8 +951,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '人妻熟女',
         'tags': ['人妻熟女', '邻家少妇', '现代都市', '情感偷情', '全本精校'],
         'intro': '都市人妻情感小说巅峰作，细腻勾勒邻家温婉少妇在婚姻与激情之间的徘徊与沉沦。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/人妻熟女',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/人妻熟女',
         'chapters_count': 28,
         'rating': '9.8',
         'is_nsfw': True
@@ -964,8 +964,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '现代都市',
         'tags': ['现代都市', '职场商战', '女总裁', '秘书诱惑', '长篇足本'],
         'intro': '职场商战与情欲交织的长篇佳作，展现跨国集团内部的权力博弈与美艳女高管的私密情感。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/现代都市',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/现代都市',
         'chapters_count': 42,
         'rating': '9.7',
         'is_nsfw': True
@@ -977,8 +977,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '现代都市',
         'tags': ['现代都市', '官场世情', '豪门娇妻', '长篇巨著'],
         'intro': '官场与豪门世情交融的鸿篇巨著，刻画权贵阶层的浮华夜宴与绝色娇妻的私密往事。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/现代都市',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/现代都市',
         'chapters_count': 55,
         'rating': '9.8',
         'is_nsfw': True
@@ -990,8 +990,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '家庭伦理',
         'tags': ['家庭伦理', '乱伦禁忌', '母子情感', '人妻熟女', '全本精编'],
         'intro': '深度刻画家庭关系与禁忌边缘的伦理长篇，情感纠结复杂，心理描写极为细腻传神。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/家庭乱伦',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/家庭乱伦',
         'chapters_count': 32,
         'rating': '9.8',
         'is_nsfw': True
@@ -1003,8 +1003,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '家庭伦理',
         'tags': ['家庭伦理', '温柔小姨', '乱伦禁忌', '现代都市', '全本精校'],
         'intro': '小姨与外甥之间一段尘封多年的温柔往事，文笔清丽温婉，情感浓郁动人。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/家庭乱伦',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/家庭乱伦',
         'chapters_count': 26,
         'rating': '9.7',
         'is_nsfw': True
@@ -1016,8 +1016,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '绿帽换妻',
         'tags': ['绿帽换妻', '伴侣交换', '现代都市', '俱乐部', '全本精校'],
         'intro': '探讨现代婚姻围城与欲望解构的都市小说，真实展现换妻夜宴下的心理震撼与人性反思。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/绿帽换妻',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/绿帽换妻',
         'chapters_count': 30,
         'rating': '9.6',
         'is_nsfw': True
@@ -1029,8 +1029,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '人妻熟女',
         'tags': ['人妻熟女', '风骚美妇', '现代都市', '风月情仇', '全本精选'],
         'intro': '江南美妇的跌宕起伏情海生涯，刻画江南水乡少妇的风姿绰约与情场风流。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/人妻熟女',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/人妻熟女',
         'chapters_count': 35,
         'rating': '9.7',
         'is_nsfw': True
@@ -1042,8 +1042,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '武侠修仙',
         'tags': ['武侠修仙', '异界争霸', '奇幻情色', '长篇巨著', '足本全集'],
         'intro': '华文网络奇幻情色小说开山鼻祖巨作，讲述少年杨天在异大陆争霸天下、尽揽绝色之壮阔史诗。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/长篇巨著',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/长篇巨著',
         'chapters_count': 88,
         'rating': '9.9',
         'is_nsfw': True
@@ -1055,8 +1055,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '武侠修仙',
         'tags': ['武侠修仙', '古典武侠', '谋略争霸', '长篇巨著', '经典神作'],
         'intro': '当代古典武侠小说巅峰神作，文笔汪洋恣肆，权谋算计与江湖红颜交相辉映。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/长篇巨著',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/长篇巨著',
         'chapters_count': 76,
         'rating': '9.9',
         'is_nsfw': True
@@ -1068,8 +1068,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '武侠修仙',
         'tags': ['武侠修仙', '奇幻史诗', '罗森名作', '长篇巨著', '足本全集'],
         'intro': '罗森代表作之一，宏大的世界观设定、跌宕起伏的暗黑权谋与情欲争霸的传奇史诗。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/长篇巨著',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/长篇巨著',
         'chapters_count': 92,
         'rating': '9.9',
         'is_nsfw': True
@@ -1081,8 +1081,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '武侠修仙',
         'tags': ['武侠修仙', '六朝云龙', '罗森名作', '历史穿越', '长篇巨著'],
         'intro': '罗森历史穿越与仙侠权谋宏篇巨著，讲述程宗扬穿越六朝乱世、经商争雄尽揽名姝的传奇。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/长篇巨著',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/长篇巨著',
         'chapters_count': 85,
         'rating': '9.8',
         'is_nsfw': True
@@ -1094,8 +1094,8 @@ XBOOKCN_CATALOG: List[Dict[str, Any]] = [
         'category': '校园青春',
         'tags': ['校园青春', '校花千金', '现代都市', '花心大少', '长篇全本'],
         'intro': '大学校园青春艳情长篇小说，谱写大少与清纯校花、冷艳导师的浪漫风流物语。',
-        'source': 'blog.xbookcn.net',
-        'source_url': 'https://blog.xbookcn.net/search/label/现代都市',
+        'site': 'xbookcn_blog',
+        'source_path': '/search/label/现代都市',
         'chapters_count': 38,
         'rating': '9.6',
         'is_nsfw': True
@@ -1115,10 +1115,19 @@ def get_xbookcn_catalog() -> List[Dict[str, Any]]:
             with open(XBOOKCN_CATALOG_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 if isinstance(data, list) and len(data) > 0:
-                    return data
+                    return [with_source(x) for x in data]
         except Exception as e:
             logger.warning(f"Failed to load xbookcn_catalog.json: {e}")
-    return XBOOKCN_CATALOG
+    return [with_source(x) for x in XBOOKCN_CATALOG]
+
+
+def with_source(item: Dict[str, Any]) -> Dict[str, Any]:
+    """目录条目里只存「站点键 + 相对路径」（site / source_path），这里拼成前端要的 source / source_url。"""
+    if item.get("site") and "source_url" not in item:
+        item = dict(item)
+        item["source"] = endpoints.host(item["site"])
+        item["source_url"] = endpoints.url(item["site"], item.get("source_path", ""))
+    return item
 
 XBOOKCN_SYNONYMS = {
     '历史': ['历史情色', '明清', '古籍', '禁书', '秘传', '词话', '古典', '金瓶梅', '肉蒲团', '灯草和尚', '品花宝鉴', '姑妄言', '绣榻野史', '痴婆子', '飞花艳想', '生花梦', '欢喜冤家', '杏花天', '春灯闹', '浪史', '九尾龟', '弁而钗', '宜春香质', '八段锦'],
@@ -1273,8 +1282,8 @@ def search_online_novels(q: str = "", is_nsfw: bool = False, mode: str = "") -> 
                 'category': cat,
                 'tags': [cat, '古典文学', '全本文献', '公版典藏'],
                 'intro': intro_t,
-                'source': 'www.gutenberg.org',
-                'source_url': f'https://www.gutenberg.org/ebooks/{b_id}',
+                'source': endpoints.host('gutenberg'),
+                'source_url': endpoints.url('gutenberg', 'ebooks', b_id),
                 'chapters_count': 100,
                 'rating': '9.9',
                 'cover_url': '',
@@ -1297,8 +1306,8 @@ def search_online_novels(q: str = "", is_nsfw: bool = False, mode: str = "") -> 
                 'category': cat,
                 'tags': [cat, '古典名著', '全本文献'],
                 'intro': intro_t,
-                'source': 'www.gutenberg.org',
-                'source_url': f'https://www.gutenberg.org/ebooks/{b_id}',
+                'source': endpoints.host('gutenberg'),
+                'source_url': endpoints.url('gutenberg', 'ebooks', b_id),
                 'chapters_count': 100,
                 'rating': '9.9',
                 'cover_url': '',
@@ -1324,8 +1333,8 @@ def search_online_novels(q: str = "", is_nsfw: bool = False, mode: str = "") -> 
                 'category': '古典名著',
                 'tags': ['古典文献', '古腾堡全本'],
                 'intro': f'《{b_title}》- 古腾堡公版数字图书馆收录经典古籍全本文献 (ID: {b_id})。',
-                'source': 'www.gutenberg.org',
-                'source_url': f'https://www.gutenberg.org/ebooks/{b_id}',
+                'source': endpoints.host('gutenberg'),
+                'source_url': endpoints.url('gutenberg', 'ebooks', b_id),
                 'chapters_count': 50,
                 'rating': '9.8',
                 'cover_url': '',
@@ -1335,7 +1344,7 @@ def search_online_novels(q: str = "", is_nsfw: bool = False, mode: str = "") -> 
     # 3. 如果是英文/外文查询或输入数字编号，向古腾堡线上实时检索
     if any(c.isascii() and c.isalpha() for c in clean_q) or (clean_q.isdigit() and len(results) == 0):
         try:
-            url = f"https://www.gutenberg.org/ebooks/search/?query={urllib.parse.quote(clean_q)}"
+            url = endpoints.url("gutenberg", "ebooks/search/", query=clean_q)
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=6, context=SSL_CTX) as resp:
                 html = resp.read().decode('utf-8', errors='ignore')
@@ -1354,8 +1363,8 @@ def search_online_novels(q: str = "", is_nsfw: bool = False, mode: str = "") -> 
                         'category': '世界名著',
                         'tags': ['世界名著', '公版书库'],
                         'intro': f'《{b_title_s}》- Project Gutenberg 公版典藏作品 (ID: {b_id_int})。',
-                        'source': 'www.gutenberg.org',
-                        'source_url': f'https://www.gutenberg.org/ebooks/{b_id_int}',
+                        'source': endpoints.host('gutenberg'),
+                        'source_url': endpoints.url('gutenberg', 'ebooks', b_id_int),
                         'chapters_count': 50,
                         'rating': '9.8',
                         'cover_url': '',
@@ -1379,7 +1388,7 @@ def get_novel_chapters_for_download(novel_id: str, title: str, is_nsfw: bool = F
     # ================= 1. 绅士专区 (NSFW / xbookcn) 专属下载解析 =================
     if is_nsfw or str(novel_id).startswith('xbook_'):
         matched_item = None
-        for item in XBOOKCN_CATALOG:
+        for item in map(with_source, XBOOKCN_CATALOG):
             if item['id'] == novel_id or item['title'] in title or title in item['title']:
                 matched_item = item
                 break
@@ -1408,7 +1417,7 @@ def get_novel_chapters_for_download(novel_id: str, title: str, is_nsfw: bool = F
         generated_chapters = []
         generated_chapters.append({
             'title': '序言 · 作品导览与背景',
-            'content': f"《{book_title}》\n\n作者：{book_author}\n分类：{category}\n来源：blog.xbookcn.net (杏书网 / 小书屋)\n\n【作品简介】\n{book_intro}\n\n本书已由 Omni Deck Novel Engine 完整封箱入库，排版遵循标准 EPUB 规范。"
+            'content': f"《{book_title}》\n\n作者：{book_author}\n分类：{category}\n来源：{endpoints.host('xbookcn_blog')} (杏书网 / 小书屋)\n\n【作品简介】\n{book_intro}\n\n本书已由 Omni Deck Novel Engine 完整封箱入库，排版遵循标准 EPUB 规范。"
         })
 
         for ch_idx in range(1, chapters_cnt + 1):

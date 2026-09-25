@@ -16,7 +16,7 @@ import json
 import os
 import re
 
-from omni.core import manifest, paths
+from omni.core import endpoints, manifest, paths
 
 W = paths.WEB
 _cache = {"sig": None, "html": None}
@@ -45,7 +45,7 @@ def _all_sources(m):
 
 
 def _signature(m):
-    sig = [os.path.getmtime(manifest.PATH)]
+    sig = [os.path.getmtime(manifest.PATH), json.dumps(endpoints.public())]
     for rel in _all_sources(m):
         p = os.path.join(W, rel)
         sig.append(os.path.getmtime(p) if os.path.exists(p) else 0)
@@ -183,6 +183,7 @@ def render() -> str:
         "{{vendor}}": "\n    ".join([_asset_tag(r) for r in web.get("vendor_styles", [])]
                                    + [_asset_tag(r) for r in web.get("vendor_scripts", [])]),
         "{{manifest_json}}": json.dumps(public_manifest, ensure_ascii=False).replace("</", "<\\/"),
+        "{{endpoints_json}}": json.dumps(endpoints.public(), ensure_ascii=False),
         "{{styles}}": "\n    ".join(_asset_tag(r) for r in styles),
         "{{scripts}}": "\n    ".join(_asset_tag(r) for r in scripts),
         "{{nsfw_init_selectors}}": _nsfw_init_selectors(m),

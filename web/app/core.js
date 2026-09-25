@@ -12,6 +12,13 @@
 //   });
 const Omni = window.Omni = {
     manifest: window.OMNI_MANIFEST || { sections: [], groups: [], controls: [] },
+    // 外部站点根地址（omni/core/endpoints.py，可在 settings.json 覆盖）；Omni.url('gutenberg', 'ebooks', 123)
+    endpoints: window.OMNI_ENDPOINTS || {},
+    url(site, ...parts) {
+        const base = (this.endpoints[site] || '').replace(/\/$/, '');
+        return [base, ...parts.map(p => String(p).replace(/^\/|\/$/g, ''))].filter(Boolean).join('/');
+    },
+    host(site) { try { return new URL(this.endpoints[site]).host; } catch (e) { return site; } },
     _features: {},
     register(module, hooks) { this._features[module] = hooks; },
     section(id) { return this.manifest.sections.find(s => s.id === id) || null; },

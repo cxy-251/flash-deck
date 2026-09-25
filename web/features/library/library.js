@@ -126,8 +126,14 @@ function renderLibraryOverview() {
 
     const form = document.getElementById('library-settings-form');
     if (form) {
-        const rows = [`<label for="library-set-inbox">收件箱（下载目录）</label>
-            <input type="text" class="search-input" id="library-set-inbox" value="${escapeHtml(d.inbox_dir || '')}">`];
+        const rows = [];
+        // 基础目录：其它路径写成 {games}/xxx 这种占位形式，挪动某个目录只改这里一处
+        for (const [k, v] of Object.entries(d.dirs || {})) {
+            rows.push(`<label for="library-dir-${k}">基础目录 {${escapeHtml(k)}}</label>
+                <input type="text" class="search-input" id="library-dir-${k}" data-dir="${k}" value="${escapeHtml(v.value || '')}" title="${escapeHtml(v.resolved || '')}">`);
+        }
+        rows.push(`<label for="library-set-inbox">收件箱（下载目录）</label>
+            <input type="text" class="search-input" id="library-set-inbox" value="${escapeHtml(d.inbox_dir || '')}">`);
         for (const [k, v] of Object.entries(d.tools || {})) {
             rows.push(`<label for="library-tool-${k}">${escapeHtml(LIBRARY_TOOL_LABELS[k] || k)}</label>
                 <input type="text" class="search-input" id="library-tool-${k}" data-tool="${k}" value="${escapeHtml(v || '')}">`);
@@ -249,11 +255,13 @@ function libraryAdd() {
 function librarySaveSettings() {
     const tools = {};
     document.querySelectorAll('#library-settings-form [data-tool]').forEach(el => { tools[el.dataset.tool] = el.value.trim(); });
+    const dirs = {};
+    document.querySelectorAll('#library-settings-form [data-dir]').forEach(el => { if (el.value.trim()) dirs[el.dataset.dir] = el.value.trim(); });
     const inbox = document.getElementById('library-set-inbox');
     fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inbox_dir: inbox ? inbox.value.trim() : undefined, tools }),
+        body: JSON.stringify({ dirs, inbox_dir: inbox ? inbox.value.trim() : undefined, tools }),
     }).then(r => r.json()).then(res => {
         if (res.success) {
             libraryData = res;

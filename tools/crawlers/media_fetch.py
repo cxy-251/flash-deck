@@ -7,8 +7,8 @@
   --mode m4b    全部条目合成一个带章节的 m4b（单个视频自带章节时用视频章节），并写 .chapters.json
 
 例：
-  media_fetch.py "https://www.youtube.com/playlist?list=XXXX" --album "某有声书"
-  media_fetch.py "https://www.bilibili.com/video/BVxxxx" --album "广播剧" --items 1-6 --mode m4b
+  media_fetch.py "{url:youtube}/playlist?list=XXXX" --album "某有声书"
+  media_fetch.py "{url:bilibili}/video/BVxxxx" --album "广播剧" --items 1-6 --mode m4b
   media_fetch.py "https://youtu.be/AAA|第一部" "https://youtu.be/BBB|第二部" --album "某书"   # URL|文件名
 文件写入默认资源库的 media_library/audio/<standard|nsfw>/<专辑>/；任何在线库里已有同名文件就跳过。
 登录 Cookie / 代理默认取 var/config/crawler_secrets.json 的 ytdlp 段，也可用 --cookies / --proxy 覆盖。
@@ -27,7 +27,7 @@ AUDIO_EXTS = (".m4a", ".m4b", ".mp3", ".opus", ".aac")
 def is_single_video(url: str) -> bool:
     """明显是单个视频（不是播放列表/多P）的链接：写了文件名时可以省掉一次 yt-dlp 解析（每次约几十秒）。"""
     u = url.lower()
-    return (("youtube.com/watch" in u or "youtu.be/" in u) and "list=" not in u)
+    return ((c.endpoints.host("youtube").removeprefix("www.") + "/watch" in u or "youtu.be/" in u) and "list=" not in u)
 
 
 def expand(url: str, auth: list, items: set) -> list:
@@ -45,7 +45,7 @@ def expand(url: str, auth: list, items: set) -> list:
             continue
         e_url = e.get("url") or e.get("webpage_url") or e.get("id")
         if e_url and not e_url.startswith("http") and "youtube" in (info.get("extractor") or "").lower():
-            e_url = f"https://www.youtube.com/watch?v={e_url}"
+            e_url = c.endpoints.url("youtube", "watch", v=e_url)
         out.append((e_url, e.get("title") or f"{info.get('title', '')} P{idx}", idx))
     return out
 

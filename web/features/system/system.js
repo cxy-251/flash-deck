@@ -14,7 +14,7 @@ function updateLanButtonUI(status) {
     const urlText = document.getElementById('lan-url-text');
     if (!btn || !dot || !text) return;
 
-    const targetUrl = status.url || (status.ip ? `http://${status.ip}:${status.port}` : 'http://127.0.0.1:8998');
+    const targetUrl = status.url || (status.ip ? `http://${status.ip}:${status.port}` : location.origin);
 
     if (status.enabled) {
         btn.className = 'nav-net-btn active';

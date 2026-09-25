@@ -10,6 +10,10 @@
 
 路径的唯一来源：程序/状态 → `omni/core/paths.py`；资源 → `omni/core/library.py`；外部工具与本机配置 →
 `omni/core/settings.py`（`var/config/settings.json`）。`tests/test_path_guard.py` 禁止在别处写死路径。
+配置里的路径以基础目录占位保存（`{games}/omni_library`、`{sd}/omni_library`、`{apps}/Lime3DS`…），基础目录在
+`settings.dirs`，由 `settings.resolve()` / `settings.compact()` 互转。外部站点与本机回环地址的唯一来源是
+`omni/core/endpoints.py`（`endpoints.url(键, 路径…)`；前端经 `window.OMNI_ENDPOINTS` 用 `Omni.url()`），
+可在 settings 的 `endpoints` 覆盖。
 
 ## 2. 资源库
 

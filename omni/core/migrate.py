@@ -42,7 +42,7 @@ _GLOB_MOVES = [
 ]
 # 旧版在 ~/Games 下逐个目录注册成「Windows 软件」，这些名字当时是排除掉的
 _LEGACY_APP_EXCLUDES = {"omni-deck", "StarCraft II", "Battle.net", "claude", "rpg_games",
-                        "standalone_games", "media_library", "omni_library"}
+                        "standalone_games", "media_library", "omni_library"}  # 旧版固定名单，保持原样
 _LEGACY_APP_META = {
     "Weiyun": {"name": "腾讯微云 (Tencent Weiyun)", "proton_appid": "3498387003",
                "args": ["--no-sandbox", "--disable-gpu-sandbox"]},
@@ -99,8 +99,8 @@ def _migrate_state():
 
 def _looks_like_library(root):
     from omni.core import library
-    return (os.path.isdir(os.path.join(root, "standalone_games"))
-            or os.path.isdir(os.path.join(root, "media_library"))
+    return (os.path.isdir(os.path.join(root, library.GAMES_ROOT))
+            or os.path.isdir(os.path.join(root, library.MEDIA_ROOT))
             or library.read_marker(root) is not None)
 
 
@@ -169,6 +169,43 @@ def _migrate_settings():
             pass
 
 
+def _compact_settings():
+    """把 settings.json 里的绝对路径改写成 {基础目录} 占位形式（幂等）。位于可移动存储挂载点下的
+    资源库会顺带登记一个 dirs.sd，之后换卡/卷标变化只改这一个值。"""
+    if not os.path.exists(paths.SETTINGS_FILE):
+        return
+    from omni.core import settings
+    with open(paths.SETTINGS_FILE, "r", encoding="utf-8") as f:
+        stored = json.load(f)
+    before = json.dumps(stored, sort_keys=True, ensure_ascii=False)
+    dirs = dict(stored.get("dirs") or {})
+    for lib in stored.get("libraries") or []:
+        real = os.path.realpath(settings.resolve(lib.get("path", "")))
+        mount = real
+        while mount not in ("/", "") and not os.path.ismount(mount):
+            mount = os.path.dirname(mount)
+        if mount.startswith(("/run/media/", "/media/")) and mount not in {settings.resolve(v) for v in dirs.values()}:
+            dirs.setdefault("sd", mount)
+    if dirs:
+        stored["dirs"] = dirs
+        settings.update({"dirs": dirs})     # 先让 compact() 认识新登记的基础目录
+    for lib in stored.get("libraries") or []:
+        lib["path"] = settings.compact(settings.resolve(lib["path"]))
+    if stored.get("inbox_dir"):
+        stored["inbox_dir"] = settings.compact(settings.resolve(stored["inbox_dir"]))
+    for k, v in (stored.get("tools") or {}).items():
+        if isinstance(v, str) and v:
+            stored["tools"][k] = settings.compact(settings.resolve(v))
+    for g in stored.get("external_games") or []:
+        if g.get("path"):
+            g["path"] = settings.compact(settings.resolve(g["path"]))
+    if json.dumps(stored, sort_keys=True, ensure_ascii=False) != before:
+        tmp = paths.SETTINGS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(stored, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, paths.SETTINGS_FILE)
+
+
 def run():
     os.makedirs(paths.STATE, exist_ok=True)
     # 用 OMNI_STATE_DIR 指定了别的状态目录（测试/多实例）时，只生成配置，不去搬项目目录里
@@ -176,3 +213,4 @@ def run():
     if not os.environ.get("OMNI_STATE_DIR"):
         _migrate_state()
     _migrate_settings()
+    _compact_settings()

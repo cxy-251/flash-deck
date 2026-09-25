@@ -2,11 +2,12 @@
 import socket
 import time
 
+from omni.core import endpoints
 from omni.network import state
 
 PORT = 8998            # app 启动时按 --port 覆盖
 _enabled = bool(state.load().get("lan", False))
-_ip_cache = ("127.0.0.1", 0.0)
+_ip_cache = (endpoints.LOOPBACK, 0.0)
 
 
 def local_ip() -> str:
@@ -21,7 +22,7 @@ def local_ip() -> str:
         ip = s.getsockname()[0]
         s.close()
     except Exception:
-        ip = "127.0.0.1"
+        ip = endpoints.LOOPBACK
     _ip_cache = (ip, time.time())
     return ip
 

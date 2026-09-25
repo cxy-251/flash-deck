@@ -64,6 +64,15 @@ let novelDownloadQueue = [];
 
 let novelTasksPollingTimer = null;
 
+// 检索来源链接（站点地址来自 omni/core/endpoints.py）
+function setNovelSourceIndicator(site) {
+    const el = document.getElementById('novel-source-indicator');
+    if (!el) return;
+    el.textContent = Omni.host(site) + ' ↗';
+    el.href = Omni.url(site);
+    el.title = '点击在浏览器中打开: ' + Omni.url(site);
+}
+
 function toggleNovelNsfw() {
     if (!isNovelNsfw && !isNsfwUnlocked) {
         openNsfwModal();
@@ -73,7 +82,6 @@ function toggleNovelNsfw() {
     const btn = document.getElementById('novel-nsfw-toggle-btn');
     const heading = document.getElementById('novel-shelf-heading');
     const searchInput = document.getElementById('novel-search-input');
-    const srcIndicator = document.getElementById('novel-source-indicator');
     const srcTip = document.getElementById('novel-source-tip');
 
     if (isNovelNsfw) {
@@ -86,15 +94,7 @@ function toggleNovelNsfw() {
         }
         if (heading) heading.textContent = '🔞 NSFW 杏书私有书架';
         if (searchInput) searchInput.placeholder = '🔍 搜索 xbookcn 小说书名、作者或题材 (回车检索)...';
-        if (srcIndicator) {
-            srcIndicator.textContent = 'blog.xbookcn.net ↗';
-            srcIndicator.href = 'https://blog.xbookcn.net';
-            srcIndicator.target = '_blank';
-            srcIndicator.rel = 'noopener noreferrer';
-            srcIndicator.style.textDecoration = 'underline';
-            srcIndicator.style.cursor = 'pointer';
-            srcIndicator.title = '点击在浏览器中打开: https://blog.xbookcn.net';
-        }
+        setNovelSourceIndicator('xbookcn_blog');
         if (srcTip) {
             srcTip.textContent = '杏书网 / 小书屋精品情色文学 (历史情色/现代都市/长篇巨著/人妻乱伦) · 回车检索';
         }
@@ -108,15 +108,7 @@ function toggleNovelNsfw() {
         }
         if (heading) heading.textContent = '📚 本地已收录小说';
         if (searchInput) searchInput.placeholder = '🔍 搜索小说书名、作者或关键词 (回车检索)...';
-        if (srcIndicator) {
-            srcIndicator.textContent = 'www.gutenberg.org ↗';
-            srcIndicator.href = 'https://www.gutenberg.org';
-            srcIndicator.target = '_blank';
-            srcIndicator.rel = 'noopener noreferrer';
-            srcIndicator.style.textDecoration = 'underline';
-            srcIndicator.style.cursor = 'pointer';
-            srcIndicator.title = '点击在浏览器中打开: https://www.gutenberg.org';
-        }
+        setNovelSourceIndicator('gutenberg');
         if (srcTip) {
             srcTip.textContent = '支持书名/作者/分类/题材多维检索 (回车检索)';
         }
@@ -407,8 +399,8 @@ function renderNovelOnlineResults(results) {
         card.className = 'novel-card';
         const isLocal = localTitleSet.has(item.title.trim()) || localNovelsList.some(b => b.title.includes(item.title) || item.title.includes(b.title));
         const inQueue = isNovelInQueue(item.id);
-        const sourceUrl = item.source_url || (item.id && String(item.id).includes('classic_') ? `https://www.gutenberg.org/ebooks/${String(item.id).replace('classic_', '')}` : 'https://www.gutenberg.org');
-        const sourceDisplay = 'www.gutenberg.org';
+        const sourceUrl = item.source_url || (item.id && String(item.id).includes('classic_') ? Omni.url('gutenberg', 'ebooks', String(item.id).replace('classic_', '')) : Omni.url('gutenberg'));
+        const sourceDisplay = Omni.host('gutenberg');
 
         const actionHtml = isLocal
             ? `<button class="manga-btn manga-btn-primary" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();openNovelReader('${escapeAttr(item.title)}')">📖 已收录</button>`
@@ -637,6 +629,7 @@ function startNovelQueueBatchDownload() {
 
 Omni.register('novels', {
     activate() {
+        setNovelSourceIndicator(isNovelNsfw ? 'xbookcn_blog' : 'gutenberg');
         const subStats = document.getElementById('media-sub-stats');
         const count = localNovelsList && localNovelsList.length > 0 ? localNovelsList.length : null;
         if (count !== null) {

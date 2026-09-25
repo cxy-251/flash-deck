@@ -21,7 +21,7 @@ import jmcomic
 jmcomic.JmModuleConfig.FLAG_API_CLIENT_AUTO_UPDATE_DOMAIN = False
 from typing import List, Dict, Optional, Any
 
-from omni.core import events, library, media_index, paths
+from omni.core import endpoints, events, library, media_index, paths
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif')
 QUEUE_LOCK = threading.Lock()
@@ -709,7 +709,7 @@ def get_jm_album_detail(album_id: str) -> Dict[str, Any]:
         'author': getattr(detail, 'author', ''),
         'description': getattr(detail, 'description', ''),
         'tags': getattr(detail, 'tags', []),
-        'cover_url': f'https://cdn-msp.jmapinode2.cc/media/albums/{album_id}.jpg',
+        'cover_url': endpoints.url('jm_cdn', 'media/albums', f'{album_id}.jpg'),
         'chapters': chapters,
     }
 
@@ -758,7 +758,7 @@ def pack_folder_to_cbz(source_folder: str, target_cbz_path: str, cover_file: Opt
   <Summary>{summary_xml}</Summary>
   <Genre>{tags_xml}</Genre>
   <Tags>{tags_xml}</Tags>
-  <Web>https://18comic.vip/album/{album_id}</Web>
+  <Web>{endpoints.url('jm_web', 'album', album_id)}</Web>
 </ComicInfo>"""
             zf.writestr("ComicInfo.xml", comic_info_xml)
 
@@ -816,7 +816,7 @@ def append_folder_to_cbz(source_folder: str, target_cbz_path: str, metadata: Opt
   <Summary>{summary_xml}</Summary>
   <Genre>{tags_xml}</Genre>
   <Tags>{tags_xml}</Tags>
-  <Web>https://18comic.vip/album/{album_id}</Web>
+  <Web>{endpoints.url('jm_web', 'album', album_id)}</Web>
 </ComicInfo>"""
         with open(os.path.join(source_folder, "ComicInfo.xml"), 'w', encoding='utf-8') as f:
             f.write(comic_info_xml)
@@ -871,7 +871,7 @@ def update_cbz_metadata(cbz_path: str, meta_dict: Dict[str, Any]) -> bool:
   <Summary>{summary_xml}</Summary>
   <Genre>{tags_xml}</Genre>
   <Tags>{tags_xml}</Tags>
-  <Web>https://18comic.vip/album/{album_id}</Web>
+  <Web>{endpoints.url('jm_web', 'album', album_id)}</Web>
 </ComicInfo>"""
 
         use_cli_zip = False
@@ -1924,7 +1924,7 @@ def match_and_repair_cbz_metadata(cbz_path: str, client=None) -> Optional[Dict[s
   <Summary>{summary_xml}</Summary>
   <Genre>{tags_xml}</Genre>
   <Tags>{tags_xml}</Tags>
-  <Web>https://18comic.vip/album/{album_id}</Web>
+  <Web>{endpoints.url('jm_web', 'album', album_id)}</Web>
 </ComicInfo>"""
             zf.writestr("ComicInfo.xml", comic_info_xml)
 

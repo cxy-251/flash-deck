@@ -75,13 +75,13 @@ def http_get(url: str) -> bytes:
 
 def from_github(repo: str, path: str, ref: str, order):
     if order is None:
-        listing = json.loads(http_get(f"https://api.github.com/repos/{repo}/contents/{path}?ref={ref}"))
+        listing = json.loads(http_get(c.endpoints.url("github_api", "repos", repo, "contents", path, ref=ref)))
         order = [(x["name"], None) for x in sorted(listing, key=lambda x: natural_key(x["name"]))
                  if x["type"] == "file" and x["name"].endswith((".md", ".txt"))]
     chapters = []
     for fname, title in order:
         try:
-            text = http_get(f"https://raw.githubusercontent.com/{repo}/{ref}/{path.strip('/')}/{fname}").decode("utf-8", "ignore")
+            text = http_get(c.endpoints.url("github_raw", repo, ref, path, fname)).decode("utf-8", "ignore")
         except Exception as e:
             print(f"  ⚠️ {fname}: {e}")
             continue
