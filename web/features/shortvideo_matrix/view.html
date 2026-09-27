@@ -4,6 +4,9 @@
         <div class="matrix-setup-card">
             <div class="matrix-setup-head">
                 <div class="matrix-setup-title">📺 多联放映</div>
+                <label class="matrix-setup-focus" title="开：没静音的屏里只有鼠标所在的那一屏出声；关：没静音的屏一起出声">
+                    <input type="checkbox" id="matrix-setup-focus" onchange="matrixConfig.focus_audio = this.checked"> 🎯 焦点出声
+                </label>
                 <div class="matrix-btn-group">
                     <button id="matrix-setup-layout-2" class="matrix-tab-btn" onclick="setMatrixSetupLayout(2)">2 屏</button>
                     <button id="matrix-setup-layout-3" class="matrix-tab-btn" onclick="setMatrixSetupLayout(3)">3 屏</button>
@@ -26,6 +29,7 @@
                     <button id="matrix-web-layout-2" class="matrix-tab-btn" onclick="setWebMatrixLayout(2, true)">2 屏</button>
                     <button id="matrix-web-layout-3" class="matrix-tab-btn" onclick="setWebMatrixLayout(3, true)">3 屏</button>
                 </div>
+                <button id="matrix-web-focus" class="matrix-tab-btn" onclick="toggleWebMatrixFocus()" title="开：没静音的屏里只有鼠标所在的那一屏出声">🎯 焦点出声</button>
                 <button class="matrix-tab-btn" onclick="toggleWebMatrixAllPlay()">⏯ 齐播/齐停</button>
                 <button class="matrix-tab-btn" onclick="stopWebMatrix()">✕ 退出</button>
             </div>

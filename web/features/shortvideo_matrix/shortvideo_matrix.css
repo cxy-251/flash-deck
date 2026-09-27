@@ -20,7 +20,9 @@
     box-sizing: border-box;
 }
 .matrix-setup-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.matrix-setup-title { font-size: 18px; font-weight: 700; color: #fff; }
+.matrix-setup-title { font-size: 18px; font-weight: 700; color: #fff; margin-right: auto; }
+.matrix-setup-head { gap: 16px; }
+.matrix-setup-focus { display: flex; align-items: center; gap: 4px; color: #c9d1d9; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .matrix-setup-rows { display: flex; flex-direction: column; gap: 10px; color: #8b949e; font-size: 13px; }
 .matrix-setup-row {
     display: flex;

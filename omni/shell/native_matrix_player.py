@@ -3,12 +3,14 @@ native_matrix_player.py - 短视频多联放映（本机原生多路播放）
 
 2 屏 / 3 屏并排，每屏一个独立的 QMediaPlayer（Qt 的 FFmpeg 后端，能用 VA-API 就走硬解），
 独立选频道、独立顺序/随机、独立静音（静音跟着这一屏走，换下一条也保持）。
+声音 = 手动静音 OR（开了焦点出声 且 不是焦点屏）：手动静音的屏永远不出声，焦点出声只在
+没静音的屏之间挑一个——鼠标移入/点中哪屏，哪屏出声。横屏视频在竖长分屏里只剩一条缝，跳过。
 
 跟 native_player.py 同一个套路：MainWindow 的子控件，盖在网页上面。网页那边先有一个设置页
 （选几屏、每屏的频道/随机/静音，存进 shortvideo_matrix 的配置），点「开始播放」才调
 start_matrix()；这里改动的设置也写回同一份配置，退出后网页设置页看到的就是最新的。
 
-键盘（Steam Input 可映射）：1/2/3 选屏，空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
+键盘（Steam Input 可映射）：1/2/3 选屏（也就是换焦点），空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
 """
 import random
 from typing import Any, Dict, List
@@ -64,7 +66,7 @@ def _no_width_hint(w: QWidget) -> None:
 class MatrixSlotWidget(QFrame):
     """一屏：独立解码器 + 选频道 + 进度 + 控制条。"""
 
-    activated = pyqtSignal(int)          # 屏序号（键盘快捷键作用在哪一屏）
+    activated = pyqtSignal(int)          # 屏序号：焦点出声 + 键盘快捷键作用在哪一屏
     settingsChanged = pyqtSignal()       # 频道/随机/静音变了，让容器写回配置
 
     MAX_SKIP = 5                         # 连续这么多条都放不了就停下，别无限跳
@@ -82,6 +84,9 @@ class MatrixSlotWidget(QFrame):
         self.single_loop = False
         self._seeking = False
         self._skips = 0
+        self._check_orientation = False
+        self.user_muted = False          # 这一屏的静音按钮
+        self.focus_silenced = False      # 焦点出声模式下不是焦点屏
 
         self.player = QMediaPlayer(self)
         self.audio = QAudioOutput(self)
@@ -158,7 +163,7 @@ class MatrixSlotWidget(QFrame):
         self.btn_shuffle.clicked.connect(lambda: self.set_shuffle(not self.shuffle, user=True))
         self.btn_loop.clicked.connect(self.toggle_loop)
         self.btn_like.clicked.connect(self.toggle_like)
-        self.btn_mute.clicked.connect(lambda: self.set_muted(not self.audio.isMuted(), user=True))
+        self.btn_mute.clicked.connect(lambda: self.set_muted(not self.user_muted, user=True))
         self.seek.sliderPressed.connect(lambda: setattr(self, "_seeking", True))
         self.seek.sliderReleased.connect(self._on_seek_released)
         self.player.positionChanged.connect(self._on_position)
@@ -167,8 +172,14 @@ class MatrixSlotWidget(QFrame):
         self.player.playbackStateChanged.connect(
             lambda st: self.btn_play.setText("⏸" if st == QMediaPlayer.PlaybackState.PlayingState else "▶"))
         self.player.errorOccurred.connect(self._on_error)
+        # videoSizeChanged 可能从解码线程发出来，排队回到界面线程再处理（在别的线程里切片源会崩）
+        self.video_widget.videoSink().videoSizeChanged.connect(self._on_video_size, Qt.ConnectionType.QueuedConnection)
 
-    # ---- 选中（只决定键盘快捷键作用在哪一屏，不动声音） ----
+    # ---- 焦点：鼠标移入 / 点中 ----
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.activated.emit(self.index)
+
     def mousePressEvent(self, event):
         self.activated.emit(self.index)
         super().mousePressEvent(event)
@@ -183,11 +194,27 @@ class MatrixSlotWidget(QFrame):
 
     # ---- 设置 ----
     def set_muted(self, muted: bool, user: bool = False):
-        """静音挂在这一屏的 QAudioOutput 上，换片不会重置。"""
-        self.audio.setMuted(muted)
-        self.btn_mute.setText("🔇" if muted else "🔊")
+        """这一屏的静音按钮。状态挂在 QAudioOutput 上，换片不会重置。"""
+        self.user_muted = muted
+        self._apply_audio()
         if user:
             self.settingsChanged.emit()
+
+    def set_focus_silenced(self, silenced: bool):
+        self.focus_silenced = silenced
+        self._apply_audio()
+
+    def _apply_audio(self):
+        self.audio.setMuted(self.user_muted or self.focus_silenced)
+        if self.user_muted:
+            self.btn_mute.setText("🔇")
+            self.btn_mute.setToolTip("已静音（点击恢复）")
+        elif self.focus_silenced:
+            self.btn_mute.setText("🔈")
+            self.btn_mute.setToolTip("焦点出声：鼠标移到这一屏才出声（点击改为静音）")
+        else:
+            self.btn_mute.setText("🔊")
+            self.btn_mute.setToolTip("静音")
 
     def set_shuffle(self, on: bool, user: bool = False):
         """切随机/顺序：当前这条接着放，只重排后面的顺序。"""
@@ -251,6 +278,7 @@ class MatrixSlotWidget(QFrame):
         if not path:
             self._skip_broken()
             return
+        self._check_orientation = not it.get("width")   # 扫描时没拿到宽高的，等解码出尺寸再判横竖
         self.player.setSource(QUrl.fromLocalFile(path))
         self.player.play()
 
@@ -324,6 +352,14 @@ class MatrixSlotWidget(QFrame):
             else:
                 self.step(1, manual=False)
 
+    def _on_video_size(self):
+        """扫描时没拿到宽高的那条，解出第一帧尺寸后判横竖：横屏跳过（不算坏片）。"""
+        size = self.video_widget.videoSink().videoSize()
+        if self._check_orientation and size.width() > 0:
+            self._check_orientation = False
+            if size.width() > size.height():
+                QTimer.singleShot(0, lambda: self.step(1, manual=False))
+
     def _on_error(self, error, _msg=""):
         if error != QMediaPlayer.Error.NoError:
             self._skip_broken()
@@ -341,6 +377,7 @@ class NativeMatrixPlayerWidget(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.layout_mode = 3
         self.active = 0
+        self.focus_audio = True
         self._build()
 
     def _build(self):
@@ -369,6 +406,9 @@ class NativeMatrixPlayerWidget(QWidget):
 
         self.btn_l2 = button("2 屏", lambda: self.set_layout_mode(2, save=True))
         self.btn_l3 = button("3 屏", lambda: self.set_layout_mode(3, save=True))
+        top.addSpacing(12)
+        self.btn_focus = button("🎯 焦点出声", lambda: self.set_focus_audio(not self.focus_audio, save=True),
+                                "开：没静音的屏里只有鼠标所在的那一屏出声；关：没静音的屏一起出声")
         top.addStretch(1)
         button("⏯ 齐播/齐停", self.toggle_all_play)
         close = button("✕ 退出", self.close_matrix, "Esc")
@@ -414,7 +454,19 @@ class NativeMatrixPlayerWidget(QWidget):
         self.active = idx
         for i, s in enumerate(self.slots):
             s.set_active(i == idx)
+        self._apply_focus_audio()
         self.setFocus()
+
+    def set_focus_audio(self, on: bool, save: bool = False):
+        self.focus_audio = on
+        _set_active_prop(self.btn_focus, on)
+        self._apply_focus_audio()
+        if save:
+            self.save_config()
+
+    def _apply_focus_audio(self):
+        for i, s in enumerate(self.slots):
+            s.set_focus_silenced(self.focus_audio and i != self.active)
 
     def toggle_all_play(self):
         playing = any(s.is_playing() for s in self.visible_slots())
@@ -435,6 +487,7 @@ class NativeMatrixPlayerWidget(QWidget):
             s.set_shuffle(s_cfg["shuffle"])
             s.set_muted(s_cfg["muted"])
         self.set_layout_mode(cfg["layout"], autoload=False)
+        self.set_focus_audio(cfg["focus_audio"])
         for i, s in enumerate(self.visible_slots()):
             QTimer.singleShot(i * 200, lambda s=s: s.load_channel(s.channel_id))
         self.activate_slot(0)
@@ -442,8 +495,8 @@ class NativeMatrixPlayerWidget(QWidget):
 
     def save_config(self):
         try:
-            mx.save_config({"layout": self.layout_mode,
-                            "slots": [{"channel_id": s.channel_id, "shuffle": s.shuffle, "muted": s.audio.isMuted()}
+            mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio,
+                            "slots": [{"channel_id": s.channel_id, "shuffle": s.shuffle, "muted": s.user_muted}
                                       for s in self.slots]})
         except OSError as e:
             print(f"[matrix] 保存配置失败: {e}")
@@ -473,6 +526,6 @@ class NativeMatrixPlayerWidget(QWidget):
         elif key == Qt.Key.Key_Right:
             cur.step(1)
         elif key == Qt.Key.Key_M:
-            cur.set_muted(not cur.audio.isMuted(), user=True)
+            cur.set_muted(not cur.user_muted, user=True)
         else:
             super().keyPressEvent(event)

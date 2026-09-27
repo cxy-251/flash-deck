@@ -3,11 +3,12 @@
 //   本机（嵌入视图里有 omniBridge）→ 设置写进后端配置，交给 Python 原生多路播放器（native_matrix_player.py）；
 //   其它浏览器 → 网页版，三个 <video> 槽位由 SLOT_TEMPLATE 生成。
 // 设置只有后端一份（/api/shortvideo_matrix/config），两边播放中改的也写回去，下次打开设置页就是最新的。
+// 声音 = 手动静音 OR（焦点出声 且 不是焦点屏）：手动静音的屏永远不出声，焦点出声只在没静音的屏之间挑。
 
 const MATRIX_SLOTS = 3;
 const MATRIX_PAGE = 300;   // 频道视频分页取（抖音全部动辄两万多条）
 let matrixChannels = null;
-let matrixConfig = null;   // {layout, slots: [{channel_id, shuffle, muted}]}
+let matrixConfig = null;   // {layout, focus_audio, slots: [{channel_id, shuffle, muted}]}
 let matrixWebPlaying = false;
 let matrixActiveSlot = 0;
 const webSlots = Array.from({ length: MATRIX_SLOTS }, () => ({ total: 0, base: 0, page: [], cur: 0, seed: 0, singleLoop: false, skips: 0 }));
@@ -72,6 +73,7 @@ function renderMatrixSetup() {
             <label><input type="checkbox" ${s.muted ? 'checked' : ''} onchange="matrixConfig.slots[${i}].muted = this.checked"> 🔇 静音</label>
         </div>`).join('');
     setMatrixSetupLayout(matrixConfig.layout);
+    document.getElementById('matrix-setup-focus').checked = matrixConfig.focus_audio;
     document.getElementById('matrix-start-btn').disabled = false;
 }
 
@@ -103,7 +105,7 @@ window.onNativeMatrixClosed = function () { showMatrixSetup(); };
 // ---------------- 网页版播放 ----------------
 
 const SLOT_TEMPLATE = (i) => `
-    <div class="matrix-web-slot" id="matrix-slot-${i}" onclick="activateWebSlot(${i})">
+    <div class="matrix-web-slot" id="matrix-slot-${i}" onmouseenter="activateWebSlot(${i})" onclick="activateWebSlot(${i})">
         <div class="matrix-slot-header">
             <span class="matrix-slot-num">屏 ${i + 1}</span>
             ${SEARCH_BOX(`matrix-select-${i}`, `v => changeWebSlotChannel(${i}, v)`)}
@@ -137,6 +139,8 @@ function startWebMatrix() {
         v.onplay = () => { matrixEl('play-btn', i).textContent = '⏸'; };
         v.onpause = () => { matrixEl('play-btn', i).textContent = '▶'; };
         v.onplaying = () => { slot.skips = 0; };
+        // 扫描时没拿到宽高的，等浏览器解出尺寸再判：横屏就跳过（不算坏片）
+        v.onloadedmetadata = () => { if (slot.checkOrientation && v.videoWidth > v.videoHeight) stepWebSlot(i, 1); };
         // 放不了就跳下一条；连续 5 条都不行就停，别在坏列表上无限空转
         v.onerror = () => {
             if (!v.getAttribute('src')) return;
@@ -144,11 +148,11 @@ function startWebMatrix() {
             setTimeout(() => stepWebSlot(i, 1), 300);
         };
         matrixEl('select', i).innerHTML = matrixChannelOptions(cfg.channel_id);
-        setWebSlotMuted(i, cfg.muted);
         matrixEl('shuffle-btn', i).classList.toggle('active', cfg.shuffle);
         slot.seed = matrixNewSeed();
     });
     setWebMatrixLayout(matrixConfig.layout);
+    document.getElementById('matrix-web-focus').classList.toggle('active', matrixConfig.focus_audio);
     activateWebSlot(0);
     for (let i = 0; i < matrixConfig.layout; i++) setTimeout(() => loadWebSlotChannel(i), i * 200);
 }
@@ -212,6 +216,7 @@ function playWebSlot(i) {
     matrixEl('title', i).textContent = it.title;
     matrixEl('title', i).title = it.title;
     matrixEl('count', i).textContent = `${slot.cur + 1}/${slot.total}`;
+    slot.checkOrientation = !it.width;
     v.src = it.stream_url;
     v.play().catch(() => {});
 }
@@ -246,22 +251,36 @@ function toggleWebSlotLoop(i) {
 }
 
 // 静音挂在 <video> 元素上，换 src 不会重置，下一条照样静音
-function setWebSlotMuted(i, muted) {
-    matrixEl('video', i).muted = muted;
-    matrixEl('mute-btn', i).textContent = muted ? '🔇' : '🔊';
+function applyWebMatrixAudio() {
+    webSlots.forEach((_, i) => {
+        const v = matrixEl('video', i), btn = matrixEl('mute-btn', i);
+        if (!v) return;
+        const userMuted = matrixConfig.slots[i].muted;
+        const focusSilenced = matrixConfig.focus_audio && i !== matrixActiveSlot;
+        v.muted = userMuted || focusSilenced;
+        btn.textContent = userMuted ? '🔇' : focusSilenced ? '🔈' : '🔊';
+        btn.title = userMuted ? '已静音（点击恢复）' : focusSilenced ? '焦点出声：鼠标移到这一屏才出声（点击改为静音）' : '静音';
+    });
 }
 
 function toggleWebSlotMute(i) {
-    const muted = !matrixEl('video', i).muted;
-    setWebSlotMuted(i, muted);
-    matrixConfig.slots[i].muted = muted;
+    matrixConfig.slots[i].muted = !matrixConfig.slots[i].muted;
+    applyWebMatrixAudio();
+    saveMatrixConfig();
+}
+
+function toggleWebMatrixFocus() {
+    matrixConfig.focus_audio = !matrixConfig.focus_audio;
+    document.getElementById('matrix-web-focus').classList.toggle('active', matrixConfig.focus_audio);
+    applyWebMatrixAudio();
     saveMatrixConfig();
 }
 
 function activateWebSlot(i) {
-    if (i >= matrixConfig.layout) return;
+    if (i >= matrixConfig.layout || i === matrixActiveSlot && matrixEl('slot', i).classList.contains('active')) return;
     matrixActiveSlot = i;
     webSlots.forEach((_, j) => matrixEl('slot', j).classList.toggle('active', j === i));
+    applyWebMatrixAudio();
 }
 
 function setWebMatrixLayout(cols, save) {
@@ -289,7 +308,7 @@ Omni.register('shortvideo_matrix', {
     activate() {
         document.getElementById('total-badge').textContent = '多联放映';
         const subStats = document.getElementById('media-sub-stats');
-        if (subStats) subStats.textContent = '2 / 3 屏并排 · 每屏独立选频道 / 随机 / 静音';
+        if (subStats) subStats.textContent = '2 / 3 屏并排 · 每屏独立选频道 / 随机 / 静音 · 焦点出声';
         if (matrixWebPlaying) {   // 网页版播到一半切走又切回来：接着放
             for (let i = 0; i < matrixConfig.layout; i++) if (matrixEl('video', i).getAttribute('src')) matrixEl('video', i).play().catch(() => {});
         } else {

@@ -216,6 +216,11 @@ def _rich_parse_video(full_p: str) -> Dict[str, Any]:
             if s.get('codec_type') == 'video':
                 width = int(s.get('width') or 0)
                 height = int(s.get('height') or 0)
+                # 手机录像常把竖屏存成横的宽高 + 旋转 90° 标记，按显示方向交换
+                rot = (s.get('tags') or {}).get('rotate') or next(
+                    (d.get('rotation') for d in s.get('side_data_list') or [] if 'rotation' in d), 0)
+                if abs(int(float(rot or 0))) % 180 == 90:
+                    width, height = height, width
                 break
     except Exception:
         pass

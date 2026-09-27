@@ -16,10 +16,17 @@ from omni.features.shortvideo import service as sv
 _LOCK = threading.RLock()
 
 
+def is_landscape(it: Dict[str, Any]) -> bool:
+    """横屏视频（宽 > 高）。宽高未知（还没 ffprobe 过）的不算，播放器拿到画面尺寸后再判断。"""
+    w, h = it.get("width") or 0, it.get("height") or 0
+    return w > h > 0
+
+
 def _videos(platform: str) -> List[Dict[str, Any]]:
-    """某平台全部可播放视频（带上 platform 字段的浅拷贝）。"""
+    """某平台可在多联里播放的视频（带上 platform 字段的浅拷贝）。
+    图集没有视频流、横屏视频在竖长的分屏里只剩一条缝，都不要。"""
     return [dict(it, platform=platform) for it in sv.scan_shortvideo_library(platform)
-            if it.get("kind") != "images"]
+            if it.get("kind") != "images" and not is_landscape(it)]
 
 
 def _platform_label(p: str) -> str:
@@ -74,7 +81,7 @@ def get_channel_videos(channel_id: str, seed: Optional[int] = None) -> List[Dict
 
 def public_item(it: Dict[str, Any]) -> Dict[str, Any]:
     """下发给网页的字段（不含本机绝对路径）。"""
-    return {k: it.get(k) for k in ("platform", "rel_path", "title", "folder", "duration", "stream_url", "thumb_url")} | {
+    return {k: it.get(k) for k in ("platform", "rel_path", "title", "folder", "duration", "width", "stream_url", "thumb_url")} | {
         "liked": sv.is_shortvideo_liked(it["platform"], it["rel_path"]),
     }
 
@@ -87,6 +94,7 @@ def resolve_file(it: Dict[str, Any]) -> Optional[str]:
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "layout": 3,
+    "focus_audio": True,   # 焦点出声：没手动静音的屏里，只有鼠标所在/点中的那一屏出声
     "slots": [{"channel_id": "liked", "shuffle": False, "muted": False},
               {"channel_id": "all", "shuffle": True, "muted": True},
               {"channel_id": "all", "shuffle": True, "muted": True}],
@@ -113,13 +121,15 @@ def load_config() -> Dict[str, Any]:
             pass
     slots = [s for s in (data.get("slots") or []) if isinstance(s, dict)]
     slots += DEFAULT_CONFIG["slots"][len(slots):]
-    return {"layout": 2 if data.get("layout") == 2 else 3, "slots": [_clean_slot(s) for s in slots[:3]]}
+    return {"layout": 2 if data.get("layout") == 2 else 3, "focus_audio": bool(data.get("focus_audio", True)),
+            "slots": [_clean_slot(s) for s in slots[:3]]}
 
 
 def save_config(config: Dict[str, Any]) -> None:
     """只保留认识的字段，原子写回。"""
     slots = [s for s in (config.get("slots") or []) if isinstance(s, dict)][:3]
-    cfg = {"layout": 2 if config.get("layout") == 2 else 3, "slots": [_clean_slot(s) for s in slots]}
+    cfg = {"layout": 2 if config.get("layout") == 2 else 3, "focus_audio": bool(config.get("focus_audio", True)),
+           "slots": [_clean_slot(s) for s in slots]}
     with _LOCK:
         os.makedirs(os.path.dirname(paths.SHORTVIDEO_MATRIX_CONFIG), exist_ok=True)
         tmp = paths.SHORTVIDEO_MATRIX_CONFIG + ".tmp"
