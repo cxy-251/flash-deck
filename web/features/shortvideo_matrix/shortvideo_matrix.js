@@ -13,6 +13,7 @@ const MATRIX_SLOTS = 3;
 const MATRIX_PAGE = 300;   // 频道视频分页取（抖音全部动辄两万多条）
 let matrixChannels = null;
 let matrixAudioScopes = [];
+let matrixAudioRates = [1];
 let matrixConfig = null;   // {layout, focus_audio, slots: [{channel_id, shuffle, muted}]}
 let matrixWebPlaying = false;
 let matrixActiveSlot = 0;
@@ -72,7 +73,7 @@ async function showMatrixSetup() {
             matrixChannels ? null : fetch('/api/shortvideo_matrix/channels').then(r => r.json()),
             fetch('/api/shortvideo_matrix/config').then(r => r.json()),
         ]);
-        if (ch) { matrixChannels = ch.channels || []; matrixAudioScopes = ch.audio_scopes || []; }
+        if (ch) { matrixChannels = ch.channels || []; matrixAudioScopes = ch.audio_scopes || []; matrixAudioRates = ch.audio_rates || [1]; }
         matrixConfig = cfg.config;
     } catch (e) {
         document.getElementById('matrix-setup-rows').textContent = '频道加载失败，稍后再切回这个分区试试';
@@ -252,6 +253,8 @@ function refreshWebBar() {
     $('matrix-bar-audio').style.display = audio ? 'flex' : 'none';
     if (audio) {
         $('matrix-bar-ashuffle').classList.toggle('active', cfg.audio_shuffle);
+        $('matrix-bar-arate').textContent = `${cfg.audio_rate}x`;
+        $('matrix-bar-arate').classList.toggle('active', cfg.audio_rate !== 1);
         $('matrix-bar-scope').textContent = matrixScopeLabel(cfg.audio_scope).replace(/ \(\d+\)$/, '');
         const tr = slot.tracks.length && matrixEl('audio', i).getAttribute('src') ? slot.tracks[slot.aorder[slot.apos]] : null;
         $('matrix-bar-scope').title = `范围：${matrixScopeLabel(cfg.audio_scope)}` + (tr ? `\n正在放：${tr.title}` : '') + '\n点击切到下一个专辑';
@@ -471,9 +474,26 @@ function makeWebSlotAOrder(i) {
 function loadWebSlotTrack(i) {
     const slot = webSlots[i], a = matrixEl('audio', i);
     a.src = slot.tracks[slot.aorder[slot.apos]].stream_url;
+    applyWebSlotRate(i);   // 换 src 会把 playbackRate 重置成 defaultPlaybackRate，两个都设
     const at = slot.aresumeAt;
     slot.aresumeAt = 0;
     if (at) a.addEventListener('loadedmetadata', () => { a.currentTime = at; }, { once: true });
+}
+
+function applyWebSlotRate(i) {
+    const a = matrixEl('audio', i), rate = matrixConfig.slots[i].audio_rate || 1;
+    a.defaultPlaybackRate = rate;
+    a.playbackRate = rate;
+}
+
+// 音声倍速：按档位循环切（视频不调速）
+function barCycleRate() {
+    const i = barSlot(), cfg = matrixConfig.slots[i], rates = matrixAudioRates;
+    const k = rates.indexOf(cfg.audio_rate);
+    cfg.audio_rate = rates[(k + 1) % rates.length];
+    applyWebSlotRate(i);
+    refreshWebBar();
+    saveMatrixConfig();
 }
 
 function astepWebSlot(i, delta, manual = true) {

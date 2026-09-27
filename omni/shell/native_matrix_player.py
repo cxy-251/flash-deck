@@ -120,6 +120,7 @@ class MatrixSlotWidget(QFrame):
         self.sound = "video"             # video | audio
         self.audio_scope = "all"
         self.audio_shuffle = True
+        self.audio_rate = 1.0            # 音声倍速（Qt 默认保持音调，人声不会变尖）
         self.tracks: List[Dict[str, Any]] = []
         self.aorder: List[int] = []
         self.apos = 0
@@ -260,6 +261,13 @@ class MatrixSlotWidget(QFrame):
         if user:
             self.settingsChanged.emit()
 
+    def set_audio_rate(self, rate: float, user: bool = False):
+        self.audio_rate = rate
+        self.aplayer.setPlaybackRate(rate)
+        self.changed.emit(self.index)
+        if user:
+            self.settingsChanged.emit()
+
     def _make_aorder(self):
         self.aorder = list(range(len(self.tracks)))
         if self.audio_shuffle:
@@ -283,6 +291,7 @@ class MatrixSlotWidget(QFrame):
         self._aseek_on_load = start_ms
         if path:
             self.aplayer.setSource(QUrl.fromLocalFile(path))
+            self.aplayer.setPlaybackRate(self.audio_rate)
         else:
             self._askip_broken()
         self.changed.emit(self.index)
@@ -552,13 +561,17 @@ class NativeMatrixPlayerWidget(QWidget):
         self.btn_anext = QPushButton("⏭")
         self.btn_ashuffle = QPushButton("🔀")
         self.btn_scope = QPushButton("📁")
+        self.btn_arate = QPushButton("1x")
         for b, tip, fn in ((self.btn_anext, "下一段音声", lambda: self.cur().astep(1)),
+                           (self.btn_arate, "音声倍速（点击切下一档）", self._next_rate),
                            (self.btn_ashuffle, "音声随机顺序", lambda: self.cur().set_audio_shuffle(not self.cur().audio_shuffle, user=True)),
                            (self.btn_scope, "音声范围（点击切到下一个专辑）", self._next_scope)):
             b.setToolTip(tip)
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             b.clicked.connect(fn)
-            if b is not self.btn_scope:
+            if b is self.btn_arate:
+                b.setFixedWidth(44)
+            elif b is not self.btn_scope:
                 b.setFixedWidth(34)
             ab.addWidget(b)
         self.btn_scope.setObjectName("scopeBtn")   # 宽度在 _QSS 里定（样式表的 min-width 会盖过 setMinimumWidth）
@@ -628,6 +641,8 @@ class NativeMatrixPlayerWidget(QWidget):
         self.audio_box.setVisible(audio)
         if audio:
             _set_active_prop(self.btn_ashuffle, s.audio_shuffle)
+            self.btn_arate.setText(f"{s.audio_rate:g}x")
+            _set_active_prop(self.btn_arate, s.audio_rate != 1.0)
             sc = next((x for x in self.audio_scopes if x["id"] == s.audio_scope), None)
             name = sc["label"] if sc else "全部音声"
             self.btn_scope.setText(f"📁 {name}")
@@ -650,6 +665,11 @@ class NativeMatrixPlayerWidget(QWidget):
         ids = [x["id"] for x in self.audio_scopes] or ["all"]
         s = self.cur()
         s.set_audio_scope(ids[(ids.index(s.audio_scope) + 1) % len(ids)] if s.audio_scope in ids else ids[0], user=True)
+
+    def _next_rate(self):
+        s = self.cur()
+        rates = mx.AUDIO_RATES
+        s.set_audio_rate(rates[(rates.index(s.audio_rate) + 1) % len(rates)] if s.audio_rate in rates else 1.0, user=True)
 
     def _on_audio_progress(self, idx: int, pos: int, dur: int):
         if idx != self.active:
@@ -731,6 +751,7 @@ class NativeMatrixPlayerWidget(QWidget):
             s.set_muted(s_cfg["muted"])
             s.audio_scope = s_cfg["audio_scope"] if s_cfg["audio_scope"] in scope_ids else "all"
             s.audio_shuffle = s_cfg["audio_shuffle"]
+            s.set_audio_rate(s_cfg["audio_rate"])
             if s._asession != (s.audio_scope, s.audio_shuffle):
                 s.tracks = []        # 设置页改过音声范围/随机：重新取
             s.set_sound(s_cfg["sound"])
@@ -745,7 +766,8 @@ class NativeMatrixPlayerWidget(QWidget):
         try:
             mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio,
                             "slots": [{"channel_id": s.channel_id, "shuffle": s.shuffle, "muted": s.user_muted,
-                                       "sound": s.sound, "audio_scope": s.audio_scope, "audio_shuffle": s.audio_shuffle}
+                                       "sound": s.sound, "audio_scope": s.audio_scope, "audio_shuffle": s.audio_shuffle,
+                                       "audio_rate": s.audio_rate}
                                       for s in self.slots]})
         except OSError as e:
             print(f"[matrix] 保存配置失败: {e}")

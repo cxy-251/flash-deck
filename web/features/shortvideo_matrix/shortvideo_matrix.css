@@ -293,6 +293,7 @@
 }
 .matrix-bar-audio .matrix-bar-btn.active { background: #8957e5; border-color: #d2a8ff; }
 .matrix-bar-audio .matrix-scope-btn { max-width: 150px; text-align: left; }
+.matrix-bar-rate { min-width: 44px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .matrix-bar-audio .matrix-audio-seek { width: 110px; flex: none; }
 
 /* 每屏：只剩画面 + 底部细进度线 */

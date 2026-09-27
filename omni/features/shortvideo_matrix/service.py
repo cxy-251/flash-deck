@@ -99,6 +99,9 @@ def resolve_file(it: Dict[str, Any]) -> Optional[str]:
 #   all                    全部音声
 #   std:<专辑> / nsfw:<专辑>  某个专辑（常规区、NSFW 区分开，同名专辑不混）
 
+AUDIO_RATES = [1.0, 1.25, 1.5, 1.75, 2.0, 0.75]   # 音声倍速档位（顶栏按钮循环切换；视频不调速）
+
+
 def _audio_items() -> List[Dict[str, Any]]:
     return audio.scan_audio_library(False) + audio.scan_audio_library(True)
 
@@ -143,7 +146,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
               {"channel_id": "all", "shuffle": True, "muted": True}],
 }
 # 每屏的声音设置：sound = video（视频原声）| audio（音声代替原声）；音声范围与是否随机
-SLOT_SOUND_DEFAULTS = {"sound": "video", "audio_scope": "all", "audio_shuffle": True}
+SLOT_SOUND_DEFAULTS = {"sound": "video", "audio_scope": "all", "audio_shuffle": True, "audio_rate": 1.0}
 
 
 def _clean_slot(s: Dict[str, Any]) -> Dict[str, Any]:
@@ -153,7 +156,16 @@ def _clean_slot(s: Dict[str, Any]) -> Dict[str, Any]:
             "muted": bool(s.get("muted", False)),
             "sound": "audio" if s.get("sound") == "audio" else "video",
             "audio_scope": str(s.get("audio_scope") or "all"),
-            "audio_shuffle": bool(s.get("audio_shuffle", True))}
+            "audio_shuffle": bool(s.get("audio_shuffle", True)),
+            "audio_rate": _clean_rate(s.get("audio_rate"))}
+
+
+def _clean_rate(v: Any) -> float:
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return 1.0
+    return v if v in AUDIO_RATES else 1.0
 
 
 def load_config() -> Dict[str, Any]:

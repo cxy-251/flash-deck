@@ -7,7 +7,8 @@ api = Api("shortvideo-matrix")
 
 @api.get("/api/shortvideo_matrix/channels")
 def channels(req):
-    return req.json({"status": "ok", "channels": mx.get_channels(), "audio_scopes": mx.get_audio_scopes()})
+    return req.json({"status": "ok", "channels": mx.get_channels(), "audio_scopes": mx.get_audio_scopes(),
+                     "audio_rates": mx.AUDIO_RATES})
 
 
 @api.get("/api/shortvideo_matrix/videos")

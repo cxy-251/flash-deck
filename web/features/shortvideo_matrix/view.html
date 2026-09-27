@@ -43,6 +43,7 @@
             <span id="matrix-bar-audio" class="matrix-bar-audio" style="display:none;">
                 <button class="matrix-bar-btn" onclick="astepWebSlot(barSlot(), 1)" title="下一段音声">⏭</button>
                 <button class="matrix-bar-btn" id="matrix-bar-ashuffle" onclick="barToggleAShuffle()" title="音声随机顺序">🔀</button>
+                <button class="matrix-bar-btn matrix-bar-rate" id="matrix-bar-arate" onclick="barCycleRate()" title="音声倍速（点击切下一档）">1x</button>
                 <button class="matrix-bar-btn matrix-scope-btn" id="matrix-bar-scope" onclick="barCycleScope()"></button>
                 <input type="range" id="matrix-bar-aseek" class="matrix-audio-seek" min="0" max="1000" value="0"
                        oninput="barASeek(this.value, false)" onchange="barASeek(this.value, true)">

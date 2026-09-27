@@ -62,6 +62,9 @@ STEPS.append(("media-shortvideo-matrix-audio",
               "(function(){ const a = document.getElementById('matrix-audio-1'); "
               "return [webSlots[1].tracks.length > 0 && !!a.getAttribute('src') && document.getElementById('matrix-video-1').muted, "
               "'tracks=' + webSlots[1].tracks.length + ' ' + document.getElementById('matrix-bar-scope').title.split('\\n')[1]]; })()"))
+STEPS.append(("media-shortvideo-matrix-rate", "barCycleRate()", 3000,
+              "(function(){ const a = document.getElementById('matrix-audio-1'), v = document.getElementById('matrix-video-1'); "
+              "return [a.playbackRate === 1.25 && v.playbackRate === 1, '音声 ' + a.playbackRate + 'x 视频 ' + v.playbackRate + 'x 按钮 ' + document.getElementById('matrix-bar-arate').textContent]; })()"))
 STEPS.append(("media-shortvideo-matrix-collapse",
               "window.__mxBefore = webSlots.map(s => s.cur + '/' + s.total).join(','); collapseWebMatrix()", 5000,
               "[activeMediaTab !== 'shortvideo-matrix', '收起后回到 ' + (activePrimarySection === 'games' ? '游戏区' : activeMediaTab)]"))
