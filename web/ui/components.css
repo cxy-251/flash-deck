@@ -102,3 +102,38 @@
     align-items: center;
     gap: 10px;
 }
+
+
+/* ---- 播放器图标（web/ui/icons.js）：mask 画的 SVG，颜色跟随 currentColor ---- */
+.ico {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    vertical-align: middle;
+    background: currentColor;
+    -webkit-mask: var(--ico) center / contain no-repeat;
+    mask: var(--ico) center / contain no-repeat;
+}
+.ico-text { margin-left: 3px; font-size: 12px; font-variant-numeric: tabular-nums; vertical-align: middle; }
+/* 扁平圆形图标按钮（YouTube / 音乐播放器那种）：平时透明，悬停浮出淡底 */
+.ico-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 6px;
+    border: none;
+    border-radius: 17px;
+    background: transparent;
+    color: #e6edf3;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.ico-btn:hover { background: rgba(255,255,255,0.12); }
+.ico-btn:active { background: rgba(255,255,255,0.20); }
+.ico-btn.active { color: #58a6ff; background: rgba(88,166,255,0.14); }
+.ico-btn.liked { color: #ff4d6d; }
+.ico-btn.danger { color: #ff7b72; }
+.ico-btn.big .ico { width: 28px; height: 28px; }

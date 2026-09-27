@@ -15,7 +15,7 @@
             <div id="matrix-setup-rows" class="matrix-setup-rows">加载频道中…</div>
             <div class="matrix-setup-foot">
                 <span class="matrix-setup-hint">播放中也能在每一屏上换频道、切随机、开关声音</span>
-                <button id="matrix-start-btn" class="matrix-btn-primary" onclick="startMatrix()" disabled>▶ 开始播放</button>
+                <button id="matrix-start-btn" class="matrix-btn-primary" onclick="startMatrix()" disabled data-icon="play_arrow-fill" data-icon-text="开始播放"></button>
             </div>
         </div>
     </div>
@@ -24,48 +24,46 @@
     <div id="matrix-web-container" class="matrix-web-container" style="display:none;">
         <!-- 顶栏：全局 + 焦点屏控制台（每屏不放控件，画面尽量大） -->
         <!-- 顶栏自动隐藏：鼠标移到最顶端 / 点「▾」把手出来，离开 1.5 秒收起；📌 固定后一直显示 -->
-        <div id="matrix-bar-handle" class="matrix-bar-handle" onclick="showWebMatrixBar(4000)" onmouseenter="showWebMatrixBar()" title="显示控制栏">▾</div>
+        <div id="matrix-bar-handle" class="matrix-bar-handle" onclick="showWebMatrixBar(4000)" onmouseenter="showWebMatrixBar()" title="显示控制栏" data-icon="keyboard_arrow_down"></div>
         <div id="matrix-web-topbar" class="matrix-web-topbar" onmouseenter="showWebMatrixBar()" onmouseleave="scheduleWebMatrixBarHide()">
-            <div class="matrix-btn-group">
-                <button id="matrix-web-layout-2" class="matrix-tab-btn" onclick="setWebMatrixLayout(2, true)">2屏</button>
-                <button id="matrix-web-layout-3" class="matrix-tab-btn" onclick="setWebMatrixLayout(3, true)">3屏</button>
-            </div>
-            <button id="matrix-web-focus" class="matrix-bar-btn" onclick="toggleWebMatrixFocus()" title="焦点出声：开 = 没静音的屏里只有焦点屏出声">🎯</button>
+            <button id="matrix-web-layout-2" class="ico-btn" onclick="setWebMatrixLayout(2, true)" title="2 屏并排" data-icon="view_column_2"></button>
+            <button id="matrix-web-layout-3" class="ico-btn" onclick="setWebMatrixLayout(3, true)" title="3 屏并排" data-icon="view_week"></button>
+            <button id="matrix-web-focus" class="ico-btn" onclick="toggleWebMatrixFocus()" title="焦点出声：开 = 没静音的屏里只有焦点屏出声" data-icon="hearing"></button>
             <span class="matrix-bar-sep"></span>
             <span id="matrix-bar-tag" class="matrix-bar-tag">屏1</span>
-            <input id="matrix-bar-search" class="matrix-channel-search" type="search" placeholder="🔍 主播" oninput="filterMatrixSelect(this, 'matrix-bar-select', barChannel)">
+            <input id="matrix-bar-search" class="matrix-channel-search" type="search" placeholder="搜索主播" oninput="filterMatrixSelect(this, 'matrix-bar-select', barChannel)">
             <select id="matrix-bar-select" class="matrix-channel-select matrix-bar-select" onchange="barChannel(this.value)"></select>
-            <button class="matrix-bar-btn" onclick="barStep(-1)" title="上一条">⬅</button>
-            <button class="matrix-bar-btn" id="matrix-bar-play" onclick="barTogglePlay()" title="暂停 / 继续">⏸</button>
-            <button class="matrix-bar-btn" onclick="barStep(1)" title="下一条">➡</button>
-            <button class="matrix-bar-btn" id="matrix-bar-shuffle" onclick="barToggleShuffle()" title="视频随机顺序">🔀</button>
-            <button class="matrix-bar-btn" id="matrix-bar-like" onclick="barToggleLike()" title="点赞">🤍</button>
-            <button class="matrix-bar-btn" id="matrix-bar-mute" onclick="barToggleMute()" title="静音">🔊</button>
-            <button class="matrix-bar-btn" id="matrix-bar-sound" onclick="barToggleSound()">🎬</button>
+            <button class="ico-btn" onclick="barStep(-1)" title="上一条" data-icon="skip_previous-fill"></button>
+            <button class="ico-btn" id="matrix-bar-play" onclick="barTogglePlay()" title="暂停 / 继续" data-icon="pause-fill"></button>
+            <button class="ico-btn" onclick="barStep(1)" title="下一条" data-icon="skip_next-fill"></button>
+            <button class="ico-btn" id="matrix-bar-shuffle" onclick="barToggleShuffle()" title="视频随机顺序" data-icon="shuffle"></button>
+            <button class="ico-btn" id="matrix-bar-like" onclick="barToggleLike()" title="点赞" data-icon="favorite"></button>
+            <button class="ico-btn" id="matrix-bar-mute" onclick="barToggleMute()" title="静音" data-icon="volume_up-fill"></button>
+            <button class="ico-btn" id="matrix-bar-sound" onclick="barToggleSound()" data-icon="movie-fill"></button>
             <span class="matrix-bar-spacer"></span>
-            <button class="matrix-bar-btn" onclick="toggleWebMatrixAllPlay()" title="全部 暂停 / 继续">⏯</button>
-            <button class="matrix-bar-btn" id="matrix-bar-pin" onclick="toggleWebMatrixBarPin()" title="固定顶栏（关 = 自动隐藏，鼠标移到最顶端才出来）">📌</button>
-            <button class="matrix-bar-btn" onclick="stopWebMatrix()" title="回到设置页（改每屏的频道 / 声源等）">⚙</button>
-            <button class="matrix-bar-btn matrix-bar-close" onclick="collapseWebMatrix()" title="收起：记住各屏位置，回到进来之前的页面；再点多联标签接着看">⤓</button>
+            <button class="ico-btn" onclick="toggleWebMatrixAllPlay()" title="全部 暂停 / 继续" data-icon="play_pause"></button>
+            <button class="ico-btn" id="matrix-bar-pin" onclick="toggleWebMatrixBarPin()" title="固定顶栏（关 = 自动隐藏，鼠标移到最顶端才出来）" data-icon="keep"></button>
+            <button class="ico-btn" onclick="stopWebMatrix()" title="回到设置页（改每屏的频道 / 声源等）" data-icon="settings-fill"></button>
+            <button class="ico-btn matrix-bar-close" onclick="collapseWebMatrix()" title="收起：记住各屏位置，回到进来之前的页面；再点多联标签接着看" data-icon="keyboard_arrow_down"></button>
             <!-- 第二行：音声（焦点屏用音声时才显示），功能跟网页音声专区一样 -->
             <div id="matrix-bar-audio" class="matrix-bar-audio" style="display:none;">
-                <span>🎧</span>
-                <button class="matrix-bar-btn matrix-scope-btn" id="matrix-bar-scope" onclick="barCycleScope()"></button>
+                <span class="matrix-audio-tag" data-icon="headphones-fill"></span>
+                <button class="ico-btn matrix-scope-btn" id="matrix-bar-scope" onclick="barCycleScope()"></button>
                 <span id="matrix-bar-atitle" class="matrix-bar-atitle"></span>
-                <button class="matrix-bar-btn" onclick="astepWebSlot(barSlot(), -1)" title="上一首">⏮</button>
-                <button class="matrix-bar-btn" onclick="barASkip(-1)" title="快退">⏪</button>
-                <button class="matrix-bar-btn" onclick="barASkip(1)" title="快进">⏩</button>
-                <button class="matrix-bar-btn" onclick="astepWebSlot(barSlot(), 1)" title="下一首">⏭</button>
-                <button class="matrix-bar-btn" id="matrix-bar-amode" onclick="barCycleAMode()"></button>
-                <button class="matrix-bar-btn matrix-bar-rate" id="matrix-bar-arate" onclick="barCycleRate()" title="倍速（点击切下一档）">1x</button>
-                <button class="matrix-bar-btn matrix-bar-rate" id="matrix-bar-sleep" onclick="barCycleSleep()" title="定时关闭：关（点击切下一档）">⏳</button>
+                <button class="ico-btn" onclick="astepWebSlot(barSlot(), -1)" title="上一首" data-icon="skip_previous-fill"></button>
+                <button class="ico-btn" onclick="barASkip(-1)" title="快退" data-icon="replay_10"></button>
+                <button class="ico-btn" onclick="barASkip(1)" title="快进" data-icon="forward_30"></button>
+                <button class="ico-btn" onclick="astepWebSlot(barSlot(), 1)" title="下一首" data-icon="skip_next-fill"></button>
+                <button class="ico-btn" id="matrix-bar-amode" onclick="barCycleAMode()" data-icon="repeat"></button>
+                <button class="ico-btn matrix-bar-rate" id="matrix-bar-arate" onclick="barCycleRate()" title="倍速（点击切下一档）">1x</button>
+                <button class="ico-btn matrix-bar-rate" id="matrix-bar-sleep" onclick="barCycleSleep()" title="定时关闭：关（点击切下一档）" data-icon="bedtime"></button>
                 <select id="matrix-bar-chapter" class="matrix-channel-select matrix-bar-chapter" onchange="barAChapter(this.value)" style="display:none;"></select>
                 <input type="range" id="matrix-bar-aseek" class="matrix-audio-seek" min="0" max="1000" value="0"
                        oninput="barASeek(this.value, false)" onchange="barASeek(this.value, true)">
                 <span id="matrix-bar-atime" class="matrix-slot-count">0:00 / 0:00</span>
                 <details id="matrix-bar-more" class="matrix-bar-more">
-                    <summary class="matrix-bar-btn" title="更多">⋯</summary>
-                    <div class="matrix-bar-menu"><button onclick="barDeleteTrack()">🗑 移到回收站…</button></div>
+                    <summary class="ico-btn" title="更多" data-icon="more_horiz"></summary>
+                    <div class="matrix-bar-menu"><button onclick="barDeleteTrack()"><span data-icon="delete"></span> 移到回收站…</button></div>
                 </details>
             </div>
         </div>

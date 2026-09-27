@@ -1,3 +1,6 @@
+// 按钮上的 data-icon 换成图标（web/ui/icons.js）
+hydrateIcons(document);
+
 // 优先从持久缓存中同步完成秒级渲染，避免网络请求延迟导致的视觉闪烁与空屏
 try {
     const cached = localStorage.getItem('omni_games_cache') || sessionStorage.getItem('omni_games_cache');

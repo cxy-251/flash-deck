@@ -423,7 +423,7 @@ function playAudioItem(item) {
     audioEl.play().catch(e => console.log('Autoplay policy:', e));
 
     if (discEl) discEl.classList.add('spinning');
-    if (playBtn) playBtn.innerHTML = '⏸';
+    if (playBtn) setIcon(playBtn, 'pause-fill');
 }
 
 function toggleAudioPlay() {
@@ -438,11 +438,11 @@ function toggleAudioPlay() {
 
     if (audioEl.paused) {
         audioEl.play();
-        if (playBtn) playBtn.innerHTML = '⏸';
+        if (playBtn) setIcon(playBtn, 'pause-fill');
         if (discEl) discEl.classList.add('spinning');
     } else {
         audioEl.pause();
-        if (playBtn) playBtn.innerHTML = '▶';
+        if (playBtn) setIcon(playBtn, 'play_arrow-fill');
         if (discEl) discEl.classList.remove('spinning');
     }
 }
@@ -501,14 +501,14 @@ function cycleAudioSpeed() {
     if (quickBtn) quickBtn.textContent = text;
 }
 
-const AUDIO_MODE_NAMES = { list: '🔁 列表', single: '🔂 单曲', random: '🔀 随机' };
+const AUDIO_MODE_NAMES = { list: ['repeat', '列表'], single: ['repeat_one', '单曲'], random: ['shuffle', '随机'] };
 
 function setAudioPlayMode(mode) {
     if (!AUDIO_MODE_NAMES[mode]) return;
     audioPlayMode = mode;
     for (const id of ['player-mode-btn', 'player-mode-quick-btn']) {
         const btn = document.getElementById(id);
-        if (btn) btn.textContent = AUDIO_MODE_NAMES[mode];
+        if (btn) setIcon(btn, AUDIO_MODE_NAMES[mode][0], AUDIO_MODE_NAMES[mode][1]);
     }
 }
 
@@ -526,18 +526,18 @@ function cycleSleepTimer() {
         sleepTimerTimeout = null;
     }
     if (mins > 0) {
-        btn.textContent = `⏳ ${mins}分`;
+        setIcon(btn, 'bedtime-fill', `${mins}分`);
         btn.style.color = '#58a6ff';
         sleepTimerTimeout = setTimeout(() => {
             const audioEl = document.getElementById('main-audio-element');
             if (audioEl) audioEl.pause();
-            btn.textContent = '⏳ 定时';
+            setIcon(btn, 'bedtime', '定时');
             btn.style.color = '';
             sleepTimerIdx = 0;
-            alert('⏳ 定时关闭生效，已为您暂停音频播放。');
+            alert('定时关闭生效，已为您暂停音频播放。');
         }, mins * 60 * 1000);
     } else {
-        btn.textContent = '⏳ 定时';
+        setIcon(btn, 'bedtime', '定时');
         btn.style.color = '';
     }
 }
@@ -761,12 +761,12 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         audioEl.onplay = () => {
-            if (playBtn) playBtn.innerHTML = '⏸';
+            if (playBtn) setIcon(playBtn, 'pause-fill');
             if (discEl) discEl.classList.add('spinning');
         };
 
         audioEl.onpause = () => {
-            if (playBtn) playBtn.innerHTML = '▶';
+            if (playBtn) setIcon(playBtn, 'play_arrow-fill');
             if (discEl) discEl.classList.remove('spinning');
             if (currentAudioItem && !audioEl.ended) saveAudioProgress(currentAudioItem, audioEl.currentTime, audioEl.duration);   // 暂停时也记一下
         };

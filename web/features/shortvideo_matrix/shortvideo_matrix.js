@@ -4,7 +4,7 @@
 //   其它浏览器 → 网页版，三个 <video> 槽位由 SLOT_TEMPLATE 生成。
 // 设置只有后端一份（/api/shortvideo_matrix/config），两边播放中改的也写回去，下次打开设置页就是最新的。
 // 声音 = 手动静音 OR（焦点出声 且 不是焦点屏）：手动静音的屏永远不出声，焦点出声只在没静音的屏之间挑。
-// 每屏的声音可换成「音声」分区的音频（🎬/🎧）：一个隐藏的 <audio>，跟视频各播各的；
+// 每屏的声音可换成「音声」分区的音频（原声 / 音声 切换）：一个隐藏的 <audio>，跟视频各播各的；
 // 这一屏听不到或视频被暂停时音声暂停，回来接着放。音声只选范围（全部 / 专辑），不挑单个文件；
 // 控件功能跟网页音声专区一样，档位（AUDIO_SPEEDS / SLEEP_TIMER_MINS / AUDIO_SKIP）和断点续听
 // （fetchAudioProgress / saveAudioProgress）直接用 audio.js 里统一的那份。
@@ -22,7 +22,7 @@ let matrixSessionStarted = false;   // 这次页面里点过「开始播放」�
 let matrixReturnTo = 'games';        // ⤓ 收起 回到哪：进多联之前的媒体标签，或游戏区
 const webSlots = Array.from({ length: MATRIX_SLOTS }, () => ({ total: 0, base: 0, page: [], cur: 0, seed: 0, singleLoop: false, skips: 0,
     userPaused: false, tracks: [], tracksScope: null, apos: 0, askips: 0, asavedAt: 0 }));
-const MATRIX_AUDIO_MODES = { list: ['🔁', '列表循环'], single: ['🔂', '单曲循环'], random: ['🔀', '随机播放'] };
+const MATRIX_AUDIO_MODES = { list: ['repeat', '列表循环'], single: ['repeat_one', '单曲循环'], random: ['shuffle', '随机播放'] };
 
 const matrixEl = (name, i) => document.getElementById(`matrix-${name}-${i}`);
 const matrixIsNative = () => Boolean(window.omniBridge && typeof window.omniBridge.openMatrixPlayer === 'function');
@@ -57,7 +57,7 @@ const SEARCH_BOX = (selectId, onPick) =>
 
 function matrixScopeLabel(id) {
     const sc = matrixAudioScopes.find(x => x.id === id) || matrixAudioScopes[0];
-    return sc ? `📁 ${sc.label} (${sc.count})` : '📁 全部音声';
+    return sc ? `${sc.label} (${sc.count})` : '全部音声';
 }
 
 function matrixNextScope(id) {
@@ -93,14 +93,15 @@ function renderMatrixSetup() {
             <label><input type="checkbox" ${s.shuffle ? 'checked' : ''} onchange="matrixConfig.slots[${i}].shuffle = this.checked"> 🔀 随机</label>
             <label><input type="checkbox" ${s.muted ? 'checked' : ''} onchange="matrixConfig.slots[${i}].muted = this.checked"> 🔇 静音</label>
             <div class="matrix-btn-group">
-                <button id="matrix-setup-snd-video-${i}" class="matrix-tab-btn" onclick="setMatrixSetupSound(${i}, 'video')">🎬 原声</button>
-                <button id="matrix-setup-snd-audio-${i}" class="matrix-tab-btn" onclick="setMatrixSetupSound(${i}, 'audio')">🎧 音声</button>
+                <button id="matrix-setup-snd-video-${i}" class="matrix-tab-btn" onclick="setMatrixSetupSound(${i}, 'video')" data-icon="movie-fill" data-icon-text="原声"></button>
+                <button id="matrix-setup-snd-audio-${i}" class="matrix-tab-btn" onclick="setMatrixSetupSound(${i}, 'audio')" data-icon="headphones-fill" data-icon-text="音声"></button>
             </div>
             <span id="matrix-setup-audio-${i}" class="matrix-setup-audio">
                 <button class="matrix-tab-btn matrix-scope-btn" id="matrix-setup-scope-${i}" onclick="cycleMatrixSetupScope(${i})" title="点击切到下一个专辑"></button>
                 <button class="matrix-tab-btn" id="matrix-setup-amode-${i}" onclick="cycleMatrixSetupAMode(${i})"></button>
             </span>
         </div>`).join('');
+    hydrateIcons(document.getElementById('matrix-setup-rows'));
     matrixConfig.slots.forEach((_, i) => updateMatrixSetupSound(i));
     setMatrixSetupLayout(matrixConfig.layout);
     document.getElementById('matrix-setup-focus').checked = matrixConfig.focus_audio;
@@ -112,10 +113,10 @@ function updateMatrixSetupSound(i) {
     document.getElementById(`matrix-setup-snd-video-${i}`).classList.toggle('active', s.sound !== 'audio');
     document.getElementById(`matrix-setup-snd-audio-${i}`).classList.toggle('active', s.sound === 'audio');
     document.getElementById(`matrix-setup-audio-${i}`).style.display = s.sound === 'audio' ? 'flex' : 'none';
-    document.getElementById(`matrix-setup-scope-${i}`).textContent = matrixScopeLabel(s.audio_scope);
-    const [icon, name] = MATRIX_AUDIO_MODES[s.audio_mode] || MATRIX_AUDIO_MODES.list;
+    setIcon(document.getElementById(`matrix-setup-scope-${i}`), 'library_music', matrixScopeLabel(s.audio_scope));
+    const [modeIcon, name] = MATRIX_AUDIO_MODES[s.audio_mode] || MATRIX_AUDIO_MODES.list;
     const modeBtn = document.getElementById(`matrix-setup-amode-${i}`);
-    modeBtn.textContent = `${icon} ${name}`;
+    setIcon(modeBtn, modeIcon, name);
     modeBtn.title = '音声播放模式（点击切换）';
 }
 
@@ -249,13 +250,16 @@ function refreshWebBar() {
     $('matrix-bar-tag').textContent = `屏${i + 1}`;
     const sel = $('matrix-bar-select');
     if (sel.value !== cfg.channel_id) sel.innerHTML = matrixChannelOptions(cfg.channel_id, $('matrix-bar-search').value);
-    $('matrix-bar-play').textContent = matrixEl('video', i).paused ? '▶' : '⏸';
+    setIcon($('matrix-bar-play'), matrixEl('video', i).paused ? 'play_arrow-fill' : 'pause-fill');
     $('matrix-bar-shuffle').classList.toggle('active', cfg.shuffle);
     const it = currentWebVideo(i);
-    $('matrix-bar-like').textContent = it && it.liked ? '❤️' : '🤍';
-    $('matrix-bar-mute').textContent = cfg.muted ? '🔇' : '🔊';   // 顶栏显示的就是焦点屏，不存在「等焦点」
+    const liked = !!(it && it.liked);
+    setIcon($('matrix-bar-like'), liked ? 'favorite-fill' : 'favorite');
+    $('matrix-bar-like').classList.toggle('liked', liked);
+    setIcon($('matrix-bar-mute'), cfg.muted ? 'volume_off-fill' : 'volume_up-fill');   // 顶栏显示的就是焦点屏，不存在「等焦点」
+    $('matrix-bar-mute').classList.toggle('danger', cfg.muted);
     const audio = cfg.sound === 'audio';
-    $('matrix-bar-sound').textContent = audio ? '🎧' : '🎬';
+    setIcon($('matrix-bar-sound'), audio ? 'headphones-fill' : 'movie-fill');
     $('matrix-bar-sound').title = audio ? '声音：音声（点击换回视频原声）' : '声音：视频原声（点击换成音声）';
     $('matrix-bar-sound').classList.toggle('active', audio);
     $('matrix-bar-audio').style.display = audio ? 'flex' : 'none';
@@ -458,12 +462,13 @@ function saveWebSlotAudioProgress(i) {
 
 function refreshWebAudioBar(i) {
     const $ = (id) => document.getElementById(id), cfg = matrixConfig.slots[i], tr = currentWebTrack(i);
-    const [icon, name] = MATRIX_AUDIO_MODES[cfg.audio_mode] || MATRIX_AUDIO_MODES.list;
-    $('matrix-bar-amode').textContent = icon;
+    const [modeIcon, name] = MATRIX_AUDIO_MODES[cfg.audio_mode] || MATRIX_AUDIO_MODES.list;
+    setIcon($('matrix-bar-amode'), modeIcon);
+    $('matrix-bar-amode').classList.toggle('active', cfg.audio_mode !== 'list');
     $('matrix-bar-amode').title = `播放模式：${name}（点击切换）`;
     $('matrix-bar-arate').textContent = `${cfg.audio_rate}x`;
     $('matrix-bar-arate').classList.toggle('active', cfg.audio_rate !== 1);
-    $('matrix-bar-scope').textContent = matrixScopeLabel(cfg.audio_scope).replace(/ \(\d+\)$/, '');
+    setIcon($('matrix-bar-scope'), 'library_music', matrixScopeLabel(cfg.audio_scope).replace(/ \(\d+\)$/, ''));
     $('matrix-bar-scope').title = `音声范围：${matrixScopeLabel(cfg.audio_scope)}\n点击切到下一个专辑`;
     const title = tr ? tr.title : (webSlots[i].tracks.length ? '' : '这个范围没有音声');
     $('matrix-bar-atitle').textContent = title;
@@ -606,7 +611,7 @@ function barCycleSleep() {
 function updateWebSleepBtn() {
     const btn = document.getElementById('matrix-bar-sleep');
     const left = matrixSleepEnd ? Math.ceil((matrixSleepEnd - Date.now()) / 60000) : 0;
-    btn.textContent = left ? `⏳${left}` : '⏳';
+    setIcon(btn, left ? 'bedtime-fill' : 'bedtime', left || '');
     btn.title = left ? `定时关闭：还剩 ${left} 分钟（点击切下一档）` : '定时关闭：关（点击切下一档）';
     btn.classList.toggle('active', !!left);
 }

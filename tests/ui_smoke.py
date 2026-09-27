@@ -68,7 +68,7 @@ STEPS.append(("media-shortvideo-matrix-rate", "barCycleRate()", 3000,
 STEPS.append(("media-shortvideo-matrix-autohide", "document.activeElement && document.activeElement.blur(); scheduleWebMatrixBarHide(500)", 6000,
               "(function(){ const hidden = document.getElementById('matrix-web-topbar').classList.contains('bar-hidden'); "
               "const handle = getComputedStyle(document.getElementById('matrix-bar-handle')).display; "
-              "return [hidden && handle === 'block', '顶栏收起=' + hidden + ' 把手=' + handle]; })()"))
+              "return [hidden && handle !== 'none', '顶栏收起=' + hidden + ' 把手=' + handle]; })()"))
 STEPS.append(("media-shortvideo-matrix-collapse",
               "window.__mxBefore = webSlots.map(s => s.cur + '/' + s.total).join(','); collapseWebMatrix()", 5000,
               "[activeMediaTab !== 'shortvideo-matrix', '收起后回到 ' + (activePrimarySection === 'games' ? '游戏区' : activeMediaTab)]"))
@@ -78,6 +78,10 @@ STEPS.append(("media-shortvideo-matrix-return",
               "const paused = [0,1,2].every(i => document.getElementById('matrix-video-' + i).paused); "
               "const now = webSlots.map(s => s.cur + '/' + s.total).join(','); "
               "return [shown && paused && now === window.__mxBefore, '直接回播放器=' + shown + ' 全暂停=' + paused + ' 位置 ' + window.__mxBefore + ' -> ' + now]; })()"))
+STEPS.append(("media-audio-player",
+              "if (activePrimarySection !== 'media') switchToMediaSection(); switchMediaTab('audio', document.getElementById('media-tab-audio')); setTimeout(() => playAudio(0), 800)", 8000,
+              "(function(){ const bar = document.getElementById('global-audio-player-bar'); "
+              "return [bar && getComputedStyle(bar).display !== 'none' && !!bar.querySelector('#player-play-btn .ico'), '播放条=' + (bar && getComputedStyle(bar).display) + ' 图标=' + bar.querySelectorAll('.ico').length]; })()"))
 STEPS.append(("privacy-modal", "openNsfwModal()", 3000,
               "[document.getElementById('nsfw-lock-modal').style.display === 'flex', 'nsfw modal']"))
 STEPS.append(("library-picker", "closeNsfwModal(); openLibraryPicker('library-add-path')", 8000,

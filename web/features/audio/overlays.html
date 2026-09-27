@@ -4,7 +4,7 @@
 
     <!-- 左侧：唱片 + 标题 + 格式标签 (已移除冗余时间) -->
     <div class="player-left">
-        <div class="player-disc" id="player-disc-icon">🎧</div>
+        <div class="player-disc" id="player-disc-icon" data-icon="headphones-fill"></div>
         <div class="player-track-info">
             <div class="player-title" id="player-track-title">未播放音声</div>
             <div class="player-sub-badge" id="player-track-badge">音声画廊 · 正在播放</div>
@@ -14,10 +14,10 @@
     <!-- 中间：控制按钮 + 时间轴进度条 -->
     <div class="player-center">
         <div class="player-controls">
-            <button class="player-icon-btn" onclick="cycleAudioMode()" id="player-mode-quick-btn" title="播放模式">🔁 列表</button>
-            <button class="player-ctrl-btn" onclick="playPrevAudio()" title="上一首">⏮</button>
-            <button class="player-play-btn" id="player-play-btn" onclick="toggleAudioPlay()" title="播放 / 暂停">▶</button>
-            <button class="player-ctrl-btn" onclick="playNextAudio()" title="下一首">⏭</button>
+            <button class="player-icon-btn" onclick="cycleAudioMode()" id="player-mode-quick-btn" title="播放模式" data-icon="repeat" data-icon-text="列表"></button>
+            <button class="player-ctrl-btn" onclick="playPrevAudio()" title="上一首" data-icon="skip_previous-fill"></button>
+            <button class="player-play-btn" id="player-play-btn" onclick="toggleAudioPlay()" title="播放 / 暂停" data-icon="play_arrow-fill"></button>
+            <button class="player-ctrl-btn" onclick="playNextAudio()" title="下一首" data-icon="skip_next-fill"></button>
             <button class="player-icon-btn" onclick="cycleAudioSpeed()" id="player-speed-quick-btn" title="播放倍速">1.0x</button>
         </div>
         <div class="player-progress-wrap">
@@ -31,13 +31,13 @@
 
     <!-- 右侧：定时/音量/选集/关闭 -->
     <div class="player-right">
-        <button class="player-pill-btn" id="player-chapters-btn" onclick="toggleAudioChaptersModal()" title="查看各回章节目录" style="display:none;background:#23863622;color:#3fb950;border-color:#2ea04366;">📑 选集 (<span id="player-chapter-badge">0</span>)</button>
-        <button class="player-pill-btn" id="player-sleep-btn" onclick="cycleSleepTimer()" title="定时关闭">⏳ 定时</button>
+        <button class="player-pill-btn" id="player-chapters-btn" onclick="toggleAudioChaptersModal()" title="查看各回章节目录" style="display:none;background:#23863622;color:#3fb950;border-color:#2ea04366;"><span data-icon="toc"></span> 选集 (<span id="player-chapter-badge">0</span>)</button>
+        <button class="player-pill-btn" id="player-sleep-btn" onclick="cycleSleepTimer()" title="定时关闭" data-icon="bedtime" data-icon-text="定时"></button>
         <div class="player-volume-box">
-            <span style="font-size:14px;color:#8b949e;">🔊</span>
+            <span style="color:#8b949e;display:inline-flex;" data-icon="volume_up-fill"></span>
             <input type="range" id="player-vol-slider" class="player-slider player-vol-slider" min="0" max="1" step="0.05" value="1" oninput="setAudioVolume(this.value)" title="音量调节">
         </div>
-        <button class="player-close-btn" onclick="hideGlobalAudioPlayer()" title="关闭播放器">✕</button>
+        <button class="player-close-btn" onclick="hideGlobalAudioPlayer()" title="关闭播放器" data-icon="close"></button>
     </div>
 </div>
 

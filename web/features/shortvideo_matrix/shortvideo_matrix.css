@@ -276,7 +276,7 @@
 }
 .matrix-bar-btn:hover { background: rgba(255,255,255,0.18); }
 .matrix-bar-btn.active { background: #1f6feb; border-color: #58a6ff; }
-.matrix-bar-close { background: #b62324; border-color: #da3633; }
+.matrix-bar-close { color: #e6edf3; }
 .matrix-bar-sep { width: 1px; height: 22px; background: #30363d; margin: 0 4px; }
 .matrix-bar-tag { color: #58a6ff; font-weight: 700; font-size: 13px; margin-right: 2px; }
 .matrix-bar-select { flex: 0 1 220px; }
@@ -331,3 +331,18 @@
     cursor: pointer;
 }
 .matrix-web-container.bar-collapsed .matrix-bar-handle { display: block; }
+
+/* 图标按钮（.ico-btn 在 ui/components.css）：顶栏里的尺寸与音声组配色 */
+.matrix-web-topbar .ico-btn { min-width: 32px; height: 32px; border-radius: 16px; }
+.matrix-bar-audio .ico-btn.active { color: #d2a8ff; background: rgba(210,168,255,0.16); }
+.matrix-bar-audio .matrix-scope-btn { background: rgba(210,168,255,0.10); color: #e6edf3; padding: 0 12px 0 8px; gap: 4px; }
+.matrix-bar-audio .matrix-scope-btn .ico { color: #d2a8ff; width: 18px; height: 18px; }
+.matrix-bar-rate { min-width: 52px; font-size: 12px; }
+.matrix-audio-tag { color: #d2a8ff; display: inline-flex; }
+.matrix-bar-handle { display: none; align-items: center; justify-content: center; }
+.matrix-bar-handle .ico { width: 16px; height: 16px; }
+.matrix-web-container.bar-collapsed .matrix-bar-handle { display: flex; }
+.matrix-bar-menu button { display: inline-flex; align-items: center; gap: 4px; }
+.matrix-bar-menu .ico { width: 16px; height: 16px; }
+.matrix-tab-btn .ico, .matrix-btn-primary .ico { width: 16px; height: 16px; margin-right: 2px; }
+.matrix-btn-primary { display: inline-flex; align-items: center; gap: 4px; }

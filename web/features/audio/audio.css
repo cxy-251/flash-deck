@@ -344,3 +344,13 @@
     font-family: SFMono-Regular, Consolas, monospace;
     flex-shrink: 0;
 }
+
+/* 播放条图标（.ico 在 ui/components.css） */
+#global-audio-player-bar button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; }
+.player-ctrl-btn .ico { width: 24px; height: 24px; }
+.player-play-btn .ico { width: 26px; height: 26px; }
+.player-icon-btn .ico, .player-pill-btn .ico { width: 16px; height: 16px; }
+.player-close-btn .ico { width: 20px; height: 20px; }
+.player-disc { display: flex; align-items: center; justify-content: center; color: #58a6ff; }
+.player-disc .ico { width: 22px; height: 22px; }
+.player-volume-box .ico { width: 18px; height: 18px; }

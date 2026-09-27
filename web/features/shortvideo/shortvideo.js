@@ -20,14 +20,24 @@ try {
     shortVideoLoopMode = localStorage.getItem('omni_shortvideo_loop_mode') || 'list';
 } catch (e) {}
 
+// 点赞按钮（播放器 / 图集查看器共用）：实心红心 = 已赞
+function svSetLikeBtn(btn, liked) {
+    if (!btn) return;
+    setIcon(btn, liked ? 'favorite-fill' : 'favorite');
+    btn.classList.toggle('liked', !!liked);
+    btn.title = liked ? '取消点赞' : '点赞';
+}
+
 function updateShortVideoLoopBtnUI() {
     const btn = document.getElementById('shortvideo-loop-btn');
     if (!btn) return;
     if (shortVideoLoopMode === 'single') {
-        btn.textContent = '🔂';
+        setIcon(btn, 'repeat_one');
+        btn.classList.add('active');
         btn.title = '循环模式：单视频循环（点击切换为列表循环）';
     } else {
-        btn.textContent = '🔁';
+        setIcon(btn, 'repeat');
+        btn.classList.remove('active');
         btn.title = '循环模式：列表循环（点击切换为单片循环）';
     }
 }
@@ -61,13 +71,11 @@ function toggleShortVideoLike(platform, relPath, event) {
             // 同步播放器按钮
             const likeBtn = document.getElementById('shortvideo-like-btn');
             if (likeBtn && svPlayerPlatform === platform && st && st.curIndex >= 0 && st.list[st.curIndex] && st.list[st.curIndex].rel_path === relPath) {
-                likeBtn.textContent = actualLiked ? '❤️' : '🤍';
-                likeBtn.title = actualLiked ? '取消点赞' : '点赞';
+                svSetLikeBtn(likeBtn, actualLiked);
             }
             const galleryLikeBtn = document.getElementById('shortvideo-gallery-like-btn');
             if (galleryLikeBtn && svGalleryPlatform === platform && st && st.curIndex >= 0 && st.list[st.curIndex] && st.list[st.curIndex].rel_path === relPath) {
-                galleryLikeBtn.textContent = actualLiked ? '❤️' : '🤍';
-                galleryLikeBtn.title = actualLiked ? '取消点赞' : '点赞';
+                svSetLikeBtn(galleryLikeBtn, actualLiked);
             }
 
             // 同步 Native 播放器端
@@ -301,19 +309,19 @@ function renderShortVideoGrid(platform, reset = true) {
         const card = document.createElement('div');
         card.className = 'manga-card';
         card.onclick = () => isGallery ? openShortVideoGallery(platform, i) : openShortVideoPlayer(platform, i);
-        const cornerBadge = isGallery ? `🖼️ ${item.image_count || 1}` : formatVideoDuration(item.duration);
-        const centerIcon = isGallery ? '🖼️' : '▶';
+        const cornerBadge = isGallery ? `${icon('photo_library-fill')}<span class="ico-text">${item.image_count || 1}</span>` : formatVideoDuration(item.duration);
+        const centerIcon = icon(isGallery ? 'photo_library-fill' : 'play_arrow-fill');
         card.innerHTML = `
             <div class="manga-cover-wrap" style="aspect-ratio:9/16;">
                 <img src="${item.thumb_url}" class="manga-cover" loading="lazy" onerror="shortVideoImgFallback(this)">
                 <span class="manga-badge-cbz" style="background:rgba(0,0,0,0.68);">${cornerBadge}</span>
-                ${isLiked ? '<span style="position:absolute;top:6px;left:6px;font-size:13px;background:rgba(0,0,0,0.6);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;z-index:2;" title="已点赞">❤️</span>' : ''}
+                ${isLiked ? `<span class="sv-liked-badge" title="已点赞">${icon('favorite-fill')}</span>` : ''}
                 <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
-                    <span style="width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,0.45);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;padding-left:${isGallery ? '0' : '3px'};">${centerIcon}</span>
+                    <span class="sv-center-icon">${centerIcon}</span>
                 </div>
                 <div class="manga-actions-hover" onclick="event.stopPropagation()">
-                    <button class="manga-mini-btn" title="${isLiked ? '取消点赞' : '点赞'}" onclick="toggleShortVideoLike('${platform}', '${escapeAttr(item.rel_path)}', event)">${isLiked ? '❤️' : '🤍'}</button>
-                    <button class="manga-mini-btn" title="移至回收站" onclick="deleteShortVideoFile('${platform}', '${escapeAttr(item.rel_path)}')">🗑️</button>
+                    <button class="ico-btn sv-card-btn${isLiked ? ' liked' : ''}" title="${isLiked ? '取消点赞' : '点赞'}" onclick="toggleShortVideoLike('${platform}', '${escapeAttr(item.rel_path)}', event)">${icon(isLiked ? 'favorite-fill' : 'favorite')}</button>
+                    <button class="ico-btn sv-card-btn" title="移至回收站" onclick="deleteShortVideoFile('${platform}', '${escapeAttr(item.rel_path)}')">${icon('delete')}</button>
                 </div>
             </div>
             <div class="manga-info">
@@ -369,8 +377,7 @@ function openShortVideoPlayer(platform, index) {
     updateShortVideoMuteBtnUI();
     const likeBtn = document.getElementById('shortvideo-like-btn');
     if (likeBtn) {
-        likeBtn.textContent = item.liked ? '❤️' : '🤍';
-        likeBtn.title = item.liked ? '取消点赞' : '点赞';
+        svSetLikeBtn(likeBtn, item.liked);
     }
     modal.style.display = 'flex';
     videoEl.play().catch((e) => console.log('Autoplay policy:', e));
@@ -387,7 +394,8 @@ function toggleShortVideoMute() {
 function updateShortVideoMuteBtnUI() {
     const btn = document.getElementById('shortvideo-mute-btn');
     if (!btn) return;
-    btn.textContent = shortVideoMuted ? '🔇' : '🔊';
+    setIcon(btn, shortVideoMuted ? 'volume_off-fill' : 'volume_up-fill');
+    btn.classList.toggle('danger', shortVideoMuted);
     btn.title = shortVideoMuted ? '取消静音' : '静音';
 }
 
@@ -453,8 +461,8 @@ function deleteShortVideoFromPlayer() {
     };
     videoEl.addEventListener('playing', hideLoading);
     videoEl.addEventListener('loadeddata', hideLoading);
-    videoEl.addEventListener('play', () => { if (playBtn) playBtn.textContent = '⏸'; });
-    videoEl.addEventListener('pause', () => { if (playBtn) playBtn.textContent = '▶'; });
+    videoEl.addEventListener('play', () => setIcon(playBtn, 'pause-fill'));
+    videoEl.addEventListener('pause', () => setIcon(playBtn, 'play_arrow-fill'));
     videoEl.addEventListener('ended', () => {
         if (shortVideoLoopMode === 'single') {
             videoEl.currentTime = 0;
@@ -518,8 +526,7 @@ function renderGalleryImage() {
     const pageEl = document.getElementById('shortvideo-gallery-page');
     const galleryLikeBtn = document.getElementById('shortvideo-gallery-like-btn');
     if (galleryLikeBtn) {
-        galleryLikeBtn.textContent = item.liked ? '❤️' : '🤍';
-        galleryLikeBtn.title = item.liked ? '取消点赞' : '点赞';
+        svSetLikeBtn(galleryLikeBtn, item.liked);
     }
     if (imgEl) imgEl.src = `/api/shortvideo/gallery_image?platform=${svGalleryPlatform}&path=${encodeURIComponent(item.rel_path)}&idx=${svGalleryImgIdx}`;
     if (titleEl) titleEl.textContent = item.title;

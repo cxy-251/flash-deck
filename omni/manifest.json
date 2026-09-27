@@ -62,7 +62,7 @@
     "vendor_styles": ["vendor/katex.min.css"],
     "vendor_scripts": ["vendor/katex.min.js", "vendor/marked.min.js", "vendor/mermaid.min.js"],
     "core": ["app/shell.css", "ui/components.css", "ui/gallery.css",
-             "app/core.js", "app/zh.js", "app/access.js", "app/shell.js", "app/events.js", "app/native-bridge.js"],
+             "app/core.js", "ui/icons.js", "app/zh.js", "app/access.js", "app/shell.js", "app/events.js", "app/native-bridge.js"],
     "modules": ["ui/reader", "features/privacy", "features/system", "features/games", "features/sc2",
                 "features/manga", "features/novels", "features/docs", "features/audio", "features/shortvideo",
                 "features/shortvideo_matrix", "features/mega", "features/downloads", "features/library"],
