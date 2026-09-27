@@ -697,6 +697,10 @@ class NativeMatrixPlayerWidget(QWidget):
             third.show()
             if autoload and third.player.source().isEmpty():
                 third.resume_or_load()
+            # 第三屏重新显示时它的原生视频窗口会被放到最上层，把顶栏抬回去（视频窗口可能晚一点才建好，再补一次）
+            if self.top_bar.isVisible():
+                for ms in (0, 300):
+                    QTimer.singleShot(ms, self.top_bar.raise_)
         if save:
             self.save_config()
 
@@ -769,7 +773,11 @@ class NativeMatrixPlayerWidget(QWidget):
         return bool(QApplication.activePopupWidget()) or typing
 
     def _poll_bar(self):
-        if self.bar_pinned or not self.isVisible():
+        if not self.isVisible():
+            return
+        if self.top_bar.isVisible():
+            self.top_bar.raise_()   # 保险：有原生视频窗口新冒出来（换布局 / 换片）时，顶栏始终在最上面
+        if self.bar_pinned:
             return
         p = self.mapFromGlobal(QCursor.pos())
         inside_x = 0 <= p.x() < self.width()
