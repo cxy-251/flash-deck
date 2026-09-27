@@ -68,15 +68,16 @@ omni-deck/
 │   │   ├── manifest.py  access.py  events.py(SSE 总线)  log.py  process.py  vfs.py  media_index.py  migrate.py
 │   │   └── http/              #   router.py(装饰器路由+鉴权) server.py static.py(白名单) hub.py(大厅页面组装)
 │   ├── network/               # lan.py  wan.py(cloudflared 隧道 + DNS 助手)  state.py
-│   ├── shell/                 # Qt 桌面壳：window.py  native_player.py  flash_runner.py(PyQt5 子进程)
-│   └── features/<module>/     # ★ 与 web/features 对称：games sc2 manga novels docs audio shortvideo mega downloads library privacy system
+│   ├── shell/                 # Qt 桌面壳：window.py  native_player.py  native_matrix_player.py(多联)  audio_controls.py(音声控件，共用)
+│   │                          #   icons.py(播放器图标/气泡)  flash_runner.py(PyQt5 子进程)
+│   └── features/<module>/     # ★ 与 web/features 对称：games sc2 manga novels docs audio shortvideo shortvideo_matrix mega downloads library privacy system
 ├── web/                       # 前端
 │   ├── index.html             #   页面外壳（{{slot}} / {{nav}} 由 hub.py 按 manifest 填充）
 │   ├── app/                   #   core(Omni 注册表) access(权限表) shell(分区切换/分派) events(SSE) boot
-│   ├── ui/                    #   共享组件：components gallery responsive reader/(文本阅读器+Markdown/RST)
+│   ├── ui/                    #   共享组件：components gallery responsive icons(播放器图标) reader/(文本阅读器+Markdown/RST)
 │   ├── features/<module>/     #   ★ 与 omni/features 对称
 │   ├── players/               #   retro.html  flash.html  rpg-runtime.js(NW.js/Node 兼容层，Qt 注入)
-│   └── vendor/                #   katex marked mermaid
+│   └── vendor/                #   katex marked mermaid icons/(Material Symbols，本机 Qt 与网页共用)
 ├── vendor/                    # 第三方运行时：emulatorjs/ ruffle/ pepflash/ cloudflared/（随仓库分发，断网可用）
 ├── tools/crawlers/            # 下载中心脚本：一类任务一个参数化脚本；个人参数在 var/config/crawler_secrets.json，保存的任务在 var/config/crawler_tasks/
 ├── tests/                     # route_snapshot.py  ui_smoke.py  test_path_guard.py

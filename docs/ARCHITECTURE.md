@@ -68,8 +68,34 @@ graph TB
 状态迁移（v2 → `var/`）→ 单实例探测（端口被占直接退出，绝不杀进程）→ HTTP 服务 → 游戏扫描 → 后台任务（广域网隧道、漫画元数据巡检）→ Qt 窗口。
 所有子进程登记在 `omni.core.process`；SIGTERM / 关窗 / aboutToQuit 统一走 `process.shutdown()`：清子进程 → 释放端口 → 收后代 → `os._exit`。
 
-## 6. 测试
+## 6. 本机原生播放
+
+QtWebEngine 解不了 H.264/AAC，本机播放走 QtMultimedia（FFmpeg，能用 VA-API 就硬解），控件盖在网页上：
+
+* `omni/shell/native_player.py`：短视频单条播放 + 音声专区的底部播放条（网页经 QWebChannel 的 `omniBridge` 喊播放；
+  上一条 / 下一条 / 删除转发回网页，列表在网页那边）。
+* `omni/shell/native_matrix_player.py`：多联放映（2 / 3 屏并排，每屏一个 QMediaPlayer；顶栏只控制「焦点屏」，
+  点击或 1/2/3 切焦点；焦点出声；每屏可用音声代替视频原声）。设置页、网页版在 `web/features/shortvideo_matrix/`。
+* `omni/shell/audio_controls.py`：音声播放逻辑 `AudioSession` + 控制条 `AudioControlBar`，音声专区（本机）和多联共用，
+  改音声控件只改这一处。档位（倍速 / 定时 / 模式 / 快退快进）与断点续听在 `omni/features/audio/playback.py`，
+  网页经 `/api/audio/player_spec`、`/api/audio/progress` 用同一份——本机、网页、多联听到哪都接得上。
+* `omni/shell/icons.py` / `web/ui/icons.js`：播放器图标（Material Symbols，`web/vendor/icons/`，两边读同一份 SVG）
+  与悬停说明气泡。
+
+**踩过的坑：原生视频窗口盖不住。** `QVideoWidget` 里面是 `QWindowContainer`（独立原生窗口），同一窗口里的普通控件
+永远在它下面；把控件设成 `WA_NativeWindow` 去盖，会连带把兄弟 / 父控件也变成原生窗口，真机上已有的视频变黑、
+后建的视频又压到最上面。要浮在视频上的东西只能做成独立的弹出层窗口（多联顶栏用 `Qt.ToolTip` 无边框窗口，
+跟悬停气泡、下拉框同一类）；弹出层拿不到键盘，需要打字的地方开正常对话框（`PickDialog`）。
+
+## 7. 待办（有意留到以后）
+
+* **多联放映按设备分配置**：现在只有一份配置（`var/data/shortvideo_matrix_config.json`），本机和所有局域网设备
+  共用，一边改了另一边也变。打算等「隐私密码 → 用户登录」做成多用户之后，按用户 / 设备存；新设备按屏宽给默认值
+  （窄屏 2 屏上下排、宽屏 3 屏）。音声断点续听、点赞继续全局共享。
+
+## 8. 测试
 
 * `tests/route_snapshot.py`：起独立端口 + 临时状态目录的无界面实例，请求全部路由，比对状态码/类型/JSON 结构（基线 `tests/snapshots/*.json` 在本机录制，含真实资源名，不进 git）。
 * `tests/ui_smoke.py`：offscreen QtWebEngine 逐个进入各分区，检查渲染与 JS 报错，并截图。
 * `tests/test_path_guard.py`：写死路径守卫。
+* 测试实例默认端口 8997，被占（比如上次没退干净的测试实例）会直接退出——用 `OMNI_TEST_PORT=8995` 换一个。
