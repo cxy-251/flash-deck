@@ -44,10 +44,19 @@ for tab in MEDIA:
                   f"(function(){{ const v = document.getElementById('media-{tab}-view'); "
                   f"return [!!v && v.style.display === 'block' && v.innerText.trim().length > 20, "
                   f"'badge=' + document.getElementById('total-badge').textContent + ' | stats=' + document.getElementById('media-sub-stats').textContent]; }})()"))
-STEPS.append(("media-shortvideo-matrix-channels",
+STEPS.append(("media-shortvideo-matrix-setup",
               "switchMediaTab('shortvideo-matrix', document.getElementById('media-tab-shortvideo-matrix'))", 15000,
-              "(function(){ const n = document.querySelectorAll('#matrix-select-0 option').length; "
-              "const t = (document.getElementById('matrix-title-0') || {}).textContent; return [n > 0, 'channels=' + n + ' 屏1=' + t]; })()"))
+              "(function(){ const n = document.querySelectorAll('#matrix-setup-select-0 option').length; "
+              "const playing = document.getElementById('matrix-web-container').style.display !== 'none'; "
+              "return [n > 0 && !playing, 'channels=' + n + ' 未自动开播=' + !playing]; })()"))
+STEPS.append(("media-shortvideo-matrix-search",
+              "(function(){ const inp = document.querySelector('#matrix-setup-row-1 .matrix-channel-search'); "
+              "const a = matrixChannels.find(c => c.group !== '常用'); inp.value = a.label.split(' (')[0]; inp.dispatchEvent(new Event('input')); })()", 3000,
+              "(function(){ const o = [...document.querySelectorAll('#matrix-setup-select-1 option')]; "
+              "return [o.length <= 3 && o.length >= 1, 'options=' + o.length + ' -> ' + o.map(x => x.textContent).join(' | ')]; })()"))
+STEPS.append(("media-shortvideo-matrix-play", "startMatrix()", 15000,
+              "(function(){ const t = [0,1,2].map(i => (document.getElementById('matrix-count-' + i) || {}).textContent); "
+              "return [t.some(x => x && x !== '0/0'), 'counts=' + t.join(',')]; })()"))
 STEPS.append(("privacy-modal", "openNsfwModal()", 3000,
               "[document.getElementById('nsfw-lock-modal').style.display === 'flex', 'nsfw modal']"))
 STEPS.append(("library-picker", "closeNsfwModal(); openLibraryPicker('library-add-path')", 8000,

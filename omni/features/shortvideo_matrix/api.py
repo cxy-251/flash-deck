@@ -12,11 +12,13 @@ def channels(req):
 
 @api.get("/api/shortvideo_matrix/videos")
 def videos(req):
-    """分页取频道视频：一个平台动辄两万多条，整列表下发给手机太大。「随机」频道每次重新洗牌，只有一页。"""
-    cid = req.arg("channel_id", "random")
+    """分页取频道视频：一个平台动辄两万多条，整列表下发给手机太大。
+    随机顺序由网页带一个 seed 过来，同一个 seed 每页的洗牌结果一致。"""
+    cid = req.arg("channel_id", "all")
+    seed = req.arg("seed")
     offset = max(0, req.int_arg("offset", 0))
     limit = min(500, max(1, req.int_arg("limit", 100)))
-    vids = mx.get_channel_videos(cid)
+    vids = mx.get_channel_videos(cid, int(seed) if seed and seed.isdigit() else None)
     return req.json({"status": "ok", "channel_id": cid, "total": len(vids), "offset": offset,
                      "videos": [mx.public_item(it) for it in vids[offset:offset + limit]]})
 

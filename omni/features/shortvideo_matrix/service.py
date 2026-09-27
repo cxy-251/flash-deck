@@ -15,8 +15,6 @@ from omni.features.shortvideo import service as sv
 
 _LOCK = threading.RLock()
 
-RANDOM_LIMIT = 300   # 「随机」频道每次洗牌后只取这么多，列表够刷、下发也不大
-
 
 def _videos(platform: str) -> List[Dict[str, Any]]:
     """某平台全部可播放视频（带上 platform 字段的浅拷贝）。"""
@@ -24,44 +22,54 @@ def _videos(platform: str) -> List[Dict[str, Any]]:
             if it.get("kind") != "images"]
 
 
+def _platform_label(p: str) -> str:
+    return sv.PLATFORMS[p]["label"]
+
+
 def get_channels() -> List[Dict[str, Any]]:
-    """可选频道：我的点赞、全平台随机、每个平台全部、每个作者。"""
+    """可选频道：我的点赞、全部平台、每个平台全部、每个作者。group 给下拉框分组用。"""
     likes = sv.load_likes()
     per_platform = {p: _videos(p) for p in sv.PLATFORMS}
     total = sum(len(v) for v in per_platform.values())
     liked = sum(1 for p, vids in per_platform.items() for it in vids if it["rel_path"] in likes.get(p, ()))
 
     channels = [
-        {"id": "liked", "label": f"❤️ 我的点赞 ({liked})", "count": liked},
-        {"id": "random", "label": f"🎲 全平台随机 ({total})", "count": total},
+        {"id": "liked", "group": "常用", "label": f"❤️ 我的点赞 ({liked})", "count": liked},
+        {"id": "all", "group": "常用", "label": f"🌐 全部平台 ({total})", "count": total},
     ]
     for p, vids in per_platform.items():
         if vids:
-            channels.append({"id": f"{p}:", "label": f"{sv.PLATFORMS[p]['label']} · 全部 ({len(vids)})", "count": len(vids)})
+            channels.append({"id": f"{p}:", "group": "常用", "label": f"{_platform_label(p)} · 全部 ({len(vids)})", "count": len(vids)})
     for p, vids in per_platform.items():
         authors: Dict[str, int] = {}
         for it in vids:
             a = it.get("folder") or ""
             authors[a] = authors.get(a, 0) + 1
         for a, cnt in sorted(authors.items(), key=lambda x: -x[1]):
-            channels.append({"id": f"{p}:{a}", "label": f"[{sv.PLATFORMS[p]['label']}] {a or '未分类'} ({cnt})", "count": cnt})
+            channels.append({"id": f"{p}:{a}", "group": _platform_label(p), "label": f"{a or '未分类'} ({cnt})", "count": cnt})
     return channels
 
 
-def get_channel_videos(channel_id: str) -> List[Dict[str, Any]]:
-    """频道 id → 视频列表。id 形如 liked / random / <平台>: / <平台>:<作者>。"""
+def get_channel_videos(channel_id: str, seed: Optional[int] = None) -> List[Dict[str, Any]]:
+    """频道 id → 视频列表。id 形如 liked / all / <平台>: / <平台>:<作者>。
+
+    seed 不为空时按它洗牌（同一个 seed 顺序固定，网页版分页取才不会前后两页对不上）。
+    """
     if channel_id == "liked":
         likes = sv.load_likes()
-        return [it for p in sv.PLATFORMS for it in _videos(p) if it["rel_path"] in likes.get(p, ())]
-    if channel_id == "random":
+        out = [it for p in sv.PLATFORMS for it in _videos(p) if it["rel_path"] in likes.get(p, ())]
+    elif channel_id in ("all", "random"):   # random 是旧配置里的频道名
         out = [it for p in sv.PLATFORMS for it in _videos(p)]
-        random.shuffle(out)
-        return out[:RANDOM_LIMIT]
-    platform, _, author = channel_id.partition(":")
-    if platform not in sv.PLATFORMS:
-        return []
-    vids = _videos(platform)
-    return [it for it in vids if (it.get("folder") or "") == author] if author else vids
+    else:
+        platform, _, author = channel_id.partition(":")
+        if platform not in sv.PLATFORMS:
+            return []
+        out = _videos(platform)
+        if author:
+            out = [it for it in out if (it.get("folder") or "") == author]
+    if seed is not None:
+        random.Random(seed).shuffle(out)
+    return out
 
 
 def public_item(it: Dict[str, Any]) -> Dict[str, Any]:
@@ -79,32 +87,39 @@ def resolve_file(it: Dict[str, Any]) -> Optional[str]:
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "layout": 3,
-    "audio_mode": "focus",   # 'focus' 焦点出声 | 'manual' 手动混音
-    "slots": [{"channel_id": "liked"}, {"channel_id": "random"}, {"channel_id": "random"}],
+    "slots": [{"channel_id": "liked", "shuffle": False, "muted": False},
+              {"channel_id": "all", "shuffle": True, "muted": True},
+              {"channel_id": "all", "shuffle": True, "muted": True}],
 }
 
 
+def _clean_slot(s: Dict[str, Any]) -> Dict[str, Any]:
+    cid = str(s.get("channel_id") or "all")
+    return {"channel_id": "all" if cid == "random" else cid,
+            "shuffle": bool(s.get("shuffle", cid == "random")),
+            "muted": bool(s.get("muted", False))}
+
+
 def load_config() -> Dict[str, Any]:
-    """读取槽位与模式配置；文件缺失或损坏时返回默认值。"""
+    """读取布局与各屏设置；文件缺失或损坏时返回默认值。"""
+    data: Dict[str, Any] = {}
     with _LOCK:
         try:
             with open(paths.SHORTVIDEO_MATRIX_CONFIG, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                return {**DEFAULT_CONFIG, **data}
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                data = loaded
         except (OSError, ValueError):
             pass
-        return json.loads(json.dumps(DEFAULT_CONFIG))
+    slots = [s for s in (data.get("slots") or []) if isinstance(s, dict)]
+    slots += DEFAULT_CONFIG["slots"][len(slots):]
+    return {"layout": 2 if data.get("layout") == 2 else 3, "slots": [_clean_slot(s) for s in slots[:3]]}
 
 
 def save_config(config: Dict[str, Any]) -> None:
     """只保留认识的字段，原子写回。"""
-    cfg = {
-        "layout": 2 if config.get("layout") == 2 else 3,
-        "audio_mode": "manual" if config.get("audio_mode") == "manual" else "focus",
-        "slots": [{"channel_id": str(s.get("channel_id") or "random")}
-                  for s in (config.get("slots") or [])[:3] if isinstance(s, dict)],
-    }
+    slots = [s for s in (config.get("slots") or []) if isinstance(s, dict)][:3]
+    cfg = {"layout": 2 if config.get("layout") == 2 else 3, "slots": [_clean_slot(s) for s in slots]}
     with _LOCK:
         os.makedirs(os.path.dirname(paths.SHORTVIDEO_MATRIX_CONFIG), exist_ok=True)
         tmp = paths.SHORTVIDEO_MATRIX_CONFIG + ".tmp"

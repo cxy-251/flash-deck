@@ -8,41 +8,35 @@
     overflow-x: hidden;
 }
 
-.matrix-native-banner {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 400px;
-}
-
-.matrix-banner-card {
+/* 首屏设置 */
+.matrix-setup { display: flex; justify-content: center; padding-top: 24px; }
+.matrix-setup-card {
+    width: 100%;
+    max-width: 760px;
     background: #161b22;
     border: 1px solid #30363d;
     border-radius: 12px;
-    padding: 32px 40px;
-    max-width: 580px;
-    text-align: center;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    padding: 20px 24px;
+    box-sizing: border-box;
 }
-
-.matrix-banner-icon {
-    font-size: 56px;
-    margin-bottom: 16px;
+.matrix-setup-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.matrix-setup-title { font-size: 18px; font-weight: 700; color: #fff; }
+.matrix-setup-rows { display: flex; flex-direction: column; gap: 10px; color: #8b949e; font-size: 13px; }
+.matrix-setup-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
 }
-
-.matrix-banner-title {
-    font-size: 20px;
-    font-weight: 700;
-    color: #fff;
-    margin-bottom: 8px;
-}
-
-.matrix-banner-desc {
-    font-size: 13px;
-    color: #8b949e;
-    line-height: 1.6;
-    margin-bottom: 24px;
-}
+.matrix-setup-row.disabled { opacity: 0.35; pointer-events: none; }
+.matrix-setup-row .matrix-slot-num { font-size: 13px; min-width: 36px; }
+.matrix-setup-row .matrix-channel-select { font-size: 13px; padding: 6px 8px; min-width: 0; }
+.matrix-setup-row label { display: flex; align-items: center; gap: 4px; color: #c9d1d9; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.matrix-setup-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; gap: 12px; }
+.matrix-setup-hint { font-size: 12px; color: #8b949e; }
 
 .matrix-btn-primary {
     background: #238636;
@@ -55,9 +49,8 @@
     cursor: pointer;
     transition: background 0.2s;
 }
-.matrix-btn-primary:hover {
-    background: #2ea043;
-}
+.matrix-btn-primary:hover { background: #2ea043; }
+.matrix-btn-primary:disabled { background: #30363d; cursor: default; }
 
 /* Web 模式视口 */
 .matrix-web-container {
@@ -108,7 +101,8 @@
 .matrix-tab-btn:hover {
     color: #fff;
 }
-.matrix-tab-btn.active {
+.matrix-tab-btn.active,
+.matrix-tool-btn.active {
     background: #1f6feb;
     color: #fff;
     font-weight: 600;
@@ -125,7 +119,8 @@
 }
 
 .matrix-web-slot {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;          /* 默认 min-width:auto 会被长标题/视频固有宽度撑开，换片时宽度就跳 */
     max-width: 420px;
     background: #000;
     border: 2px solid #22272e;
@@ -156,6 +151,7 @@
 
 .matrix-channel-select {
     flex: 1;
+    min-width: 0;
     background: #0d1117;
     border: 1px solid #30363d;
     border-radius: 4px;
@@ -227,5 +223,21 @@
     .matrix-web-topbar { flex-direction: column; align-items: stretch; gap: 8px; }
     .matrix-web-controls { flex-wrap: wrap; }
     .matrix-web-slots { flex-direction: column; }
-    .matrix-web-slot { max-width: none; height: 70vh; }
+    .matrix-web-slot { max-width: none; height: 70vh; flex: none; }
+    .matrix-setup-row { flex-wrap: wrap; }
 }
+
+/* 频道下拉旁的主播搜索框 */
+.matrix-channel-search {
+    width: 90px;
+    flex: none;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #e6edf3;
+    padding: 3px 6px;
+    font-size: 11px;
+    outline: none;
+}
+.matrix-channel-search:focus { border-color: #58a6ff; }
+.matrix-setup-row .matrix-channel-search { width: 130px; font-size: 13px; padding: 6px 8px; }
