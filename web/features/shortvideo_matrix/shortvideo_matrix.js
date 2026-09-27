@@ -209,6 +209,8 @@ function startWebMatrix() {
     });
     setWebMatrixLayout(matrixConfig.layout);
     document.getElementById('matrix-web-focus').classList.toggle('active', matrixConfig.focus_audio);
+    document.getElementById('matrix-bar-pin').classList.toggle('active', !!matrixConfig.bar_pinned);
+    showWebMatrixBar(3000);   // 进来先亮 3 秒，让人知道控件在上面
     matrixActiveSlot = -1;
     activateWebSlot(0);
     for (let i = 0; i < matrixConfig.layout; i++) setTimeout(() => resumeOrLoadWebSlot(i), i * 200);
@@ -629,6 +631,55 @@ function barDeleteTrack() {
     }).catch(() => {});
 }
 
+// ---------------- 顶栏自动隐藏 ----------------
+// 进来先亮 3 秒；之后鼠标移到播放区最顶端（或点「▾」把手）才出来，离开 1.5 秒收起；
+// 下拉 / 搜索框 / ⋯ 菜单正在用时不收。📌 固定后一直显示（存配置，本机原生版共用这个设置）。
+
+let matrixBarHideTimer = 0;
+
+function setWebMatrixBarVisible(on) {
+    document.getElementById('matrix-web-topbar').classList.toggle('bar-hidden', !on);
+    document.getElementById('matrix-web-container').classList.toggle('bar-collapsed', !on);
+}
+
+function showWebMatrixBar(lingerMs) {
+    clearTimeout(matrixBarHideTimer);
+    setWebMatrixBarVisible(true);
+    if (lingerMs) scheduleWebMatrixBarHide(lingerMs);
+}
+
+function webMatrixBarBusy() {
+    const a = document.activeElement;
+    const typing = a && a.id === 'matrix-bar-search' && a.value;
+    const menuOpen = document.getElementById('matrix-bar-more').open;
+    return typing || menuOpen || (a && a.tagName === 'SELECT' && a.closest('#matrix-web-topbar'));
+}
+
+function scheduleWebMatrixBarHide(ms = 1500) {
+    clearTimeout(matrixBarHideTimer);
+    if (matrixConfig && matrixConfig.bar_pinned) return;
+    matrixBarHideTimer = setTimeout(() => {
+        if (matrixConfig.bar_pinned) return;
+        if (webMatrixBarBusy()) { scheduleWebMatrixBarHide(); return; }
+        setWebMatrixBarVisible(false);
+    }, ms);
+}
+
+function toggleWebMatrixBarPin() {
+    matrixConfig.bar_pinned = !matrixConfig.bar_pinned;
+    document.getElementById('matrix-bar-pin').classList.toggle('active', matrixConfig.bar_pinned);
+    if (matrixConfig.bar_pinned) showWebMatrixBar(); else scheduleWebMatrixBarHide();
+    saveMatrixConfig();
+}
+
+// 鼠标到了播放区最顶端几像素就叫出顶栏
+document.addEventListener('mousemove', (e) => {
+    if (!matrixWebPlaying) return;
+    const box = document.getElementById('matrix-web-container');
+    const r = box.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top - 4 && e.clientY <= r.top + 8) showWebMatrixBar();
+});
+
 // ---------------- 布局 / 全局 ----------------
 
 function setWebMatrixLayout(cols, save) {
@@ -666,6 +717,7 @@ Omni.register('shortvideo_matrix', {
             // 网页版收起 / 切走又回来：各屏停在原处（暂停），按 ⏯ 接着放
             for (let i = 0; i < MATRIX_SLOTS; i++) webSlots[i].userPaused = true;
             applyWebMatrixAudio();
+            showWebMatrixBar(3000);
         } else if (matrixSessionStarted && matrixIsNative()) {
             showMatrixSetup();                    // 垫在原生播放器下面，收起时不至于露出空白
             window.omniBridge.openMatrixPlayer(); // 原生播放器按记住的位置恢复、暂停

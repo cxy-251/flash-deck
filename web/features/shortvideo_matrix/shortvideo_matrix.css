@@ -308,3 +308,26 @@
 .matrix-web-slot { border-width: 2px; }
 .matrix-slot-progress { height: 3px; background: #161b22; flex: none; }
 .matrix-slot-progress > div { height: 100%; width: 0; background: #58a6ff; }
+
+/* 顶栏自动隐藏 */
+.matrix-web-container { position: relative; }
+.matrix-web-topbar.bar-hidden { display: none; }
+.matrix-bar-handle {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    padding: 0 18px;
+    height: 16px;
+    line-height: 14px;
+    font-size: 12px;
+    color: #8b949e;
+    background: rgba(22,27,34,0.85);
+    border: 1px solid #30363d;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    cursor: pointer;
+}
+.matrix-web-container.bar-collapsed .matrix-bar-handle { display: block; }

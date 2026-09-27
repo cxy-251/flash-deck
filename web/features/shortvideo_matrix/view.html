@@ -23,7 +23,9 @@
     <!-- 网页版播放（非本机浏览器）；本机走原生播放器，不用这块 -->
     <div id="matrix-web-container" class="matrix-web-container" style="display:none;">
         <!-- 顶栏：全局 + 焦点屏控制台（每屏不放控件，画面尽量大） -->
-        <div class="matrix-web-topbar">
+        <!-- 顶栏自动隐藏：鼠标移到最顶端 / 点「▾」把手出来，离开 1.5 秒收起；📌 固定后一直显示 -->
+        <div id="matrix-bar-handle" class="matrix-bar-handle" onclick="showWebMatrixBar(4000)" onmouseenter="showWebMatrixBar()" title="显示控制栏">▾</div>
+        <div id="matrix-web-topbar" class="matrix-web-topbar" onmouseenter="showWebMatrixBar()" onmouseleave="scheduleWebMatrixBarHide()">
             <div class="matrix-btn-group">
                 <button id="matrix-web-layout-2" class="matrix-tab-btn" onclick="setWebMatrixLayout(2, true)">2屏</button>
                 <button id="matrix-web-layout-3" class="matrix-tab-btn" onclick="setWebMatrixLayout(3, true)">3屏</button>
@@ -42,6 +44,7 @@
             <button class="matrix-bar-btn" id="matrix-bar-sound" onclick="barToggleSound()">🎬</button>
             <span class="matrix-bar-spacer"></span>
             <button class="matrix-bar-btn" onclick="toggleWebMatrixAllPlay()" title="全部 暂停 / 继续">⏯</button>
+            <button class="matrix-bar-btn" id="matrix-bar-pin" onclick="toggleWebMatrixBarPin()" title="固定顶栏（关 = 自动隐藏，鼠标移到最顶端才出来）">📌</button>
             <button class="matrix-bar-btn" onclick="stopWebMatrix()" title="回到设置页（改每屏的频道 / 声源等）">⚙</button>
             <button class="matrix-bar-btn matrix-bar-close" onclick="collapseWebMatrix()" title="收起：记住各屏位置，回到进来之前的页面；再点多联标签接着看">⤓</button>
             <!-- 第二行：音声（焦点屏用音声时才显示），功能跟网页音声专区一样 -->

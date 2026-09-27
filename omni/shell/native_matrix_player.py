@@ -26,12 +26,17 @@ start_matrix()；这里改动的设置也写回同一份配置，退出后网页
   collapse ⤓ 收起：回到进多联之前的页面（比如去开一局游戏），再点多联标签直接回到播放器；
   settings ⚙ 设置：回到网页设置页。
 
-键盘（Steam Input 可映射）：1/2/3 选焦点屏，空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
+顶栏默认自动隐藏：进来先显示 3 秒，之后鼠标移到最顶端才出来，移开 1.5 秒收起（下拉 / 菜单 / 搜索框
+打开时不收）；📌 固定后一直显示。3 屏时竖屏视频本来就是宽度撑满，顶栏出没不影响画面大小，所以
+顶栏直接进布局（让出 / 挤回空间），不做浮层——视频是原生子窗口，普通控件盖不住它。
+
+键盘（Steam Input 可映射）：Tab 显示 / 收起顶栏，1/2/3 选焦点屏，空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
 """
 import random
 from typing import Any, Dict, List, Optional
 
 from PyQt6.QtCore import Qt, QUrl, QEvent, QTimer, pyqtSignal
+from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QLabel, QComboBox,
                              QFrame, QSizePolicy, QCompleter, QProgressBar)
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -460,6 +465,13 @@ class NativeMatrixPlayerWidget(QWidget):
         self.layout_mode = 3
         self.active = 0
         self.focus_audio = True
+        self.bar_pinned = False
+        self._bar_hide = QTimer(self)          # 离开顶栏后多久收起
+        self._bar_hide.setSingleShot(True)
+        self._bar_hide.timeout.connect(self._hide_bar_if_idle)
+        self._bar_poll = QTimer(self)          # 看鼠标是不是到了顶端（视频是原生子窗口，收不到它上面的鼠标移动事件）
+        self._bar_poll.setInterval(150)
+        self._bar_poll.timeout.connect(self._poll_bar)
         self.audio_scopes: List[Dict[str, Any]] = []
         self._build()
 
@@ -470,7 +482,7 @@ class NativeMatrixPlayerWidget(QWidget):
         root.setSpacing(0)
 
         # 顶栏：第一行 全局 + 焦点屏视频控件；第二行 音声控件（只在焦点屏用音声时展开）
-        top_bar = QWidget(self)
+        top_bar = self.top_bar = QWidget(self)
         top_bar.setObjectName("matrixTopBar")
         top_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         rows = QVBoxLayout(top_bar)
@@ -536,6 +548,8 @@ class NativeMatrixPlayerWidget(QWidget):
         sep()
 
         button("⏯", self.toggle_all_play, "全部 暂停 / 继续")
+        self.btn_pin = button("📌", lambda: self.set_bar_pinned(not self.bar_pinned, save=True),
+                              "固定顶栏（关 = 自动隐藏，鼠标移到最顶端才出来；Tab 键也能叫出来）")
         button("⚙", lambda: self.close_matrix("settings"), "回到设置页（改每屏的频道 / 声源等）")
         close = button("⤓", lambda: self.close_matrix("collapse"),
                        "收起（Esc）：记住各屏位置，回到进来之前的页面；再点多联标签接着看")
@@ -695,6 +709,51 @@ class NativeMatrixPlayerWidget(QWidget):
             s.set_paused(playing)
 
     # ---- 生命周期 ----
+    # ---- 顶栏自动隐藏 ----
+    def set_bar_pinned(self, on: bool, save: bool = False):
+        self.bar_pinned = on
+        _set_active_prop(self.btn_pin, on)
+        if on:
+            self._bar_hide.stop()
+            self.top_bar.show()
+        else:
+            self._bar_hide.start(1500)
+        if save:
+            self.save_config()
+
+    def show_bar(self, linger_ms: int = 0):
+        self.top_bar.show()
+        if linger_ms and not self.bar_pinned:
+            self._bar_hide.start(linger_ms)
+
+    def _bar_busy(self) -> bool:
+        """下拉 / 菜单打开着，或者正在频道框里打字搜索（框里的字跟当前频道不一样），别收。
+        光是框有键盘焦点不算——刚显示时它会自己拿到焦点。"""
+        from PyQt6.QtWidgets import QApplication
+        le = self.combo.lineEdit()
+        typing = le.hasFocus() and le.text() != self.combo.currentText()
+        return bool(QApplication.activePopupWidget()) or typing
+
+    def _poll_bar(self):
+        if self.bar_pinned or not self.isVisible():
+            return
+        p = self.mapFromGlobal(QCursor.pos())
+        inside_x = 0 <= p.x() < self.width()
+        edge = self.top_bar.height() if self.top_bar.isVisible() else 6   # 收着时只认最顶端几像素
+        if inside_x and 0 <= p.y() <= edge:
+            self._bar_hide.stop()
+            self.top_bar.show()
+        elif self.top_bar.isVisible() and not self._bar_hide.isActive():
+            self._bar_hide.start(1500)
+
+    def _hide_bar_if_idle(self):
+        if self.bar_pinned:
+            return
+        if self._bar_busy():
+            self._bar_hide.start(1500)
+            return
+        self.top_bar.hide()
+
     def start_matrix(self):
         """网页设置页点「开始播放」后调用：按配置填频道、设随机/静音/声源，全部以暂停状态载入
         （停在当前帧，按 ⏯ / 空格 开播）；错峰载入，SD 卡上几路同时 seek 会互相堵。
@@ -723,6 +782,9 @@ class NativeMatrixPlayerWidget(QWidget):
             s.set_sound(s_cfg["sound"])
         self.set_layout_mode(cfg["layout"], autoload=False)
         self.set_focus_audio(cfg["focus_audio"])
+        self.set_bar_pinned(cfg["bar_pinned"])
+        self.show_bar(linger_ms=3000)   # 进来先亮 3 秒，让人知道控件在上面
+        self._bar_poll.start()
         for i, s in enumerate(self.visible_slots()):
             QTimer.singleShot(i * 200, s.resume_or_load)
         self.activate_slot(0)
@@ -730,7 +792,7 @@ class NativeMatrixPlayerWidget(QWidget):
 
     def save_config(self):
         try:
-            mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio,
+            mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio, "bar_pinned": self.bar_pinned,
                             "slots": [{"channel_id": s.channel_id, "shuffle": s.shuffle, "muted": s.user_muted,
                                        "sound": s.sound, "audio_scope": s.audio_scope,
                                        "audio_mode": s.asession.mode, "audio_rate": s.asession.rate}
@@ -740,6 +802,8 @@ class NativeMatrixPlayerWidget(QWidget):
 
     def stop_and_hide(self):
         """离开分区 / 关闭：停掉所有解码器、释放文件句柄。"""
+        self._bar_poll.stop()
+        self._bar_hide.stop()
         for s in self.slots:
             s.stop()
         self.hide()
@@ -749,11 +813,19 @@ class NativeMatrixPlayerWidget(QWidget):
         self.stop_and_hide()
         self.closed.emit(reason)
 
+    def focusNextPrevChild(self, _next: bool) -> bool:
+        return False   # 别让 Tab 被拿去切换键盘焦点，留给 keyPressEvent 显示 / 收起顶栏
+
     def keyPressEvent(self, event):
         key = event.key()
         cur = self.cur()
         if key == Qt.Key.Key_Escape:
             self.close_matrix()
+        elif key == Qt.Key.Key_Tab:
+            if self.top_bar.isVisible() and not self.bar_pinned:
+                self.top_bar.hide()
+            else:
+                self.show_bar(linger_ms=4000)
         elif key in (Qt.Key.Key_1, Qt.Key.Key_2, Qt.Key.Key_3):
             self.activate_slot(key - Qt.Key.Key_1)
         elif key == Qt.Key.Key_Space:

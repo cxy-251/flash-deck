@@ -138,6 +138,7 @@ def resolve_track(it: Dict[str, Any]) -> Optional[str]:
 DEFAULT_CONFIG: Dict[str, Any] = {
     "layout": 3,
     "focus_audio": True,   # 焦点出声：没手动静音的屏里，只有鼠标所在/点中的那一屏出声
+    "bar_pinned": False,   # 顶栏固定显示（关 = 自动隐藏，鼠标移到顶端才出来）
     "slots": [{"channel_id": "liked", "shuffle": False, "muted": False},
               {"channel_id": "all", "shuffle": True, "muted": True},
               {"channel_id": "all", "shuffle": True, "muted": True}],
@@ -181,6 +182,7 @@ def load_config() -> Dict[str, Any]:
     slots = [s for s in (data.get("slots") or []) if isinstance(s, dict)]
     slots += DEFAULT_CONFIG["slots"][len(slots):]
     return {"layout": 2 if data.get("layout") == 2 else 3, "focus_audio": bool(data.get("focus_audio", True)),
+            "bar_pinned": bool(data.get("bar_pinned", False)),
             "slots": [_clean_slot(s) for s in slots[:3]]}
 
 
@@ -188,6 +190,7 @@ def save_config(config: Dict[str, Any]) -> None:
     """只保留认识的字段，原子写回。"""
     slots = [s for s in (config.get("slots") or []) if isinstance(s, dict)][:3]
     cfg = {"layout": 2 if config.get("layout") == 2 else 3, "focus_audio": bool(config.get("focus_audio", True)),
+           "bar_pinned": bool(config.get("bar_pinned", False)),
            "slots": [_clean_slot(s) for s in slots]}
     with _LOCK:
         os.makedirs(os.path.dirname(paths.SHORTVIDEO_MATRIX_CONFIG), exist_ok=True)
