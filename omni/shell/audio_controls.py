@@ -11,19 +11,21 @@ audio_controls.py - 本机原生「音声」播放逻辑与控制条（音声专
 
 档位（倍速、定时、模式、快退快进秒数）都来自 playback.py，网页经 /api/audio/player_spec 取同一份。
 功能 = 网页音声播放器的全部（上/下一首、模式、倍速、定时、章节、进度与总长、续听、删除），
-再加本机专属：快退 15 秒 / 快进 30 秒、上一章 / 下一章。
+再加本机专属：快退 10 秒 / 快进 30 秒、上一章 / 下一章。
+按钮图标是 Material Symbols（omni/shell/icons.py，跟网页同一份 SVG）。
 """
 import time
 from typing import Any, Dict, List, Optional
 
 from PyQt6.QtCore import Qt, QObject, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QSlider, QLabel, QMenu, QToolButton
 from PyQt6.QtMultimedia import QMediaPlayer
 
 from omni.features.audio import playback
+from omni.shell.icons import AUDIO, FG, icon, set_icon
 
-MODE_ICON = {"list": "🔁", "single": "🔂", "random": "🔀"}
+MODE_ICON = {"list": "repeat", "single": "repeat_one", "random": "shuffle"}
 MODE_NAME = {"list": "列表循环", "single": "单曲循环", "random": "随机播放"}
 SAVE_EVERY_S = 10        # 续听进度几秒写一次
 
@@ -181,30 +183,33 @@ class AudioControlBar(QWidget):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(4)
 
-        def btn(text, tip, fn, width=34):
-            b = QPushButton(text)
+        def btn(icon_name, tip, fn, width=34):
+            b = QPushButton()
+            set_icon(b, icon_name)
             b.setToolTip(tip)
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             b.clicked.connect(fn)
             if width:
-                b.setFixedWidth(width)
+                b.setFixedSize(width, 30)   # 圆角按钮：高度定死，border-radius 才圆得起来
             h.addWidget(b)
             return b
 
-        self.btn_prev = btn("⏮", "上一首", lambda: self.session and self.session.prevRequested.emit())
-        self.btn_back = btn("⏪", f"快退 {playback.SKIP_BACK_S} 秒", lambda: self.session and self.session.skip(-playback.SKIP_BACK_S))
-        self.btn_play = btn("⏸", "播放 / 暂停", self.playToggled.emit)
+        self.btn_prev = btn("skip_previous-fill", "上一首", lambda: self.session and self.session.prevRequested.emit())
+        self.btn_back = btn("replay_10", f"快退 {playback.SKIP_BACK_S} 秒", lambda: self.session and self.session.skip(-playback.SKIP_BACK_S))
+        self.btn_play = btn("pause-fill", "播放 / 暂停", self.playToggled.emit)
         self.btn_play.setVisible(show_play)
-        self.btn_fwd = btn("⏩", f"快进 {playback.SKIP_FWD_S} 秒", lambda: self.session and self.session.skip(playback.SKIP_FWD_S))
-        self.btn_next = btn("⏭", "下一首", lambda: self.session and self.session.nextRequested.emit())
-        self.btn_mode = btn("🔁", "", lambda: self.session and self.session.cycle_mode())
+        self.btn_fwd = btn("forward_30", f"快进 {playback.SKIP_FWD_S} 秒", lambda: self.session and self.session.skip(playback.SKIP_FWD_S))
+        self.btn_next = btn("skip_next-fill", "下一首", lambda: self.session and self.session.nextRequested.emit())
+        self.btn_mode = btn("repeat", "", lambda: self.session and self.session.cycle_mode())
         # 这两个按钮会显示文字（1.25x / ⏳45），宽度按最长的留，不然被截成 "1.2›"
-        self.btn_rate = btn("1x", "倍速（点击切下一档）", lambda: self.session and self.session.cycle_rate(), 58)
-        self.btn_sleep = btn("⏳", "定时关闭（点击切下一档）", self._cycle_sleep, 58)
+        self.btn_rate = btn("speed", "倍速（点击切下一档）", lambda: self.session and self.session.cycle_rate(), 58)
+        self.btn_rate.setIcon(QIcon())
+        self.btn_rate.setText("1x")
+        self.btn_sleep = btn("bedtime", "定时关闭（点击切下一档）", self._cycle_sleep, 58)
 
         # 章节：弹出菜单（上一章 / 下一章 + 目录），没有章节时隐藏
         self.btn_chapter = QToolButton()
-        self.btn_chapter.setText("📑")
+        set_icon(self.btn_chapter, "toc")
         self.btn_chapter.setToolTip("章节")
         self.btn_chapter.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_chapter.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -227,12 +232,12 @@ class AudioControlBar(QWidget):
 
         # ⋯：不常用、怕误点的放这里
         self.btn_more = QToolButton()
-        self.btn_more.setText("⋯")
+        set_icon(self.btn_more, "more_horiz")
         self.btn_more.setToolTip("更多")
         self.btn_more.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         more = QMenu(self)
-        more.addAction("🗑 移到回收站…", self.deleteRequested.emit)
+        more.addAction(icon("delete", "#ff7b72"), "移到回收站…", self.deleteRequested.emit)
         self.btn_more.setMenu(more)
         h.addWidget(self.btn_more)
 
@@ -265,7 +270,7 @@ class AudioControlBar(QWidget):
             return
         self.btn_rate.setText(f"{s.rate:g}x")
         self._set_active(self.btn_rate, s.rate != 1.0)
-        self.btn_mode.setText(MODE_ICON[s.mode])
+        set_icon(self.btn_mode, MODE_ICON[s.mode], FG if s.mode == "list" else AUDIO)
         self.btn_mode.setToolTip(f"播放模式：{MODE_NAME[s.mode]}（点击切换）")
         self.btn_chapter.setVisible(bool(s.chapters))
         self.btn_chapter.setToolTip(f"章节（{len(s.chapters)}）")
@@ -290,7 +295,7 @@ class AudioControlBar(QWidget):
         self.time_label.setText(f"{fmt_ms(pos)} / {fmt_ms(dur)}")
 
     def _on_state(self, state):
-        self.btn_play.setText("⏸" if state == QMediaPlayer.PlaybackState.PlayingState else "▶")
+        set_icon(self.btn_play, "pause-fill" if state == QMediaPlayer.PlaybackState.PlayingState else "play_arrow-fill", size=26)
 
     def _on_seek_release(self):
         self._seeking = False
@@ -304,8 +309,8 @@ class AudioControlBar(QWidget):
         s = self.session
         if not s or not s.chapters:
             return
-        m.addAction("⏮ 上一章", lambda: s.step_chapter(-1))
-        m.addAction("⏭ 下一章", lambda: s.step_chapter(1))
+        m.addAction(icon("skip_previous-fill"), "上一章", lambda: s.step_chapter(-1))
+        m.addAction(icon("skip_next-fill"), "下一章", lambda: s.step_chapter(1))
         m.addSeparator()
         cur = s.chapter_index()
         for i, ch in enumerate(s.chapters):
@@ -330,8 +335,8 @@ class AudioControlBar(QWidget):
 
     def _update_sleep_btn(self):
         on = self._sleep_timer.isActive()
-        left = (self._sleep_timer.remainingTime() + 59_999) // 60_000 if on else 0
-        self.btn_sleep.setText(f"⏳{left}" if on else "⏳")
+        left = -(-(self._sleep_timer.remainingTime() - 500) // 60_000) if on else 0   # 向上取整；刚开的 30 分钟显示 30
+        set_icon(self.btn_sleep, "bedtime-fill" if on else "bedtime", AUDIO if on else FG, 20, f"{left}" if on else "")
         self.btn_sleep.setToolTip(f"定时关闭：还剩 {left} 分钟（点击切下一档）" if on else "定时关闭：关（点击切下一档）")
         self._set_active(self.btn_sleep, on)
 

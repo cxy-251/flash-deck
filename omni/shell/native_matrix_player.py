@@ -46,37 +46,44 @@ from omni.features.audio import playback, service as audio_service
 from omni.features.shortvideo import service as sv
 from omni.features.shortvideo_matrix import service as mx
 from omni.shell.audio_controls import AudioControlBar, AudioSession
+from omni.shell.icons import ACCENT, AUDIO, FG, LIKE, icon, set_icon
 
 
 # Qt 样式表不认 CSS 的 .class 选择器，高亮一律用动态属性 [active="true"]，改完属性要 polish 一下才生效
 _QSS = """
-    QWidget { color:#e6e6e6; font-size:12px; }
-    QWidget#matrixTopBar { background:#0c0d10; border-bottom:1px solid #222; }
-    QPushButton { color:#fff; background:rgba(255,255,255,0.10); border:1px solid rgba(255,255,255,0.14);
-                  border-radius:6px; padding:4px 6px; min-width:26px; }
-    QPushButton:hover { background:rgba(255,255,255,0.22); }
-    QToolButton { color:#fff; background:rgba(255,255,255,0.10); border:1px solid rgba(255,255,255,0.14);
-                  border-radius:6px; padding:4px 8px; }
-    QToolButton:hover { background:rgba(255,255,255,0.22); }
+    QWidget { color:#e6edf3; font-size:12px; }
+    QWidget#matrixTopBar { background:#0d1015; border-bottom:1px solid #1c2129; }
+    /* 图标按钮：扁平、圆形，悬停时浮出淡底（YouTube / 音乐播放器那种） */
+    QPushButton, QToolButton { color:#e6edf3; background:transparent; border:none; border-radius:15px; padding:0 6px; }
+    QPushButton:hover, QToolButton:hover { background:rgba(255,255,255,0.12); }
+    QPushButton:pressed, QToolButton:pressed { background:rgba(255,255,255,0.20); }
+    QPushButton[active="true"] { background:rgba(88,166,255,0.16); }
     QToolButton::menu-indicator { image:none; }
-    QLabel#audioTime { color:#c9d1d9; font-size:11px; }
-    QPushButton[active="true"] { background:#1f6feb; border-color:#58a6ff; font-weight:600; }
-    QPushButton#matrixClose { background:#b62324; border-color:#da3633; }
-    QComboBox { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:3px 8px; }
-    QComboBox QAbstractItemView { background:#161b22; color:#fff; selection-background-color:#1f6feb; }
-    QSlider::groove:horizontal { height:4px; background:rgba(255,255,255,0.25); border-radius:2px; }
-    QSlider::handle:horizontal { width:12px; margin:-4px 0; background:#d2a8ff; border-radius:6px; }
+    QComboBox { background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.10); border-radius:16px;
+                padding:4px 12px; min-height:24px; }
+    QComboBox:hover { background:rgba(255,255,255,0.11); }
+    QComboBox::drop-down { border:none; width:22px; }
+    QComboBox QAbstractItemView { background:#161b22; color:#e6edf3; border:1px solid #30363d; border-radius:8px;
+                                  selection-background-color:#1f6feb; padding:4px; }
+    QSlider::groove:horizontal { height:4px; background:rgba(255,255,255,0.18); border-radius:2px; }
+    QSlider::handle:horizontal { width:12px; height:12px; margin:-4px 0; background:#fff; border-radius:6px; }
     QSlider::sub-page:horizontal { background:#d2a8ff; border-radius:2px; }
-    QFrame#matrixSlot { background:#000; border:2px solid #22272e; border-radius:6px; }
+    QMenu { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:4px; }
+    QMenu::item { padding:6px 14px 6px 8px; border-radius:6px; }
+    QMenu::item:selected { background:rgba(255,255,255,0.10); }
+    QFrame#matrixSlot { background:#000; border:2px solid #1c2129; border-radius:8px; }
     QFrame#matrixSlot[active="true"] { border-color:#58a6ff; }
     QProgressBar { background:#161b22; border:none; }
     QProgressBar::chunk { background:#58a6ff; }
-    QLabel#slotTag { color:#58a6ff; font-weight:bold; font-size:13px; }
+    QLabel#slotTag { color:#58a6ff; font-weight:600; font-size:13px; padding:0 4px; }
     QLabel#slotDim { color:#8b949e; font-size:11px; }
+    QLabel#audioTime { color:#c9d1d9; font-size:11px; }
     QFrame#barSep { background:#30363d; }
-    QWidget#audioBox { background:rgba(210,168,255,0.10); border:1px solid rgba(210,168,255,0.30); border-radius:8px; }
-    QWidget#audioBox QPushButton[active="true"] { background:#8957e5; border-color:#d2a8ff; }
-    QPushButton#scopeBtn { min-width:96px; max-width:150px; text-align:left; padding-left:8px; }
+    QWidget#audioBox { background:rgba(210,168,255,0.07); border:1px solid rgba(210,168,255,0.18); border-radius:18px; }
+    QWidget#audioBox QPushButton[active="true"] { background:rgba(210,168,255,0.16); }
+    QPushButton#scopeBtn { min-width:96px; max-width:170px; text-align:left; padding:0 12px 0 8px;
+                           background:rgba(210,168,255,0.10); border-radius:15px; }
+    QPushButton#scopeBtn:hover { background:rgba(210,168,255,0.20); }
 """
 
 
@@ -84,6 +91,12 @@ def _set_active_prop(w: QWidget, on: bool) -> None:
     w.setProperty("active", "true" if on else "false")
     w.style().unpolish(w)
     w.style().polish(w)
+
+
+def _toggle_icon(btn, on: bool, name: str, name_on: str = "", color: str = ACCENT) -> None:
+    """开关按钮：开着时换成 name_on（没给就同一个图标）并染成强调色 + 淡底色。"""
+    set_icon(btn, (name_on or name) if on else name, color if on else FG)
+    _set_active_prop(btn, on)
 
 
 def _no_width_hint(w: QWidget) -> None:
@@ -492,13 +505,13 @@ class NativeMatrixPlayerWidget(QWidget):
         top.setSpacing(4)
         rows.addLayout(top)
 
-        def button(text, slot, tip=""):
-            b = QPushButton(text)
+        def button(icon_name, slot, tip=""):
+            b = QPushButton()
+            set_icon(b, icon_name)
             b.setToolTip(tip)
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)   # 键盘焦点留给容器，快捷键才不会被按钮吃掉
             b.clicked.connect(slot)
-            if len(text) <= 2:     # 图标按钮统一宽度
-                b.setFixedWidth(34)
+            b.setFixedSize(34, 34)   # 圆形图标按钮
             top.addWidget(b)
             return b
 
@@ -511,9 +524,9 @@ class NativeMatrixPlayerWidget(QWidget):
             top.addSpacing(4)
 
         # 全局
-        self.btn_l2 = button("2屏", lambda: self.set_layout_mode(2, save=True), "2 屏并排")
-        self.btn_l3 = button("3屏", lambda: self.set_layout_mode(3, save=True), "3 屏并排")
-        self.btn_focus = button("🎯", lambda: self.set_focus_audio(not self.focus_audio, save=True),
+        self.btn_l2 = button("view_column_2", lambda: self.set_layout_mode(2, save=True), "2 屏并排")
+        self.btn_l3 = button("view_week", lambda: self.set_layout_mode(3, save=True), "3 屏并排")
+        self.btn_focus = button("hearing", lambda: self.set_focus_audio(not self.focus_audio, save=True),
                                 "焦点出声：开 = 没静音的屏里只有焦点屏出声；关 = 没静音的屏一起出声")
         sep()
 
@@ -528,7 +541,8 @@ class NativeMatrixPlayerWidget(QWidget):
         # 可输入搜索：打主播名（文件夹名）的任意一段，弹出匹配项，选中即切换
         self.combo.setEditable(True)
         self.combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.combo.lineEdit().setPlaceholderText("🔍 主播")
+        self.combo.lineEdit().setPlaceholderText("搜索主播")
+        self.combo.lineEdit().addAction(icon("search", "#8b949e", 18), self.combo.lineEdit().ActionPosition.LeadingPosition)
         completer = QCompleter(self.combo.model(), self.combo)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -536,24 +550,23 @@ class NativeMatrixPlayerWidget(QWidget):
         self.combo.setCompleter(completer)
         self.combo.activated.connect(self._on_combo)   # 只响应用户选择，程序里 setCurrentIndex 不触发
         top.addWidget(self.combo, 1)
-        self.btn_prev = button("⬅", lambda: self.cur().step(-1), "上一条（←）")
-        self.btn_play = button("⏸", lambda: self.cur().set_paused(self.cur().is_playing()), "暂停 / 继续（空格）")
-        self.btn_next = button("➡", lambda: self.cur().step(1), "下一条（→）")
-        self.btn_shuffle = button("🔀", lambda: self.cur().set_shuffle(not self.cur().shuffle, user=True), "视频随机顺序")
-        self.btn_like = button("🤍", lambda: self.cur().toggle_like(), "点赞")
-        self.btn_mute = button("🔊", lambda: self.cur().set_muted(not self.cur().user_muted, user=True), "静音（M）")
-        self.btn_sound = button("🎬", lambda: self.cur().set_sound("video" if self.cur().sound == "audio" else "audio", user=True))
+        self.btn_prev = button("skip_previous-fill", lambda: self.cur().step(-1), "上一条（←）")
+        self.btn_play = button("pause-fill", lambda: self.cur().set_paused(self.cur().is_playing()), "暂停 / 继续（空格）")
+        self.btn_next = button("skip_next-fill", lambda: self.cur().step(1), "下一条（→）")
+        self.btn_shuffle = button("shuffle", lambda: self.cur().set_shuffle(not self.cur().shuffle, user=True), "视频随机顺序")
+        self.btn_like = button("favorite", lambda: self.cur().toggle_like(), "点赞")
+        self.btn_mute = button("volume_up-fill", lambda: self.cur().set_muted(not self.cur().user_muted, user=True), "静音（M）")
+        self.btn_sound = button("movie-fill", lambda: self.cur().set_sound("video" if self.cur().sound == "audio" else "audio", user=True))
 
         top.addStretch(0)
         sep()
 
-        button("⏯", self.toggle_all_play, "全部 暂停 / 继续")
-        self.btn_pin = button("📌", lambda: self.set_bar_pinned(not self.bar_pinned, save=True),
+        button("play_pause", self.toggle_all_play, "全部 暂停 / 继续")
+        self.btn_pin = button("keep", lambda: self.set_bar_pinned(not self.bar_pinned, save=True),
                               "固定顶栏（关 = 自动隐藏，鼠标移到最顶端才出来；Tab 键也能叫出来）")
-        button("⚙", lambda: self.close_matrix("settings"), "回到设置页（改每屏的频道 / 声源等）")
-        close = button("⤓", lambda: self.close_matrix("collapse"),
+        button("settings-fill", lambda: self.close_matrix("settings"), "回到设置页（改每屏的频道 / 声源等）")
+        button("keyboard_arrow_down", lambda: self.close_matrix("collapse"),
                        "收起（Esc）：记住各屏位置，回到进来之前的页面；再点多联标签接着看")
-        close.setObjectName("matrixClose")
 
         # 第二行：音声 —— 跟本机音声专区同一个控件（AudioControlBar），多联只多一个「范围」
         self.audio_box = QWidget()
@@ -562,7 +575,8 @@ class NativeMatrixPlayerWidget(QWidget):
         ab = QHBoxLayout(self.audio_box)
         ab.setContentsMargins(6, 2, 6, 2)
         ab.setSpacing(6)
-        self.lbl_atag = QLabel("🎧")
+        self.lbl_atag = QLabel()
+        self.lbl_atag.setPixmap(icon("headphones-fill", AUDIO, 20).pixmap(20, 20))
         ab.addWidget(self.lbl_atag)
         self.btn_scope = QPushButton("📁")
         self.btn_scope.setObjectName("scopeBtn")   # 宽度在 _QSS 里定（样式表的 min-width 会盖过 setMinimumWidth）
@@ -610,17 +624,18 @@ class NativeMatrixPlayerWidget(QWidget):
         i = self.combo.findData(s.channel_id)
         if i >= 0:
             self.combo.setCurrentIndex(i)
-        self.btn_play.setText("⏸" if s.is_playing() else "▶")
-        _set_active_prop(self.btn_shuffle, s.shuffle)
-        self.btn_like.setText("❤️" if s.is_liked() else "🤍")
+        set_icon(self.btn_play, "pause-fill" if s.is_playing() else "play_arrow-fill", size=26)
+        _toggle_icon(self.btn_shuffle, s.shuffle, "shuffle")
+        liked = s.is_liked()
+        set_icon(self.btn_like, "favorite-fill" if liked else "favorite", LIKE if liked else FG)
         if s.user_muted:
-            self.btn_mute.setText("🔇")
+            set_icon(self.btn_mute, "volume_off-fill", "#ff7b72")
         elif s.focus_silenced:
-            self.btn_mute.setText("🔈")
+            set_icon(self.btn_mute, "volume_mute-fill", "#8b949e")
         else:
-            self.btn_mute.setText("🔊")
+            set_icon(self.btn_mute, "volume_up-fill")
         audio = s.sound == "audio"
-        self.btn_sound.setText("🎧" if audio else "🎬")
+        set_icon(self.btn_sound, "headphones-fill" if audio else "movie-fill", AUDIO if audio else FG)
         self.btn_sound.setToolTip("声音：音声（点击换回视频原声）" if audio else "声音：视频原声（点击换成音声）")
         _set_active_prop(self.btn_sound, audio)
         self.audio_box.setVisible(audio)
@@ -628,7 +643,7 @@ class NativeMatrixPlayerWidget(QWidget):
         if audio:
             sc = next((x for x in self.audio_scopes if x["id"] == s.audio_scope), None)
             name = sc["label"] if sc else "全部音声"
-            self.btn_scope.setText(f"📁 {name}")
+            set_icon(self.btn_scope, "library_music", AUDIO, 18, f" {name}")
             self.btn_scope.setToolTip(f"音声范围：{name}（{sc['count'] if sc else '?'} 段）\n点击切到下一个专辑")
             tr = s.current_track()
             title = (tr or {}).get("title") or ("这个范围没有音声" if not s.tracks else "")
@@ -665,8 +680,8 @@ class NativeMatrixPlayerWidget(QWidget):
     # ---- 布局 / 焦点 ----
     def set_layout_mode(self, mode: int, save: bool = False, autoload: bool = True):
         self.layout_mode = 2 if mode == 2 else 3
-        _set_active_prop(self.btn_l2, self.layout_mode == 2)
-        _set_active_prop(self.btn_l3, self.layout_mode == 3)
+        _toggle_icon(self.btn_l2, self.layout_mode == 2, "view_column_2")
+        _toggle_icon(self.btn_l3, self.layout_mode == 3, "view_week")
         third = self.slots[2]
         if self.layout_mode == 2:
             third.stop()          # 藏起来的那一屏必须停解码，不然还在后台吃硬解
@@ -693,7 +708,7 @@ class NativeMatrixPlayerWidget(QWidget):
 
     def set_focus_audio(self, on: bool, save: bool = False):
         self.focus_audio = on
-        _set_active_prop(self.btn_focus, on)
+        _toggle_icon(self.btn_focus, on, "hearing")
         self._apply_focus_audio()
         self.refresh_bar()
         if save:
@@ -712,7 +727,7 @@ class NativeMatrixPlayerWidget(QWidget):
     # ---- 顶栏自动隐藏 ----
     def set_bar_pinned(self, on: bool, save: bool = False):
         self.bar_pinned = on
-        _set_active_prop(self.btn_pin, on)
+        _toggle_icon(self.btn_pin, on, "keep", "keep-fill")
         if on:
             self._bar_hide.stop()
             self.top_bar.show()

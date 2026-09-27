@@ -36,6 +36,7 @@ from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
 from omni.shell.audio_controls import AudioControlBar, AudioSession
+from omni.shell.icons import FG, LIKE, set_icon
 
 
 def _fmt_ms(ms: int) -> str:
@@ -54,20 +55,20 @@ def _fmt_ms(ms: int) -> str:
 
 
 _CONTROL_QSS = """
-    QWidget#dyaCtrlBar { background: rgba(10,10,12,0.90); }
-    QPushButton { color:#fff; background:rgba(255,255,255,0.12); border:none; border-radius:6px;
-                  padding:6px 12px; font-size:13px; }
-    QPushButton:hover { background:rgba(255,255,255,0.26); }
-    QPushButton:pressed { background:rgba(255,255,255,0.36); }
-    QPushButton:checked { background:#58a6ff; color:#04101d; }
-    QLabel { color:#e6e6e6; font-size:12px; }
-    QComboBox { color:#fff; background:rgba(255,255,255,0.12); border:none; border-radius:6px; padding:4px 8px; }
-    QSlider::groove:horizontal { height:4px; background:rgba(255,255,255,0.25); border-radius:2px; }
-    QSlider::handle:horizontal { width:13px; margin:-5px 0; background:#58a6ff; border-radius:6px; }
-    QSlider::sub-page:horizontal { background:#58a6ff; border-radius:2px; }
-    QToolButton { color:#fff; background:rgba(255,255,255,0.12); border:none; border-radius:6px; padding:6px 10px; font-size:13px; }
+    QWidget#dyaCtrlBar { background: rgba(13,16,21,0.94); }
+    /* 图标按钮：扁平、圆形，悬停浮出淡底（跟多联放映同一套风格） */
+    QPushButton, QToolButton { color:#e6edf3; background:transparent; border:none; border-radius:15px; padding:0 6px; font-size:13px; }
+    QPushButton:hover, QToolButton:hover { background:rgba(255,255,255,0.12); }
+    QPushButton:pressed, QToolButton:pressed { background:rgba(255,255,255,0.20); }
+    QPushButton[active="true"] { background:rgba(210,168,255,0.16); }
     QToolButton::menu-indicator { image:none; }
-    QPushButton[active="true"] { background:#58a6ff; color:#04101d; }
+    QLabel { color:#e6edf3; font-size:12px; }
+    QSlider::groove:horizontal { height:4px; background:rgba(255,255,255,0.18); border-radius:2px; }
+    QSlider::handle:horizontal { width:12px; height:12px; margin:-4px 0; background:#fff; border-radius:6px; }
+    QSlider::sub-page:horizontal { background:#58a6ff; border-radius:2px; }
+    QMenu { background:#161b22; color:#e6edf3; border:1px solid #30363d; border-radius:8px; padding:4px; }
+    QMenu::item { padding:6px 14px 6px 8px; border-radius:6px; }
+    QMenu::item:selected { background:rgba(255,255,255,0.10); }
 """
 
 
@@ -90,7 +91,8 @@ class NativePlayerWidget(QWidget):
                 以浮层形式叠加在网页视图上面。
         """
         super().__init__(parent)
-        self.setStyleSheet("background:#000;")
+        self.setStyleSheet("NativePlayerWidget{background:#000;}")   # 只给自己，别让标题/时间标签也涂成黑块
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.is_audio_mode = False   # main.py 的 resizeEvent 据此决定摆成全屏还是底部细条
         self.loop_mode = "list"      # "list" | "single"
         self.is_liked = False
@@ -124,21 +126,27 @@ class NativePlayerWidget(QWidget):
         self.title_label = QLabel("")
         self.title_label.setStyleSheet("QLabel{font-size:13px;font-weight:600;color:#fff;}")
 
-        self.btn_prev = QPushButton("⬅")
-        self.btn_play = QPushButton("⏸")
-        self.btn_next = QPushButton("➡")
-        self.btn_loop = QPushButton("🔁")
+        self.btn_prev = QPushButton()
+        self.btn_play = QPushButton()
+        self.btn_next = QPushButton()
+        self.btn_loop = QPushButton()
         self.btn_loop.setToolTip("循环模式：列表循环（点击切换为单片循环）")
-        self.btn_like = QPushButton("🤍")
+        self.btn_like = QPushButton()
         self.btn_like.setToolTip("点赞")
         # 短视频静音开关：只管视频模式，切上一条/下一条保持不变；音频模式（有声书）不受影响
         self.sv_muted = False
-        self.btn_mute = QPushButton("🔊")
+        self.btn_mute = QPushButton()
         self.btn_mute.setToolTip("静音")
         self.seek = QSlider(Qt.Orientation.Horizontal)
         self.seek.setRange(0, 1000)
         self.time_label = QLabel("0:00 / 0:00")
-        self.btn_close = QPushButton("✕ 关闭")
+        self.btn_close = QPushButton()
+        for b, name in ((self.btn_prev, "skip_previous-fill"), (self.btn_play, "pause-fill"), (self.btn_next, "skip_next-fill"),
+                        (self.btn_loop, "repeat"), (self.btn_like, "favorite"), (self.btn_mute, "volume_up-fill"),
+                        (self.btn_close, "close")):
+            set_icon(b, name, size=26 if b is self.btn_play else 22)
+            b.setFixedSize(34, 34)
+        self.btn_close.setToolTip("关闭")
 
         # 视频模式的控件放在 video_box；音频模式整条换成 audio_bar（跟多联里的音声控件同一个组件）
         self.video_box = QWidget()
@@ -217,17 +225,17 @@ class NativePlayerWidget(QWidget):
         """在"列表循环"和"单片循环"之间切换，同步按钮图标与提示文案。"""
         if self.loop_mode == "list":
             self.loop_mode = "single"
-            self.btn_loop.setText("🔂")
+            set_icon(self.btn_loop, "repeat_one", "#58a6ff")
             self.btn_loop.setToolTip("循环模式：单片循环（点击切换为列表循环）")
         else:
             self.loop_mode = "list"
-            self.btn_loop.setText("🔁")
+            set_icon(self.btn_loop, "repeat")
             self.btn_loop.setToolTip("循环模式：列表循环（点击切换为单片循环）")
 
     def _toggle_like(self):
         """点击点赞按钮：本地状态取反、刷新按钮图标，并把结果通过 likeToggled 信号通知网页那边。"""
         self.is_liked = not self.is_liked
-        self.btn_like.setText("❤️" if self.is_liked else "🤍")
+        set_icon(self.btn_like, "favorite-fill" if self.is_liked else "favorite", LIKE if self.is_liked else FG)
         self.btn_like.setToolTip("取消点赞" if self.is_liked else "点赞")
         self.likeToggled.emit(self.is_liked)
 
@@ -240,7 +248,7 @@ class NativePlayerWidget(QWidget):
         """按当前模式应用静音：视频模式跟随 sv_muted，音频模式始终有声。"""
         muted = self.sv_muted and not self.is_audio_mode
         self.audio_output.setMuted(muted)
-        self.btn_mute.setText("🔇" if self.sv_muted else "🔊")
+        set_icon(self.btn_mute, "volume_off-fill" if self.sv_muted else "volume_up-fill", "#ff7b72" if self.sv_muted else FG)
         self.btn_mute.setToolTip("取消静音" if self.sv_muted else "静音")
 
     def set_liked(self, liked: bool):
@@ -250,7 +258,7 @@ class NativePlayerWidget(QWidget):
             liked: 是否已点赞。
         """
         self.is_liked = bool(liked)
-        self.btn_like.setText("❤️" if self.is_liked else "🤍")
+        set_icon(self.btn_like, "favorite-fill" if self.is_liked else "favorite", LIKE if self.is_liked else FG)
         self.btn_like.setToolTip("取消点赞" if self.is_liked else "点赞")
 
     def eventFilter(self, obj, event):
@@ -391,7 +399,7 @@ class NativePlayerWidget(QWidget):
         Args:
             state: QMediaPlayer.PlaybackState 枚举值。
         """
-        self.btn_play.setText("⏸" if state == QMediaPlayer.PlaybackState.PlayingState else "▶")
+        set_icon(self.btn_play, "pause-fill" if state == QMediaPlayer.PlaybackState.PlayingState else "play_arrow-fill", size=26)
         if state == QMediaPlayer.PlaybackState.PlayingState:
             self._end_transition()   # 新视频真的开始出画面了，把过渡箭头收掉、露出真实画面
 

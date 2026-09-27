@@ -16,7 +16,7 @@ from omni.core import paths
 SPEEDS = [1.0, 1.25, 1.5, 1.75, 2.0, 0.75]   # 倍速按钮循环顺序
 SLEEP_MINS = [0, 15, 30, 45, 60]             # 定时关闭（0 = 关）
 MODES = ["list", "single", "random"]         # 列表循环 / 单曲循环 / 随机
-SKIP_BACK_S = 15
+SKIP_BACK_S = 10     # 跟图标 replay_10 / forward_30 对上（Material 没有 15 秒的图标）
 SKIP_FWD_S = 30
 
 RESUME_MIN_S = 3      # 听了不到 3 秒不记
