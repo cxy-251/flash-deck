@@ -32,16 +32,16 @@ start_matrix()；这里改动的设置也写回同一份配置，退出后网页
       贴在播放器顶上盖住视频。视频是原生子窗口（QVideoWidget 里是 QWindowContainer），同一窗口里的
       控件盖不住它——把顶栏设成原生子窗口去盖会连带把三屏区域也变成原生窗口，真机实测视频变黑；
       独立的弹出层窗口由合成器叠在整个主窗口上面，不受这个影响。弹出层拿不到键盘焦点，所以频道
-      搜索走单独的对话框（ChannelSearchDialog），快捷键仍由播放器本身接收；应用失去焦点时收起。
+      选择走单独的对话框（PickDialog：频道 / 音声），快捷键仍由播放器本身接收；应用失去焦点时收起。
   留位：顶栏那一条位置始终留着（bar_slot，固定高度），收起时只剩深色空白，也不改变播放区大小。
 
 键盘（Steam Input 可映射）：Tab 显示 / 收起顶栏，1/2/3 选焦点屏，空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
 """
 import random
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, QUrl, QEvent, QTimer, pyqtSignal
-from PyQt6.QtGui import QCursor
+from PyQt6.QtGui import QColor, QCursor
 from PyQt6.QtCore import QPoint
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QLabel, QComboBox,
                              QFrame, QSizePolicy, QProgressBar, QDialog, QLineEdit, QListWidget, QListWidgetItem,
@@ -91,6 +91,9 @@ _QSS = """
     QPushButton#scopeBtn { min-width:96px; max-width:170px; text-align:left; padding:0 12px 0 8px;
                            background:rgba(210,168,255,0.10); border-radius:15px; }
     QPushButton#scopeBtn:hover { background:rgba(210,168,255,0.20); }
+    QPushButton#channelBtn { text-align:left; padding:0 12px 0 8px; min-height:30px; max-width:260px;
+                             background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.10); border-radius:15px; }
+    QPushButton#channelBtn:hover { background:rgba(255,255,255,0.13); }
 """
 
 
@@ -309,6 +312,20 @@ class MatrixSlotWidget(QFrame):
         self._load_track()
         self._apply_audio()
 
+    def pick_track(self, scope: str, rel_path: str):
+        """选音声框里挑了具体某一段：范围切到它所在的那一组，从这段开始（该出声时才真的放）。"""
+        if self._tracks_scope != scope:
+            self.audio_scope = scope
+            self.tracks = mx.get_audio_tracks(scope)
+            self._tracks_scope = scope
+        self.apos = next((k for k, t in enumerate(self.tracks) if t["rel_path"] == rel_path), 0)
+        self._askips = 0
+        self.asession.clear()
+        if self.tracks:
+            self._load_track()
+        self._apply_audio()
+        self.settingsChanged.emit()
+
     def delete_current_track(self) -> bool:
         """当前这段移到回收站（gio trash），从列表里拿掉并接着放下一段。"""
         it = self.current_track()
@@ -472,54 +489,79 @@ class MatrixSlotWidget(QFrame):
             self._skip_broken()
 
 
-class ChannelSearchDialog(QDialog):
-    """搜主播（文件夹名）：普通对话框，能拿键盘焦点、能用输入法；选中一项就关。"""
+class PickDialog(QDialog):
+    """分组、可搜索的选择框（频道 / 音声）：普通对话框，能拿键盘焦点、能用输入法；选中一项就关。
 
-    def __init__(self, channels: List[Dict[str, Any]], parent=None):
+    groups: [(组名, [(显示文字, 数据), ...]), ...]；组名为空则不显示组标题。选中后 chosen = 那一项的数据。
+    """
+
+    def __init__(self, title: str, placeholder: str, groups: List[Tuple[str, List[Tuple[str, Any]]]],
+                 current: Any = None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("搜索主播")
-        self.resize(420, 520)
+        self.setWindowTitle(title)
+        self.resize(460, 560)
         self.setStyleSheet(_QSS + "QDialog{background:#0d1015;} QLineEdit{background:rgba(255,255,255,0.07); "
                            "border:1px solid rgba(255,255,255,0.12); border-radius:16px; padding:6px 12px; font-size:14px;} "
-                           "QListWidget{background:#0d1015; border:none; font-size:13px;} "
+                           "QListWidget{background:#0d1015; border:none; font-size:13px; outline:0;} "
                            "QListWidget::item{padding:6px 8px; border-radius:6px;} "
-                           "QListWidget::item:selected{background:#1f6feb;}")
-        self.channels = channels
-        self.chosen: Optional[str] = None
+                           "QListWidget::item:selected{background:#1f6feb;} "
+                           "QScrollBar:vertical{background:transparent; width:8px; margin:2px;} "
+                           "QScrollBar::handle:vertical{background:rgba(255,255,255,0.22); border-radius:4px; min-height:30px;} "
+                           "QScrollBar::add-line, QScrollBar::sub-line{height:0;} "
+                           "QScrollBar::add-page, QScrollBar::sub-page{background:transparent;}")
+        self.groups = groups
+        self.current = current
+        self.chosen: Any = None
         v = QVBoxLayout(self)
         self.edit = QLineEdit()
-        self.edit.setPlaceholderText("输入主播名的任意一段")
+        self.edit.setPlaceholderText(placeholder)
         self.edit.addAction(icon("search", "#8b949e", 18), QLineEdit.ActionPosition.LeadingPosition)
         self.edit.textChanged.connect(self._filter)
-        self.edit.returnPressed.connect(self._pick_first)
+        self.edit.returnPressed.connect(self._pick_current)
         self.list = QListWidget()
-        self.list.itemActivated.connect(self._pick)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.setTextElideMode(Qt.TextElideMode.ElideRight)   # 长标题省略号，不出横向滚动条
         self.list.itemClicked.connect(self._pick)
+        self.list.itemActivated.connect(self._pick)
         v.addWidget(self.edit)
         v.addWidget(self.list, 1)
         self._filter("")
 
-    def _label(self, ch):
-        return ch["label"] if ch.get("group") == "常用" else f"[{ch.get('group')}] {ch['label']}"
-
     def _filter(self, text: str):
         q = text.strip().lower()
         self.list.clear()
-        for ch in self.channels:
-            if not q or q in ch["label"].lower():
-                it = QListWidgetItem(self._label(ch))
-                it.setData(Qt.ItemDataRole.UserRole, ch["id"])
+        first = cur = None
+        for name, entries in self.groups:
+            hits = [(label, data) for label, data in entries if not q or q in label.lower()]
+            if not hits:
+                continue
+            if name:
+                head = QListWidgetItem(name)
+                head.setFlags(Qt.ItemFlag.NoItemFlags)          # 组标题：不能选
+                head.setForeground(QColor("#8b949e"))
+                f = head.font(); f.setBold(True); head.setFont(f)
+                self.list.addItem(head)
+            for label, data in hits:
+                it = QListWidgetItem(label)
+                it.setData(Qt.ItemDataRole.UserRole, data)
                 self.list.addItem(it)
-        if self.list.count():
-            self.list.setCurrentRow(0)
+                first = first or it
+                if data == self.current:
+                    cur = it
+        target = cur or first
+        if target:
+            self.list.setCurrentItem(target)
+            self.list.scrollToItem(target, QListWidget.ScrollHint.PositionAtCenter)
 
-    def _pick_first(self):
+    def _pick_current(self):
         if self.list.currentItem():
             self._pick(self.list.currentItem())
 
     def _pick(self, item):
-        self.chosen = item.data(Qt.ItemDataRole.UserRole)
-        self.accept()
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if data is not None:
+            self.chosen = data
+            self.accept()
 
 
 class NativeMatrixPlayerWidget(QWidget):
@@ -544,6 +586,8 @@ class NativeMatrixPlayerWidget(QWidget):
         self._bar_poll.setInterval(150)
         self._bar_poll.timeout.connect(self._poll_bar)
         self.audio_scopes: List[Dict[str, Any]] = []
+        self._channels: List[Dict[str, Any]] = []
+        self._channel_labels: Dict[str, str] = {}
         self._build()
 
     # ---- 界面 ----
@@ -598,15 +642,14 @@ class NativeMatrixPlayerWidget(QWidget):
         self.lbl_tag = QLabel("屏1")
         self.lbl_tag.setObjectName("slotTag")
         top.addWidget(self.lbl_tag)
-        self.combo = QComboBox()
-        self.combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.combo.setMinimumContentsLength(10)
-        self.combo.setMaximumWidth(240)
-        self.combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.combo.activated.connect(self._on_combo)   # 只响应用户选择，程序里 setCurrentIndex 不触发
-        self.btn_search = button("search", self._search_channel, "搜索主播")
-        top.addWidget(self.combo, 1)
-        top.addWidget(self.btn_search)
+        # 频道：显示当前频道名的按钮，点开选择框（能搜、能直接滚着挑）
+        self.btn_channel = QPushButton()
+        self.btn_channel.setObjectName("channelBtn")
+        self.btn_channel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_channel.setToolTip("选择频道 / 搜索主播")
+        self.btn_channel.clicked.connect(self._search_channel)
+        _no_width_hint(self.btn_channel)
+        top.addWidget(self.btn_channel, 1)
         self.btn_prev = button("skip_previous-fill", lambda: self.cur().step(-1), "上一条（←）")
         self.btn_play = button("pause-fill", lambda: self.cur().set_paused(self.cur().is_playing()), "暂停 / 继续（空格）")
         self.btn_next = button("skip_next-fill", lambda: self.cur().step(1), "下一条（→）")
@@ -639,7 +682,7 @@ class NativeMatrixPlayerWidget(QWidget):
         self.btn_scope = QPushButton("📁")
         self.btn_scope.setObjectName("scopeBtn")   # 宽度在 _QSS 里定（样式表的 min-width 会盖过 setMinimumWidth）
         self.btn_scope.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_scope.clicked.connect(self._next_scope)
+        self.btn_scope.clicked.connect(self._pick_audio)
         ab.addWidget(self.btn_scope)
         self.lbl_atitle = QLabel("")
         self.lbl_atitle.setObjectName("slotDim")
@@ -680,9 +723,9 @@ class NativeMatrixPlayerWidget(QWidget):
         """顶栏显示焦点屏的状态。"""
         s = self.cur()
         self.lbl_tag.setText(f"屏{s.index + 1}")
-        i = self.combo.findData(s.channel_id)
-        if i >= 0:
-            self.combo.setCurrentIndex(i)
+        label = self._channel_labels.get(s.channel_id, s.channel_id)
+        set_icon(self.btn_channel, "search", "#8b949e", 18,
+                 " " + self.btn_channel.fontMetrics().elidedText(label, Qt.TextElideMode.ElideRight, 200))
         set_icon(self.btn_play, "pause-fill" if s.is_playing() else "play_arrow-fill", size=26)
         _toggle_icon(self.btn_shuffle, s.shuffle, "shuffle")
         liked = s.is_liked()
@@ -704,40 +747,61 @@ class NativeMatrixPlayerWidget(QWidget):
             sc = next((x for x in self.audio_scopes if x["id"] == s.audio_scope), None)
             name = sc["label"] if sc else "全部音声"
             set_icon(self.btn_scope, "library_music", AUDIO, 18, f" {name}")
-            self.btn_scope.setToolTip(f"音声范围：{name}（{sc['count'] if sc else '?'} 段）\n点击切到下一个专辑")
+            self.btn_scope.setToolTip(f"音声范围：{name}（{sc['count'] if sc else '?'} 段）\n点击选择文件夹 / 某一段音声")
             tr = s.current_track()
             title = (tr or {}).get("title") or ("这个范围没有音声" if not s.tracks else "")
             self.lbl_atitle.setText(self.lbl_atitle.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, 176))
             self.lbl_atitle.setToolTip(f"{tr.get('album')} / {title}" if tr else title)
-
-    def _on_combo(self, _i: int):
-        self._set_channel(self.combo.currentData())
 
     def _set_channel(self, cid):
         s = self.cur()
         if cid and cid != s.channel_id:
             s.load_channel(cid)
             self.save_config()
-        self.combo.setCurrentIndex(max(0, self.combo.findData(s.channel_id)))
+        self.refresh_bar()
         self.setFocus()
 
-    def _search_channel(self):
-        """悬浮顶栏拿不到键盘，搜索开一个正常对话框（输入法可用）。"""
+    def _pick(self, title: str, placeholder: str, groups, current=None):
+        """开选择框（悬浮顶栏拿不到键盘，所以用正常对话框：输入法可用）；返回选中的数据或 None。"""
         self._bar_hide.stop()
-        dlg = ChannelSearchDialog(self._channels, self)
         self._searching = True
         try:
-            if dlg.exec() == QDialog.DialogCode.Accepted and dlg.chosen:
-                self._set_channel(dlg.chosen)
+            dlg = PickDialog(title, placeholder, groups, current, self)
+            return dlg.chosen if dlg.exec() == QDialog.DialogCode.Accepted else None
         finally:
             self._searching = False
             self.activateWindow()
             self.setFocus()
 
-    def _next_scope(self):
-        ids = [x["id"] for x in self.audio_scopes] or ["all"]
+    def _search_channel(self):
+        groups: Dict[str, List[Tuple[str, Any]]] = {}
+        for ch in self._channels:
+            groups.setdefault(ch.get("group") or "", []).append((ch["label"], ch["id"]))
+        cid = self._pick("选择频道", "搜索主播名", list(groups.items()), self.cur().channel_id)
+        if cid:
+            self._set_channel(cid)
+
+    def _pick_audio(self):
+        """选音声：有声书按文件夹（选了就在这个文件夹里放），NSFW 音声逐段列出（选了从这段开始）。"""
         s = self.cur()
-        s.set_audio_scope(ids[(ids.index(s.audio_scope) + 1) % len(ids)] if s.audio_scope in ids else ids[0], user=True)
+        std = [(f"{x['label']} ({x['count']})", ("scope", x["id"])) for x in self.audio_scopes if x["id"].startswith("std:")]
+        nsfw_scopes = [x for x in self.audio_scopes if x["id"].startswith("nsfw:")]
+        nsfw = []
+        for x in nsfw_scopes:
+            for t in mx.get_audio_tracks(x["id"]):
+                label = t.get("title") or t["rel_path"]
+                nsfw.append((f"{x['label']} / {label}" if len(nsfw_scopes) > 1 else label, ("track", x["id"], t["rel_path"])))
+        total = next((x["count"] for x in self.audio_scopes if x["id"] == "all"), 0)
+        tr = s.current_track()
+        current = ("track", s.audio_scope, tr["rel_path"]) if tr and s.audio_scope.startswith("nsfw:") else ("scope", s.audio_scope)
+        groups = [("", [(f"全部音声 ({total})", ("scope", "all"))]), ("有声书（文件夹）", std), (f"音声 · NSFW（{len(nsfw)} 段）", nsfw)]
+        data = self._pick("选择音声", "搜索文件夹 / 音声标题", groups, current)
+        if not data:
+            return
+        if data[0] == "scope":
+            s.set_audio_scope(data[1], user=True)
+        else:
+            s.pick_track(data[1], data[2])
 
     def _delete_track(self):
         """⋯ → 移到回收站：焦点屏正在放的这段音声。"""
@@ -928,10 +992,8 @@ class NativeMatrixPlayerWidget(QWidget):
         channels = mx.get_channels()
         self.audio_scopes = mx.get_audio_scopes()
         self._channels = channels
-        self.combo.clear()
-        for ch in channels:
-            label = ch["label"] if ch.get("group") == "常用" else f"[{ch.get('group')}] {ch['label']}"
-            self.combo.addItem(label, ch["id"])
+        self._channel_labels = {ch["id"]: ch["label"] if ch.get("group") == "常用" else f"[{ch.get('group')}] {ch['label']}"
+                                for ch in channels}
         ids = {ch["id"] for ch in channels}
         scope_ids = {x["id"] for x in self.audio_scopes}
         for s, s_cfg in zip(self.slots, cfg["slots"]):
