@@ -1,7 +1,7 @@
 """短视频多联放映：频道聚合、频道视频列表、槽位配置持久化。
 
-视频数据全部复用 shortvideo 模块的扫描缓存（scan_shortvideo_library），这里只做筛选与
-拼装；平台清单同样来自 manifest 里 module=shortvideo 的分区，新增平台不用改这里。
+视频数据全部复用 shortvideo 模块的扫描缓存（scan_shortvideo_library），音声（每屏可用来
+代替视频原声）复用 audio 模块的扫描；这里只做筛选与拼装；平台清单同样来自 manifest 里 module=shortvideo 的分区，新增平台不用改这里。
 图集作品（kind == 'images'）没有视频流，一律排除。
 """
 import json
@@ -11,6 +11,7 @@ import threading
 from typing import Any, Dict, List, Optional
 
 from omni.core import paths
+from omni.features.audio import service as audio
 from omni.features.shortvideo import service as sv
 
 _LOCK = threading.RLock()
@@ -92,6 +93,48 @@ def resolve_file(it: Dict[str, Any]) -> Optional[str]:
     return p if p and os.path.isfile(p) else None
 
 
+# ---------------- 音声（代替视频原声） ----------------
+#
+# 音声多是一段段的零碎文件，不按单个文件挑，只选范围：全部 / 某个专辑。范围 id：
+#   all                    全部音声
+#   std:<专辑> / nsfw:<专辑>  某个专辑（常规区、NSFW 区分开，同名专辑不混）
+
+def _audio_items() -> List[Dict[str, Any]]:
+    return audio.scan_audio_library(False) + audio.scan_audio_library(True)
+
+
+def _scope_id(it: Dict[str, Any]) -> str:
+    return f"{'nsfw' if it.get('is_nsfw') else 'std'}:{it.get('album') or ''}"
+
+
+def get_audio_scopes() -> List[Dict[str, Any]]:
+    """可选的音声范围，按专辑内条数从多到少。"""
+    items = _audio_items()
+    counts: Dict[str, int] = {}
+    for it in items:
+        counts[_scope_id(it)] = counts.get(_scope_id(it), 0) + 1
+    scopes = [{"id": "all", "label": "全部音声", "count": len(items)}]
+    for sid, n in sorted(counts.items(), key=lambda x: -x[1]):
+        scopes.append({"id": sid, "label": sid.split(":", 1)[1] or "未分类", "count": n})
+    return scopes
+
+
+def get_audio_tracks(scope: str) -> List[Dict[str, Any]]:
+    """范围 → 音声列表（按专辑、文件名自然序；随机由播放器自己洗）。"""
+    items = _audio_items()
+    return items if scope == "all" else [it for it in items if _scope_id(it) == scope]
+
+
+def public_track(it: Dict[str, Any]) -> Dict[str, Any]:
+    """下发给网页的字段（不含本机绝对路径）。"""
+    return {"title": it.get("title"), "album": it.get("album"), "stream_url": it.get("stream_url")}
+
+
+def resolve_track(it: Dict[str, Any]) -> Optional[str]:
+    p = it.get("path")
+    return p if p and os.path.isfile(p) else None
+
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "layout": 3,
     "focus_audio": True,   # 焦点出声：没手动静音的屏里，只有鼠标所在/点中的那一屏出声
@@ -99,13 +142,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
               {"channel_id": "all", "shuffle": True, "muted": True},
               {"channel_id": "all", "shuffle": True, "muted": True}],
 }
+# 每屏的声音设置：sound = video（视频原声）| audio（音声代替原声）；音声范围与是否随机
+SLOT_SOUND_DEFAULTS = {"sound": "video", "audio_scope": "all", "audio_shuffle": True}
 
 
 def _clean_slot(s: Dict[str, Any]) -> Dict[str, Any]:
     cid = str(s.get("channel_id") or "all")
     return {"channel_id": "all" if cid == "random" else cid,
             "shuffle": bool(s.get("shuffle", cid == "random")),
-            "muted": bool(s.get("muted", False))}
+            "muted": bool(s.get("muted", False)),
+            "sound": "audio" if s.get("sound") == "audio" else "video",
+            "audio_scope": str(s.get("audio_scope") or "all"),
+            "audio_shuffle": bool(s.get("audio_shuffle", True))}
 
 
 def load_config() -> Dict[str, Any]:

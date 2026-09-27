@@ -7,7 +7,7 @@ api = Api("shortvideo-matrix")
 
 @api.get("/api/shortvideo_matrix/channels")
 def channels(req):
-    return req.json({"status": "ok", "channels": mx.get_channels()})
+    return req.json({"status": "ok", "channels": mx.get_channels(), "audio_scopes": mx.get_audio_scopes()})
 
 
 @api.get("/api/shortvideo_matrix/videos")
@@ -21,6 +21,12 @@ def videos(req):
     vids = mx.get_channel_videos(cid, int(seed) if seed and seed.isdigit() else None)
     return req.json({"status": "ok", "channel_id": cid, "total": len(vids), "offset": offset,
                      "videos": [mx.public_item(it) for it in vids[offset:offset + limit]]})
+
+
+@api.get("/api/shortvideo_matrix/audio")
+def audio_tracks(req):
+    """某个音声范围的全部条目（每条只有标题和播放地址，两千来条也就几百 KB，不分页）。"""
+    return req.json({"status": "ok", "tracks": [mx.public_track(it) for it in mx.get_audio_tracks(req.arg("scope", "all"))]})
 
 
 @api.get("/api/shortvideo_matrix/config")

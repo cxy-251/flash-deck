@@ -4,14 +4,18 @@
 //   其它浏览器 → 网页版，三个 <video> 槽位由 SLOT_TEMPLATE 生成。
 // 设置只有后端一份（/api/shortvideo_matrix/config），两边播放中改的也写回去，下次打开设置页就是最新的。
 // 声音 = 手动静音 OR（焦点出声 且 不是焦点屏）：手动静音的屏永远不出声，焦点出声只在没静音的屏之间挑。
+// 每屏的声音可换成「音声」分区的音频（🎬/🎧）：一个隐藏的 <audio>，跟视频各播各的；
+// 这一屏听不到或视频被暂停时音声暂停，回来接着放。音声只选范围（全部 / 专辑），不挑单个文件。
 
 const MATRIX_SLOTS = 3;
 const MATRIX_PAGE = 300;   // 频道视频分页取（抖音全部动辄两万多条）
 let matrixChannels = null;
+let matrixAudioScopes = [];
 let matrixConfig = null;   // {layout, focus_audio, slots: [{channel_id, shuffle, muted}]}
 let matrixWebPlaying = false;
 let matrixActiveSlot = 0;
-const webSlots = Array.from({ length: MATRIX_SLOTS }, () => ({ total: 0, base: 0, page: [], cur: 0, seed: 0, singleLoop: false, skips: 0 }));
+const webSlots = Array.from({ length: MATRIX_SLOTS }, () => ({ total: 0, base: 0, page: [], cur: 0, seed: 0, singleLoop: false, skips: 0,
+    userPaused: false, tracks: [], aorder: [], apos: 0, askips: 0 }));
 
 const matrixEl = (name, i) => document.getElementById(`matrix-${name}-${i}`);
 const matrixIsNative = () => Boolean(window.omniBridge && typeof window.omniBridge.openMatrixPlayer === 'function');
@@ -44,6 +48,16 @@ function filterMatrixSelect(input, selectId, onPick) {
 const SEARCH_BOX = (selectId, onPick) =>
     `<input class="matrix-channel-search" type="search" placeholder="🔍 主播" oninput="filterMatrixSelect(this, '${selectId}', ${onPick})" onclick="event.stopPropagation()">`;
 
+function matrixScopeLabel(id) {
+    const sc = matrixAudioScopes.find(x => x.id === id) || matrixAudioScopes[0];
+    return sc ? `📁 ${sc.label} (${sc.count})` : '📁 全部音声';
+}
+
+function matrixNextScope(id) {
+    const ids = matrixAudioScopes.map(x => x.id);
+    return ids.length ? ids[(ids.indexOf(id) + 1) % ids.length] : 'all';
+}
+
 // ---------------- 设置页 ----------------
 
 async function showMatrixSetup() {
@@ -54,7 +68,7 @@ async function showMatrixSetup() {
             matrixChannels ? null : fetch('/api/shortvideo_matrix/channels').then(r => r.json()),
             fetch('/api/shortvideo_matrix/config').then(r => r.json()),
         ]);
-        if (ch) matrixChannels = ch.channels || [];
+        if (ch) { matrixChannels = ch.channels || []; matrixAudioScopes = ch.audio_scopes || []; }
         matrixConfig = cfg.config;
     } catch (e) {
         document.getElementById('matrix-setup-rows').textContent = '频道加载失败，稍后再切回这个分区试试';
@@ -71,11 +85,33 @@ function renderMatrixSetup() {
             <select id="matrix-setup-select-${i}" class="matrix-channel-select" onchange="matrixConfig.slots[${i}].channel_id = this.value">${matrixChannelOptions(s.channel_id)}</select>
             <label><input type="checkbox" ${s.shuffle ? 'checked' : ''} onchange="matrixConfig.slots[${i}].shuffle = this.checked"> 🔀 随机</label>
             <label><input type="checkbox" ${s.muted ? 'checked' : ''} onchange="matrixConfig.slots[${i}].muted = this.checked"> 🔇 静音</label>
+            <div class="matrix-btn-group">
+                <button id="matrix-setup-snd-video-${i}" class="matrix-tab-btn" onclick="setMatrixSetupSound(${i}, 'video')">🎬 原声</button>
+                <button id="matrix-setup-snd-audio-${i}" class="matrix-tab-btn" onclick="setMatrixSetupSound(${i}, 'audio')">🎧 音声</button>
+            </div>
+            <span id="matrix-setup-audio-${i}" class="matrix-setup-audio">
+                <button class="matrix-tab-btn matrix-scope-btn" id="matrix-setup-scope-${i}" onclick="cycleMatrixSetupScope(${i})" title="点击切到下一个专辑"></button>
+                <button class="matrix-tab-btn" id="matrix-setup-ashuffle-${i}" onclick="toggleMatrixSetupAShuffle(${i})" title="音声随机顺序">🔀</button>
+            </span>
         </div>`).join('');
+    matrixConfig.slots.forEach((_, i) => updateMatrixSetupSound(i));
     setMatrixSetupLayout(matrixConfig.layout);
     document.getElementById('matrix-setup-focus').checked = matrixConfig.focus_audio;
     document.getElementById('matrix-start-btn').disabled = false;
 }
+
+function updateMatrixSetupSound(i) {
+    const s = matrixConfig.slots[i];
+    document.getElementById(`matrix-setup-snd-video-${i}`).classList.toggle('active', s.sound !== 'audio');
+    document.getElementById(`matrix-setup-snd-audio-${i}`).classList.toggle('active', s.sound === 'audio');
+    document.getElementById(`matrix-setup-audio-${i}`).style.display = s.sound === 'audio' ? 'flex' : 'none';
+    document.getElementById(`matrix-setup-scope-${i}`).textContent = matrixScopeLabel(s.audio_scope);
+    document.getElementById(`matrix-setup-ashuffle-${i}`).classList.toggle('active', s.audio_shuffle);
+}
+
+function setMatrixSetupSound(i, sound) { matrixConfig.slots[i].sound = sound; updateMatrixSetupSound(i); }
+function cycleMatrixSetupScope(i) { const s = matrixConfig.slots[i]; s.audio_scope = matrixNextScope(s.audio_scope); updateMatrixSetupSound(i); }
+function toggleMatrixSetupAShuffle(i) { const s = matrixConfig.slots[i]; s.audio_shuffle = !s.audio_shuffle; updateMatrixSetupSound(i); }
 
 function setMatrixSetupLayout(n) {
     matrixConfig.layout = n === 2 ? 2 : 3;
@@ -123,6 +159,21 @@ const SLOT_TEMPLATE = (i) => `
             <button class="matrix-tool-btn" id="matrix-shuffle-btn-${i}" onclick="toggleWebSlotShuffle(${i})" title="随机顺序">🔀</button>
             <button class="matrix-tool-btn" id="matrix-loop-btn-${i}" onclick="toggleWebSlotLoop(${i})" title="列表循环">🔁</button>
             <button class="matrix-tool-btn" id="matrix-mute-btn-${i}" onclick="toggleWebSlotMute(${i})" title="静音">🔊</button>
+            <button class="matrix-tool-btn matrix-sound-btn" id="matrix-sound-btn-${i}" onclick="toggleWebSlotSound(${i})">🎬</button>
+        </div>
+        <div class="matrix-audio-bar" id="matrix-abar-${i}" style="display:none;">
+            <div class="matrix-audio-row">
+                <span id="matrix-atitle-${i}" class="matrix-audio-title"></span>
+                <span id="matrix-atime-${i}" class="matrix-slot-count">0:00 / 0:00</span>
+            </div>
+            <div class="matrix-audio-row">
+                <button class="matrix-tool-btn" onclick="astepWebSlot(${i}, -1)" title="上一段音声">⏮</button>
+                <button class="matrix-tool-btn" onclick="astepWebSlot(${i}, 1)" title="下一段音声">⏭</button>
+                <button class="matrix-tool-btn" id="matrix-ashuffle-btn-${i}" onclick="toggleWebSlotAShuffle(${i})" title="音声随机顺序">🔀</button>
+                <button class="matrix-tool-btn matrix-scope-btn" id="matrix-scope-btn-${i}" onclick="cycleWebSlotScope(${i})" title="点击切到下一个专辑"></button>
+                <input type="range" id="matrix-aseek-${i}" class="matrix-audio-seek" min="0" max="1000" value="0">
+            </div>
+            <audio id="matrix-audio-${i}" preload="none"></audio>
         </div>
     </div>`;
 
@@ -138,7 +189,7 @@ function startWebMatrix() {
         v.onended = () => slot.singleLoop ? (v.currentTime = 0, v.play().catch(() => {})) : stepWebSlot(i, 1);
         v.onplay = () => { matrixEl('play-btn', i).textContent = '⏸'; };
         v.onpause = () => { matrixEl('play-btn', i).textContent = '▶'; };
-        v.onplaying = () => { slot.skips = 0; };
+        v.onplaying = () => { slot.skips = 0; if (matrixConfig.slots[i].sound === 'audio') applyWebMatrixAudio(); };
         // 扫描时没拿到宽高的，等浏览器解出尺寸再判：横屏就跳过（不算坏片）
         v.onloadedmetadata = () => { if (slot.checkOrientation && v.videoWidth > v.videoHeight) stepWebSlot(i, 1); };
         // 放不了就跳下一条；连续 5 条都不行就停，别在坏列表上无限空转
@@ -150,6 +201,11 @@ function startWebMatrix() {
         matrixEl('select', i).innerHTML = matrixChannelOptions(cfg.channel_id);
         matrixEl('shuffle-btn', i).classList.toggle('active', cfg.shuffle);
         slot.seed = matrixNewSeed();
+        slot.userPaused = false;
+        bindWebSlotAudio(i);
+        slot.tracks = [];
+        updateWebSlotSoundUI(i);
+        if (cfg.sound === 'audio') loadWebSlotTracks(i);
     });
     setWebMatrixLayout(matrixConfig.layout);
     document.getElementById('matrix-web-focus').classList.toggle('active', matrixConfig.focus_audio);
@@ -159,7 +215,9 @@ function startWebMatrix() {
 
 function stopWebMatrix() {
     matrixWebPlaying = false;
-    webSlots.forEach((_, i) => { const v = matrixEl('video', i); if (v) { v.pause(); v.removeAttribute('src'); v.load(); } });
+    webSlots.forEach((_, i) => {
+        for (const el of [matrixEl('video', i), matrixEl('audio', i)]) if (el) { el.pause(); el.removeAttribute('src'); el.load(); }
+    });
     showMatrixSetup();
 }
 
@@ -228,9 +286,16 @@ function stepWebSlot(i, delta) {
     playWebSlot(i);
 }
 
-function toggleWebSlotPlay(i) {
+// 暂停/继续这一屏：视频和音声一起
+function setWebSlotPaused(i, paused) {
     const v = matrixEl('video', i);
-    if (v.paused) v.play().catch(() => {}); else v.pause();
+    webSlots[i].userPaused = paused;
+    if (paused) v.pause(); else if (v.getAttribute('src')) v.play().catch(() => {});
+    applyWebMatrixAudio();
+}
+
+function toggleWebSlotPlay(i) {
+    setWebSlotPaused(i, !matrixEl('video', i).paused);
 }
 
 // 切随机/顺序：当前这条接着放，之后按新顺序从头走（换了 seed，已取的那页作废）
@@ -250,17 +315,135 @@ function toggleWebSlotLoop(i) {
     btn.title = slot.singleLoop ? '单片循环' : '列表循环';
 }
 
-// 静音挂在 <video> 元素上，换 src 不会重置，下一条照样静音
+// 静音挂在 <video> 元素上，换 src 不会重置，下一条照样静音。
+// 用音声的屏：视频一直静音，音声按「听得到 且 没暂停」放 / 停。
 function applyWebMatrixAudio() {
-    webSlots.forEach((_, i) => {
-        const v = matrixEl('video', i), btn = matrixEl('mute-btn', i);
+    webSlots.forEach((slot, i) => {
+        const v = matrixEl('video', i), btn = matrixEl('mute-btn', i), a = matrixEl('audio', i);
         if (!v) return;
-        const userMuted = matrixConfig.slots[i].muted;
+        const cfg = matrixConfig.slots[i];
+        const userMuted = cfg.muted;
         const focusSilenced = matrixConfig.focus_audio && i !== matrixActiveSlot;
-        v.muted = userMuted || focusSilenced;
+        const heard = !userMuted && !focusSilenced && i < matrixConfig.layout;
+        if (cfg.sound === 'audio') {
+            v.muted = true;
+            if (heard && !slot.userPaused && v.getAttribute('src') && slot.tracks.length) {
+                if (!a.getAttribute('src')) loadWebSlotTrack(i);
+                a.play().catch(() => {});
+            } else {
+                a.pause();
+            }
+        } else {
+            v.muted = !heard;
+            a.pause();
+        }
         btn.textContent = userMuted ? '🔇' : focusSilenced ? '🔈' : '🔊';
         btn.title = userMuted ? '已静音（点击恢复）' : focusSilenced ? '焦点出声：鼠标移到这一屏才出声（点击改为静音）' : '静音';
     });
+}
+
+// ---------------- 音声（代替视频原声） ----------------
+
+function bindWebSlotAudio(i) {
+    const slot = webSlots[i], a = matrixEl('audio', i), seek = matrixEl('aseek', i);
+    const fmt = (t) => { t = Math.floor(t || 0); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+    let seeking = false;
+    a.onended = () => astepWebSlot(i, 1, false);
+    a.onplaying = () => { slot.askips = 0; };
+    a.onerror = () => {
+        if (!a.getAttribute('src')) return;
+        if (++slot.askips > Math.min(5, slot.tracks.length)) { matrixEl('atitle', i).textContent = '连续多段音声无法播放，已停止'; return; }
+        setTimeout(() => astepWebSlot(i, 1, false), 300);
+    };
+    a.ontimeupdate = () => {
+        matrixEl('atime', i).textContent = `${fmt(a.currentTime)} / ${fmt(a.duration)}`;
+        if (!seeking && a.duration) seek.value = Math.round(a.currentTime / a.duration * 1000);
+    };
+    seek.oninput = () => { seeking = true; };
+    seek.onchange = () => { seeking = false; if (a.duration) a.currentTime = seek.value / 1000 * a.duration; };
+}
+
+function updateWebSlotSoundUI(i) {
+    const cfg = matrixConfig.slots[i], audio = cfg.sound === 'audio';
+    const btn = matrixEl('sound-btn', i);
+    btn.textContent = audio ? '🎧' : '🎬';
+    btn.title = audio ? '声音：音声（点击换回视频原声）' : '声音：视频原声（点击换成音声）';
+    btn.classList.toggle('active', audio);
+    matrixEl('abar', i).style.display = audio ? 'flex' : 'none';
+    matrixEl('ashuffle-btn', i).classList.toggle('active', cfg.audio_shuffle);
+    matrixEl('scope-btn', i).textContent = matrixScopeLabel(cfg.audio_scope);
+}
+
+function loadWebSlotTracks(i) {
+    const slot = webSlots[i], scope = matrixConfig.slots[i].audio_scope, a = matrixEl('audio', i);
+    a.pause();
+    a.removeAttribute('src');
+    fetch(`/api/shortvideo_matrix/audio?scope=${encodeURIComponent(scope)}`).then(r => r.json()).then(res => {
+        if (matrixConfig.slots[i].audio_scope !== scope) return;
+        slot.tracks = res.tracks || [];
+        makeWebSlotAOrder(i);
+        slot.apos = 0;
+        slot.askips = 0;
+        matrixEl('atitle', i).textContent = slot.tracks.length ? '' : '这个范围没有音声';
+        applyWebMatrixAudio();
+    }).catch(e => console.warn(`[Matrix] 屏 ${i + 1} 音声列表加载失败`, e));
+}
+
+function makeWebSlotAOrder(i) {
+    const slot = webSlots[i];
+    slot.aorder = slot.tracks.map((_, k) => k);
+    if (matrixConfig.slots[i].audio_shuffle) {
+        for (let k = slot.aorder.length - 1; k > 0; k--) {
+            const j = Math.floor(Math.random() * (k + 1));
+            [slot.aorder[k], slot.aorder[j]] = [slot.aorder[j], slot.aorder[k]];
+        }
+    }
+}
+
+function loadWebSlotTrack(i) {
+    const slot = webSlots[i], it = slot.tracks[slot.aorder[slot.apos]];
+    matrixEl('atitle', i).textContent = `🎧 ${it.title}`;
+    matrixEl('atitle', i).title = `${it.album} / ${it.title}`;
+    matrixEl('audio', i).src = it.stream_url;
+}
+
+function astepWebSlot(i, delta, manual = true) {
+    const slot = webSlots[i];
+    if (!slot.tracks.length) return;
+    if (manual) slot.askips = 0;
+    slot.apos = (slot.apos + delta + slot.tracks.length) % slot.tracks.length;
+    loadWebSlotTrack(i);
+    applyWebMatrixAudio();
+}
+
+function toggleWebSlotSound(i) {
+    const cfg = matrixConfig.slots[i];
+    cfg.sound = cfg.sound === 'audio' ? 'video' : 'audio';
+    updateWebSlotSoundUI(i);
+    if (cfg.sound === 'audio' && !webSlots[i].tracks.length) loadWebSlotTracks(i);
+    applyWebMatrixAudio();
+    saveMatrixConfig();
+}
+
+function cycleWebSlotScope(i) {
+    const cfg = matrixConfig.slots[i];
+    cfg.audio_scope = matrixNextScope(cfg.audio_scope);
+    updateWebSlotSoundUI(i);
+    loadWebSlotTracks(i);
+    saveMatrixConfig();
+}
+
+// 切随机/顺序：当前这段接着放，只重排后面的
+function toggleWebSlotAShuffle(i) {
+    const cfg = matrixConfig.slots[i], slot = webSlots[i];
+    cfg.audio_shuffle = !cfg.audio_shuffle;
+    updateWebSlotSoundUI(i);
+    if (slot.tracks.length) {
+        const current = slot.aorder[slot.apos];
+        makeWebSlotAOrder(i);
+        slot.apos = slot.aorder.indexOf(current);
+    }
+    saveMatrixConfig();
 }
 
 function toggleWebSlotMute(i) {
@@ -291,6 +474,7 @@ function setWebMatrixLayout(cols, save) {
     const v = matrixEl('video', 2);
     if (matrixConfig.layout === 2) {
         v.pause();
+        matrixEl('audio', 2).pause();
         if (matrixActiveSlot === 2) activateWebSlot(0);
     } else if (save) {
         if (webSlots[2].total) v.play().catch(() => {}); else loadWebSlotChannel(2);
@@ -299,9 +483,9 @@ function setWebMatrixLayout(cols, save) {
 }
 
 function toggleWebMatrixAllPlay() {
-    const vids = webSlots.slice(0, matrixConfig.layout).map((_, i) => matrixEl('video', i));
-    const anyPlaying = vids.some(v => !v.paused);
-    vids.forEach(v => { if (anyPlaying) v.pause(); else if (v.getAttribute('src')) v.play().catch(() => {}); });
+    const n = matrixConfig.layout;
+    const anyPlaying = webSlots.slice(0, n).some((_, i) => !matrixEl('video', i).paused);
+    for (let i = 0; i < n; i++) setWebSlotPaused(i, anyPlaying);
 }
 
 Omni.register('shortvideo_matrix', {
@@ -310,13 +494,16 @@ Omni.register('shortvideo_matrix', {
         const subStats = document.getElementById('media-sub-stats');
         if (subStats) subStats.textContent = '2 / 3 屏并排 · 每屏独立选频道 / 随机 / 静音 · 焦点出声';
         if (matrixWebPlaying) {   // 网页版播到一半切走又切回来：接着放
-            for (let i = 0; i < matrixConfig.layout; i++) if (matrixEl('video', i).getAttribute('src')) matrixEl('video', i).play().catch(() => {});
+            for (let i = 0; i < matrixConfig.layout; i++) {
+                if (!webSlots[i].userPaused && matrixEl('video', i).getAttribute('src')) matrixEl('video', i).play().catch(() => {});
+            }
+            applyWebMatrixAudio();
         } else {
             showMatrixSetup();
         }
     },
     deactivate() {
         if (window.omniBridge && typeof window.omniBridge.closeMatrixPlayer === 'function') window.omniBridge.closeMatrixPlayer();
-        if (matrixWebPlaying) webSlots.forEach((_, i) => matrixEl('video', i).pause());
+        if (matrixWebPlaying) webSlots.forEach((_, i) => { matrixEl('video', i).pause(); matrixEl('audio', i).pause(); });
     },
 });

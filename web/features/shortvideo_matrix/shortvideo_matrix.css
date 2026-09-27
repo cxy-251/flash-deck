@@ -12,7 +12,7 @@
 .matrix-setup { display: flex; justify-content: center; padding-top: 24px; }
 .matrix-setup-card {
     width: 100%;
-    max-width: 760px;
+    max-width: 960px;
     background: #161b22;
     border: 1px solid #30363d;
     border-radius: 12px;
@@ -26,6 +26,7 @@
 .matrix-setup-rows { display: flex; flex-direction: column; gap: 10px; color: #8b949e; font-size: 13px; }
 .matrix-setup-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 12px;
     padding: 10px 12px;
@@ -243,3 +244,19 @@
 }
 .matrix-channel-search:focus { border-color: #58a6ff; }
 .matrix-setup-row .matrix-channel-search { width: 130px; font-size: 13px; padding: 6px 8px; }
+
+/* 音声（代替视频原声） */
+.matrix-setup-audio { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.matrix-scope-btn { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.matrix-sound-btn { margin-left: auto; }
+.matrix-audio-bar {
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 8px 6px;
+    background: #10151c;
+    border-top: 1px solid #22272e;
+}
+.matrix-audio-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.matrix-audio-title { flex: 1; min-width: 0; font-size: 11px; color: #d2a8ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.matrix-audio-bar .matrix-scope-btn { flex: 0 1 auto; min-width: 0; font-size: 11px; }
+.matrix-audio-seek { flex: 1; min-width: 40px; accent-color: #d2a8ff; }

@@ -57,6 +57,11 @@ STEPS.append(("media-shortvideo-matrix-search",
 STEPS.append(("media-shortvideo-matrix-play", "startMatrix()", 15000,
               "(function(){ const t = [0,1,2].map(i => (document.getElementById('matrix-count-' + i) || {}).textContent); "
               "return [t.some(x => x && x !== '0/0'), 'counts=' + t.join(',')]; })()"))
+STEPS.append(("media-shortvideo-matrix-audio",
+              "activateWebSlot(1); if (matrixConfig.slots[1].muted) toggleWebSlotMute(1); if (matrixConfig.slots[1].sound !== 'audio') toggleWebSlotSound(1)", 10000,
+              "(function(){ const a = document.getElementById('matrix-audio-1'); "
+              "return [webSlots[1].tracks.length > 0 && !!a.getAttribute('src') && document.getElementById('matrix-video-1').muted, "
+              "'tracks=' + webSlots[1].tracks.length + ' ' + document.getElementById('matrix-atitle-1').textContent]; })()"))
 STEPS.append(("privacy-modal", "openNsfwModal()", 3000,
               "[document.getElementById('nsfw-lock-modal').style.display === 'flex', 'nsfw modal']"))
 STEPS.append(("library-picker", "closeNsfwModal(); openLibraryPicker('library-add-path')", 8000,
