@@ -45,7 +45,7 @@ for tab in MEDIA:
                   f"return [!!v && v.style.display === 'block' && v.innerText.trim().length > 20, "
                   f"'badge=' + document.getElementById('total-badge').textContent + ' | stats=' + document.getElementById('media-sub-stats').textContent]; }})()"))
 STEPS.append(("media-shortvideo-matrix-setup",
-              "switchMediaTab('shortvideo-matrix', document.getElementById('media-tab-shortvideo-matrix'))", 15000,
+              "switchMediaTab('shortvideo-matrix', document.getElementById('media-tab-shortvideo-matrix'))", 30000,   # 冷启动要现扫短视频+音声库
               "(function(){ const n = document.querySelectorAll('#matrix-setup-select-0 option').length; "
               "const playing = document.getElementById('matrix-web-container').style.display !== 'none'; "
               "return [n > 0 && !playing, 'channels=' + n + ' 未自动开播=' + !playing]; })()"))
@@ -55,13 +55,13 @@ STEPS.append(("media-shortvideo-matrix-search",
               "(function(){ const o = [...document.querySelectorAll('#matrix-setup-select-1 option')]; "
               "return [o.length <= 3 && o.length >= 1, 'options=' + o.length + ' -> ' + o.map(x => x.textContent).join(' | ')]; })()"))
 STEPS.append(("media-shortvideo-matrix-play", "startMatrix()", 15000,
-              "(function(){ const t = [0,1,2].map(i => (document.getElementById('matrix-count-' + i) || {}).textContent); "
-              "return [t.some(x => x && x !== '0/0'), 'counts=' + t.join(',')]; })()"))
+              "(function(){ const t = webSlots.map(s => s.cur + 1 + '/' + s.total); "
+              "return [webSlots.some(s => s.total > 0), 'counts=' + t.join(',')]; })()"))
 STEPS.append(("media-shortvideo-matrix-audio",
-              "activateWebSlot(1); if (matrixConfig.slots[1].muted) toggleWebSlotMute(1); if (matrixConfig.slots[1].sound !== 'audio') toggleWebSlotSound(1)", 10000,
+              "activateWebSlot(1); if (matrixConfig.slots[1].muted) barToggleMute(); if (matrixConfig.slots[1].sound !== 'audio') barToggleSound()", 10000,
               "(function(){ const a = document.getElementById('matrix-audio-1'); "
               "return [webSlots[1].tracks.length > 0 && !!a.getAttribute('src') && document.getElementById('matrix-video-1').muted, "
-              "'tracks=' + webSlots[1].tracks.length + ' ' + document.getElementById('matrix-atitle-1').textContent]; })()"))
+              "'tracks=' + webSlots[1].tracks.length + ' ' + document.getElementById('matrix-bar-scope').title.split('\\n')[1]]; })()"))
 STEPS.append(("privacy-modal", "openNsfwModal()", 3000,
               "[document.getElementById('nsfw-lock-modal').style.display === 'flex', 'nsfw modal']"))
 STEPS.append(("library-picker", "closeNsfwModal(); openLibraryPicker('library-add-path')", 8000,

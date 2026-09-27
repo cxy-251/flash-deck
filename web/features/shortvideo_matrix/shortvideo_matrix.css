@@ -59,7 +59,7 @@
 .matrix-web-container {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 200px);   /* 减去大厅顶栏 + 分区标签栏 */
+    height: calc(100vh - 190px);   /* 减去大厅顶栏 + 分区标签栏 */
 }
 
 .matrix-web-topbar {
@@ -260,3 +260,42 @@
 .matrix-audio-title { flex: 1; min-width: 0; font-size: 11px; color: #d2a8ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .matrix-audio-bar .matrix-scope-btn { flex: 0 1 auto; min-width: 0; font-size: 11px; }
 .matrix-audio-seek { flex: 1; min-width: 40px; accent-color: #d2a8ff; }
+
+/* 播放顶栏：焦点屏控制台 */
+.matrix-web-topbar { justify-content: flex-start; gap: 4px; flex-wrap: wrap; padding: 6px 8px; margin-bottom: 8px; }
+.matrix-bar-btn {
+    min-width: 32px;
+    height: 30px;
+    padding: 0 6px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 6px;
+    color: #e6edf3;
+    font-size: 13px;
+    cursor: pointer;
+}
+.matrix-bar-btn:hover { background: rgba(255,255,255,0.18); }
+.matrix-bar-btn.active { background: #1f6feb; border-color: #58a6ff; }
+.matrix-bar-close { background: #b62324; border-color: #da3633; }
+.matrix-bar-sep { width: 1px; height: 22px; background: #30363d; margin: 0 4px; }
+.matrix-bar-tag { color: #58a6ff; font-weight: 700; font-size: 13px; margin-right: 2px; }
+.matrix-bar-select { flex: 0 1 220px; }
+.matrix-bar-spacer { flex: 1; }
+.matrix-bar-audio {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 4px;
+    padding: 2px 6px 2px 2px;
+    background: rgba(210,168,255,0.10);
+    border: 1px solid rgba(210,168,255,0.30);
+    border-radius: 8px;
+}
+.matrix-bar-audio .matrix-bar-btn.active { background: #8957e5; border-color: #d2a8ff; }
+.matrix-bar-audio .matrix-scope-btn { max-width: 150px; text-align: left; }
+.matrix-bar-audio .matrix-audio-seek { width: 110px; flex: none; }
+
+/* 每屏：只剩画面 + 底部细进度线 */
+.matrix-web-slot { border-width: 2px; }
+.matrix-slot-progress { height: 3px; background: #161b22; flex: none; }
+.matrix-slot-progress > div { height: 100%; width: 0; background: #58a6ff; }

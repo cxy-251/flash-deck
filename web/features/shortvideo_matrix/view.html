@@ -22,17 +22,35 @@
 
     <!-- 网页版播放（非本机浏览器）；本机走原生播放器，不用这块 -->
     <div id="matrix-web-container" class="matrix-web-container" style="display:none;">
+        <!-- 顶栏：全局 + 焦点屏控制台（每屏不放控件，画面尽量大） -->
         <div class="matrix-web-topbar">
-            <div class="matrix-web-title">📺 多联放映</div>
-            <div class="matrix-web-controls">
-                <div class="matrix-btn-group">
-                    <button id="matrix-web-layout-2" class="matrix-tab-btn" onclick="setWebMatrixLayout(2, true)">2 屏</button>
-                    <button id="matrix-web-layout-3" class="matrix-tab-btn" onclick="setWebMatrixLayout(3, true)">3 屏</button>
-                </div>
-                <button id="matrix-web-focus" class="matrix-tab-btn" onclick="toggleWebMatrixFocus()" title="开：没静音的屏里只有鼠标所在的那一屏出声">🎯 焦点出声</button>
-                <button class="matrix-tab-btn" onclick="toggleWebMatrixAllPlay()">⏯ 齐播/齐停</button>
-                <button class="matrix-tab-btn" onclick="stopWebMatrix()">✕ 退出</button>
+            <div class="matrix-btn-group">
+                <button id="matrix-web-layout-2" class="matrix-tab-btn" onclick="setWebMatrixLayout(2, true)">2屏</button>
+                <button id="matrix-web-layout-3" class="matrix-tab-btn" onclick="setWebMatrixLayout(3, true)">3屏</button>
             </div>
+            <button id="matrix-web-focus" class="matrix-bar-btn" onclick="toggleWebMatrixFocus()" title="焦点出声：开 = 没静音的屏里只有焦点屏出声">🎯</button>
+            <span class="matrix-bar-sep"></span>
+            <span id="matrix-bar-tag" class="matrix-bar-tag">屏1</span>
+            <input id="matrix-bar-search" class="matrix-channel-search" type="search" placeholder="🔍 主播" oninput="filterMatrixSelect(this, 'matrix-bar-select', barChannel)">
+            <select id="matrix-bar-select" class="matrix-channel-select matrix-bar-select" onchange="barChannel(this.value)"></select>
+            <button class="matrix-bar-btn" onclick="barStep(-1)" title="上一条">⬅</button>
+            <button class="matrix-bar-btn" id="matrix-bar-play" onclick="barTogglePlay()" title="暂停 / 继续">⏸</button>
+            <button class="matrix-bar-btn" onclick="barStep(1)" title="下一条">➡</button>
+            <button class="matrix-bar-btn" id="matrix-bar-shuffle" onclick="barToggleShuffle()" title="视频随机顺序">🔀</button>
+            <button class="matrix-bar-btn" id="matrix-bar-like" onclick="barToggleLike()" title="点赞">🤍</button>
+            <button class="matrix-bar-btn" id="matrix-bar-mute" onclick="barToggleMute()" title="静音">🔊</button>
+            <button class="matrix-bar-btn" id="matrix-bar-sound" onclick="barToggleSound()">🎬</button>
+            <span id="matrix-bar-audio" class="matrix-bar-audio" style="display:none;">
+                <button class="matrix-bar-btn" onclick="astepWebSlot(barSlot(), 1)" title="下一段音声">⏭</button>
+                <button class="matrix-bar-btn" id="matrix-bar-ashuffle" onclick="barToggleAShuffle()" title="音声随机顺序">🔀</button>
+                <button class="matrix-bar-btn matrix-scope-btn" id="matrix-bar-scope" onclick="barCycleScope()"></button>
+                <input type="range" id="matrix-bar-aseek" class="matrix-audio-seek" min="0" max="1000" value="0"
+                       oninput="barASeek(this.value, false)" onchange="barASeek(this.value, true)">
+                <span id="matrix-bar-atime" class="matrix-slot-count">0:00</span>
+            </span>
+            <span class="matrix-bar-spacer"></span>
+            <button class="matrix-bar-btn" onclick="toggleWebMatrixAllPlay()" title="全部 暂停 / 继续">⏯</button>
+            <button class="matrix-bar-btn matrix-bar-close" onclick="stopWebMatrix()" title="退出">✕</button>
         </div>
         <div id="matrix-web-slots" class="matrix-web-slots"></div>
     </div>
