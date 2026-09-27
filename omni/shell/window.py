@@ -289,7 +289,10 @@ class MainWindow(QMainWindow):
         self._cache_timer.start(2 * 60 * 60 * 1000)
 
     def _total_rss_mb(self) -> float:
-        """统计当前进程及其所有子进程的 RSS 内存总和。
+        """统计 Omni Deck 自身（主进程 + QtWebEngine/Chromium 子进程）的 RSS 内存总和。
+
+        只算这些：拉起的游戏也是子进程，缺氧这种一个就 4GB+，算进来会让看门狗误以为
+        Omni Deck 自己涨爆了而自重启——自重启会连带杀掉正在玩的游戏。
 
         Returns:
             float: 总内存占用（MB）；psutil 不可用或出错时返回 0.0。
@@ -297,8 +300,14 @@ class MainWindow(QMainWindow):
         try:
             import psutil
             me = psutil.Process()
-            procs = [me] + me.children(recursive=True)
-            return sum(p.memory_info().rss for p in procs if p.is_running()) / (1024 * 1024)
+            total = me.memory_info().rss
+            for p in me.children(recursive=True):
+                try:
+                    if p.name().startswith("QtWebEngine"):
+                        total += p.memory_info().rss
+                except psutil.Error:   # 统计途中退出的子进程，跳过它，别让整次统计作废
+                    continue
+            return total / (1024 * 1024)
         except Exception:
             return 0.0
 
@@ -316,7 +325,8 @@ class MainWindow(QMainWindow):
         limit_mb = settings.get("mem_restart_mb")
         if rss <= 0 or rss < limit_mb:
             return
-        if getattr(self, 'is_in_game', False):
+        # 独立游戏（缺氧/饥荒等）不会把 is_in_game 置上，单独看 RUNNING_GAME_IDS
+        if getattr(self, 'is_in_game', False) or process.RUNNING_GAME_IDS:
             log("WARN", f"内存 {rss:.0f}MB 超阈值，但正在游戏中，暂缓重启", tag="Mem")
             return
         # 有下载在跑就先不重启（execv 会打断；漫画队列/ MEGA 都能续传，但能等就等）
