@@ -26,13 +26,53 @@ let currentAudioItem = null;
 
 let audioPlayMode = 'list'; // 'list' | 'single' | 'random'
 
-const AUDIO_SPEEDS = [1.0, 1.25, 1.5, 2.0, 0.75];
+// 倍速 / 定时档位与断点续听都以后端为准（omni/features/audio/playback.py，本机原生控件、
+// 多联放映共用同一份）；这里的初值只在 player_spec 还没取回来时顶一下。
+let AUDIO_SPEEDS = [1.0, 1.25, 1.5, 1.75, 2.0, 0.75];
 
 let audioSpeedIdx = 0;
 
 let sleepTimerTimeout = null;
 
-const SLEEP_TIMER_MINS = [0, 15, 30, 60];
+let SLEEP_TIMER_MINS = [0, 15, 30, 45, 60];
+
+let audioPlayerSpecLoaded = null;
+
+function loadAudioPlayerSpec() {
+    if (!audioPlayerSpecLoaded) {
+        audioPlayerSpecLoaded = fetch('/api/audio/player_spec').then(r => r.json()).then(spec => {
+            if (Array.isArray(spec.speeds) && spec.speeds.length) AUDIO_SPEEDS = spec.speeds;
+            if (Array.isArray(spec.sleep_mins) && spec.sleep_mins.length) SLEEP_TIMER_MINS = spec.sleep_mins;
+        }).catch(() => { audioPlayerSpecLoaded = null; });
+    }
+    return audioPlayerSpecLoaded;
+}
+
+// ---- 断点续听：存在服务器上（本机 / 网页 / 多联共用），几秒写一次 ----
+const audioProgressKey = (item) => `${item.is_nsfw ? 'nsfw' : 'std'}:${item.rel_path || item.filename}`;
+
+// 上次听到哪；服务器没有记录时，把以前存在这个浏览器里的旧记录搬过去
+function fetchAudioProgress(item) {
+    const key = audioProgressKey(item);
+    return fetch(`/api/audio/progress?key=${encodeURIComponent(key)}`).then(r => r.json()).then(res => {
+        if (res.pos > 0) return res.pos;
+        const legacyKey = 'omni_audio_pos_' + (item.rel_path || item.filename);
+        let legacy = 0;
+        try { legacy = parseFloat(localStorage.getItem(legacyKey) || '0'); localStorage.removeItem(legacyKey); } catch (e) { /* 读不到就算了 */ }
+        if (legacy > 0) saveAudioProgress(item, legacy, 0);
+        return legacy;
+    }).catch(() => 0);
+}
+
+function saveAudioProgress(item, pos, dur) {
+    return fetch('/api/audio/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: audioProgressKey(item), pos, dur: dur || 0 }),
+    }).catch(() => {});
+}
+
+let audioProgressSavedAt = 0;
 
 let sleepTimerIdx = 0;
 
@@ -360,9 +400,13 @@ function playAudioItem(item) {
         }
     }
 
-    // 恢复历史播放位置 (断点续听) 与元数据加载联动
-    const trackKey = 'omni_audio_pos_' + (item.rel_path || item.filename);
-    const savedPos = parseFloat(localStorage.getItem(trackKey) || '0');
+    // 恢复历史播放位置 (断点续听) 与元数据加载联动：服务器上的记录可能比元数据先到或后到，两边都试
+    let savedPos = 0;
+    const seekToSaved = () => {
+        const totalSecs = (audioEl.duration && !isNaN(audioEl.duration)) ? audioEl.duration : 0;
+        if (savedPos > 3 && totalSecs && savedPos < totalSecs - 5) { audioEl.currentTime = savedPos; savedPos = 0; }
+    };
+    fetchAudioProgress(item).then(pos => { if (currentAudioItem === item) { savedPos = pos; seekToSaved(); } });
     audioEl.onloadedmetadata = () => {
         const totalSecs = (audioEl.duration && !isNaN(audioEl.duration))
             ? audioEl.duration
@@ -370,9 +414,7 @@ function playAudioItem(item) {
         if (totalTimeEl && totalSecs > 0) {
             totalTimeEl.textContent = formatAudioTime(totalSecs);
         }
-        if (savedPos > 3 && totalSecs && savedPos < totalSecs - 5) {
-            audioEl.currentTime = savedPos;
-        }
+        seekToSaved();
     };
 
     audioEl.play().catch(e => console.log('Autoplay policy:', e));
@@ -694,18 +736,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // 自动记录断点续听位置
-            if (currentAudioItem && audioEl.currentTime > 5) {
-                const trackKey = 'omni_audio_pos_' + (currentAudioItem.rel_path || currentAudioItem.filename);
-                try { localStorage.setItem(trackKey, Math.floor(audioEl.currentTime)); } catch(e) {}
+            // 自动记录断点续听位置（10 秒写一次服务器）
+            if (currentAudioItem && audioEl.currentTime > 5 && Date.now() - audioProgressSavedAt > 10000) {
+                audioProgressSavedAt = Date.now();
+                saveAudioProgress(currentAudioItem, audioEl.currentTime, audioEl.duration);
             }
         };
 
         audioEl.onended = () => {
-            if (currentAudioItem) {
-                const trackKey = 'omni_audio_pos_' + (currentAudioItem.rel_path || currentAudioItem.filename);
-                try { localStorage.removeItem(trackKey); } catch(e) {}
-            }
+            if (currentAudioItem) saveAudioProgress(currentAudioItem, audioEl.duration || 0, audioEl.duration || 0);   // 听完：服务器清掉记录
             if (audioPlayMode === 'single') {
                 audioEl.currentTime = 0;
                 audioEl.play();
@@ -722,12 +761,14 @@ document.addEventListener('DOMContentLoaded', () => {
         audioEl.onpause = () => {
             if (playBtn) playBtn.innerHTML = '▶';
             if (discEl) discEl.classList.remove('spinning');
+            if (currentAudioItem && !audioEl.ended) saveAudioProgress(currentAudioItem, audioEl.currentTime, audioEl.duration);   // 暂停时也记一下
         };
     }
 });
 
 Omni.register('audio', {
     activate() {
+        loadAudioPlayerSpec();
         const subStats = document.getElementById('media-sub-stats');
         const count = totalAudioCount || (localAudioList ? localAudioList.length : 0);
         const label = isAudioNsfw ? '部绅士音声' : '部有声书';

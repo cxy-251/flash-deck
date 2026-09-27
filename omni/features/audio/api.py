@@ -1,6 +1,6 @@
 """音声画廊 API：常规有声书公开可听，NSFW 音声（?nsfw=1）需要解锁；播放走 Range 分段流。"""
 from omni.core.http import Api
-from omni.features.audio import service as audio
+from omni.features.audio import playback, service as audio
 
 api = Api("audio")
 
@@ -49,3 +49,34 @@ def _trash(req):
 
 api.post("/api/audio/trash", deny=LOCKED_POST)(_trash)
 api.post("/api/audio/delete", deny=LOCKED_POST)(_trash)
+
+
+@api.get("/api/audio/player_spec", access="public")
+def player_spec(req):
+    """倍速 / 定时 / 播放模式 / 快退快进 档位（本机原生控件与网页共用一份，见 playback.py）。"""
+    return req.json(playback.spec())
+
+
+def _progress_key(req, key):
+    """NSFW 区的续听记录也要解锁才能读写。"""
+    if key.startswith("nsfw:") and not req.nsfw_ok:
+        return None
+    return key
+
+
+@api.get("/api/audio/progress", access="public")
+def get_progress(req):
+    key = _progress_key(req, req.arg("key"))
+    return req.json({"pos": playback.get_progress(key) if key else 0})
+
+
+@api.post("/api/audio/progress", access="public")
+def set_progress(req):
+    b = req.json_body()
+    key = _progress_key(req, str(b.get("key") or ""))
+    if key:
+        try:
+            playback.set_progress(key, float(b.get("pos") or 0), float(b.get("dur") or 0))
+        except (TypeError, ValueError):
+            return req.json({"status": "error"}, 400)
+    return req.json({"status": "ok"})
