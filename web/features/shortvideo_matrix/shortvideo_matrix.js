@@ -6,6 +6,8 @@
 // 声音 = 手动静音 OR（焦点出声 且 不是焦点屏）：手动静音的屏永远不出声，焦点出声只在没静音的屏之间挑。
 // 每屏的声音可换成「音声」分区的音频（🎬/🎧）：一个隐藏的 <audio>，跟视频各播各的；
 // 这一屏听不到或视频被暂停时音声暂停，回来接着放。音声只选范围（全部 / 专辑），不挑单个文件。
+// 同一次页面生命周期里：⤓ 收起 回到进多联之前的页面（去开游戏等），再点多联标签直接回到播放器；
+// 各屏的频道/顺序/第几条/第几秒都记着，进来一律暂停（按 ⏯ 开播）；⚙ 回设置页，没改过的屏照样接着放。
 
 const MATRIX_SLOTS = 3;
 const MATRIX_PAGE = 300;   // 频道视频分页取（抖音全部动辄两万多条）
@@ -14,6 +16,8 @@ let matrixAudioScopes = [];
 let matrixConfig = null;   // {layout, focus_audio, slots: [{channel_id, shuffle, muted}]}
 let matrixWebPlaying = false;
 let matrixActiveSlot = 0;
+let matrixSessionStarted = false;   // 这次页面里点过「开始播放」：再进分区直接回播放器
+let matrixReturnTo = 'games';        // ⤓ 收起 回到哪：进多联之前的媒体标签，或游戏区
 const webSlots = Array.from({ length: MATRIX_SLOTS }, () => ({ total: 0, base: 0, page: [], cur: 0, seed: 0, singleLoop: false, skips: 0,
     userPaused: false, tracks: [], aorder: [], apos: 0, askips: 0 }));
 
@@ -130,13 +134,23 @@ function saveMatrixConfig() {
 }
 
 async function startMatrix() {
+    matrixSessionStarted = true;
     await saveMatrixConfig();
     if (matrixIsNative()) window.omniBridge.openMatrixPlayer();   // 原生播放器自己读配置
     else startWebMatrix();
 }
 
-// 原生放映点「退出」后 window.py 回调这里：回到设置页，读回播放中改过的设置
-window.onNativeMatrixClosed = function () { showMatrixSetup(); };
+// 回到进多联之前的页面
+function leaveMatrix() {
+    if (matrixReturnTo === 'games' || !document.getElementById(`media-tab-${matrixReturnTo}`)) switchToGamesSection();
+    else switchMediaTab(matrixReturnTo, document.getElementById(`media-tab-${matrixReturnTo}`));
+}
+
+// 原生放映退出后 window.py 回调这里：settings → 设置页（读回播放中改过的设置）；collapse → 回去
+window.onNativeMatrixClosed = function (reason) {
+    if (reason === 'settings') showMatrixSetup();
+    else leaveMatrix();
+};
 
 // ---------------- 网页版播放 ----------------
 // 每屏只有画面 + 底部细进度线；顶栏一套控件，操作的永远是焦点屏（matrixActiveSlot）。
@@ -179,25 +193,43 @@ function startWebMatrix() {
             if (++slot.skips > Math.min(5, slot.total)) { v.title = '连续多条无法播放，已停止'; return; }
             setTimeout(() => stepWebSlot(i, 1), 300);
         };
-        slot.seed = matrixNewSeed();
-        slot.userPaused = false;
-        slot.tracks = [];
+        const cfg = matrixConfig.slots[i];
+        slot.userPaused = true;      // 进来一律暂停，按 ⏯ 开播
         bindWebSlotAudio(i);
-        if (matrixConfig.slots[i].sound === 'audio') loadWebSlotTracks(i);
+        if (slot.session !== `${cfg.channel_id}|${cfg.shuffle}`) { slot.total = 0; slot.seed = matrixNewSeed(); }
+        if (slot.asession !== `${cfg.audio_scope}|${cfg.audio_shuffle}`) { slot.tracks = []; slot.aresumeAt = 0; }
+        if (cfg.sound === 'audio' && !slot.tracks.length) loadWebSlotTracks(i);
     });
     setWebMatrixLayout(matrixConfig.layout);
     document.getElementById('matrix-web-focus').classList.toggle('active', matrixConfig.focus_audio);
     matrixActiveSlot = -1;
     activateWebSlot(0);
-    for (let i = 0; i < matrixConfig.layout; i++) setTimeout(() => loadWebSlotChannel(i), i * 200);
+    for (let i = 0; i < matrixConfig.layout; i++) setTimeout(() => resumeOrLoadWebSlot(i), i * 200);
 }
 
+// 列表还是按同样设置取的（⚙ 回设置页没改这一屏）就接着上次的位置，否则重新取
+function resumeOrLoadWebSlot(i) {
+    if (webSlots[i].total) playWebSlot(i, webSlots[i].resumeAt || 0);
+    else loadWebSlotChannel(i);
+}
+
+// ⚙ 回设置页：记下各屏位置再释放
 function stopWebMatrix() {
     matrixWebPlaying = false;
-    webSlots.forEach((_, i) => {
-        for (const el of [matrixEl('video', i), matrixEl('audio', i)]) if (el) { el.pause(); el.removeAttribute('src'); el.load(); }
+    webSlots.forEach((slot, i) => {
+        const v = matrixEl('video', i), a = matrixEl('audio', i);
+        if (!v) return;
+        slot.resumeAt = v.currentTime;
+        if (a.getAttribute('src')) slot.aresumeAt = a.currentTime;
+        for (const el of [v, a]) { el.pause(); el.removeAttribute('src'); el.load(); }
     });
     showMatrixSetup();
+}
+
+// ⤓ 收起：全部暂停（状态都留着），回到进多联之前的页面
+function collapseWebMatrix() {
+    for (let i = 0; i < MATRIX_SLOTS; i++) if (matrixEl('video', i)) setWebSlotPaused(i, true);
+    leaveMatrix();
 }
 
 // ---- 顶栏：显示焦点屏的状态 ----
@@ -263,7 +295,8 @@ function loadWebSlotChannel(i) {
     fetchWebSlotPage(i, 0)
         .then(res => {
             if (matrixConfig.slots[i].channel_id !== channelId) return;   // 等待期间又换了频道
-            Object.assign(slot, { total: res.total || 0, base: 0, page: res.videos || [], cur: 0, skips: 0 });
+            Object.assign(slot, { total: res.total || 0, base: 0, page: res.videos || [], cur: 0, skips: 0,
+                                  session: `${channelId}|${matrixConfig.slots[i].shuffle}` });
             playWebSlot(i);
         })
         .catch(e => console.warn(`[Matrix] 屏 ${i + 1} 视频列表加载失败`, e));
@@ -276,7 +309,7 @@ function changeWebSlotChannel(i, channelId) {
     loadWebSlotChannel(i);
 }
 
-function playWebSlot(i) {
+function playWebSlot(i, startAt = 0) {
     const slot = webSlots[i];
     const v = matrixEl('video', i);
     if (!slot.total) {
@@ -295,7 +328,7 @@ function playWebSlot(i) {
             if (slot.cur !== cur || slot.seed !== seed) return;
             slot.base = base;
             slot.page = res.videos || [];
-            if (slot.page.length) playWebSlot(i);
+            if (slot.page.length) playWebSlot(i, startAt);
         }).catch(() => {});
         return;
     }
@@ -303,6 +336,7 @@ function playWebSlot(i) {
     v.title = `${it.folder}\n${it.title}`;
     slot.checkOrientation = !it.width;
     v.src = it.stream_url;
+    if (startAt) v.addEventListener('loadedmetadata', () => { v.currentTime = startAt; }, { once: true });
     if (!slot.userPaused) v.play().catch(() => {});
     if (i === matrixActiveSlot) refreshWebBar();
 }
@@ -326,7 +360,7 @@ function setWebSlotPaused(i, paused) {
 function barToggleShuffle() {
     const i = barSlot(), cfg = matrixConfig.slots[i];
     cfg.shuffle = !cfg.shuffle;
-    Object.assign(webSlots[i], { seed: matrixNewSeed(), cur: -1, base: 0, page: [] });
+    Object.assign(webSlots[i], { seed: matrixNewSeed(), cur: -1, base: 0, page: [], session: `${cfg.channel_id}|${cfg.shuffle}` });
     saveMatrixConfig();
     refreshWebBar();
 }
@@ -414,6 +448,8 @@ function loadWebSlotTracks(i) {
     fetch(`/api/shortvideo_matrix/audio?scope=${encodeURIComponent(scope)}`).then(r => r.json()).then(res => {
         if (matrixConfig.slots[i].audio_scope !== scope) return;
         slot.tracks = res.tracks || [];
+        slot.asession = `${scope}|${matrixConfig.slots[i].audio_shuffle}`;
+        slot.aresumeAt = 0;
         makeWebSlotAOrder(i);
         slot.apos = 0;
         slot.askips = 0;
@@ -433,8 +469,11 @@ function makeWebSlotAOrder(i) {
 }
 
 function loadWebSlotTrack(i) {
-    const slot = webSlots[i];
-    matrixEl('audio', i).src = slot.tracks[slot.aorder[slot.apos]].stream_url;
+    const slot = webSlots[i], a = matrixEl('audio', i);
+    a.src = slot.tracks[slot.aorder[slot.apos]].stream_url;
+    const at = slot.aresumeAt;
+    slot.aresumeAt = 0;
+    if (at) a.addEventListener('loadedmetadata', () => { a.currentTime = at; }, { once: true });
 }
 
 function astepWebSlot(i, delta, manual = true) {
@@ -471,6 +510,7 @@ function barToggleAShuffle() {
         makeWebSlotAOrder(i);
         slot.apos = slot.aorder.indexOf(current);
     }
+    slot.asession = `${cfg.audio_scope}|${cfg.audio_shuffle}`;
     refreshWebBar();
     saveMatrixConfig();
 }
@@ -504,17 +544,22 @@ Omni.register('shortvideo_matrix', {
         document.getElementById('total-badge').textContent = '多联放映';
         const subStats = document.getElementById('media-sub-stats');
         if (subStats) subStats.textContent = '2 / 3 屏并排 · 顶栏控制焦点屏 · 焦点出声 · 音声可代替原声';
-        if (matrixWebPlaying) {   // 网页版播到一半切走又切回来：接着放
-            for (let i = 0; i < matrixConfig.layout; i++) {
-                if (!webSlots[i].userPaused && matrixEl('video', i).getAttribute('src')) matrixEl('video', i).play().catch(() => {});
-            }
+        if (typeof mediaTabCameFrom !== 'undefined' && mediaTabCameFrom && mediaTabCameFrom !== 'shortvideo-matrix') {
+            matrixReturnTo = mediaTabCameFrom;
+        }
+        if (matrixWebPlaying) {
+            // 网页版收起 / 切走又回来：各屏停在原处（暂停），按 ⏯ 接着放
+            for (let i = 0; i < MATRIX_SLOTS; i++) webSlots[i].userPaused = true;
             applyWebMatrixAudio();
+        } else if (matrixSessionStarted && matrixIsNative()) {
+            showMatrixSetup();                    // 垫在原生播放器下面，收起时不至于露出空白
+            window.omniBridge.openMatrixPlayer(); // 原生播放器按记住的位置恢复、暂停
         } else {
             showMatrixSetup();
         }
     },
     deactivate() {
         if (window.omniBridge && typeof window.omniBridge.closeMatrixPlayer === 'function') window.omniBridge.closeMatrixPlayer();
-        if (matrixWebPlaying) webSlots.forEach((_, i) => { matrixEl('video', i).pause(); matrixEl('audio', i).pause(); });
+        if (matrixWebPlaying) for (let i = 0; i < MATRIX_SLOTS; i++) setWebSlotPaused(i, true);
     },
 });

@@ -41,6 +41,7 @@ function switchToMediaSection() {
     document.getElementById('list-controls').style.display = 'none';
     document.getElementById('media-section').style.display = 'block';
 
+    mediaEnteredFrom = 'games';
     updateMediaTabUI();
     Omni.each('onMediaEnter');
 }
@@ -62,11 +63,15 @@ function switchMediaTab(tab, btnEl) {
 }
 
 let prevActiveMediaTab = null;
+let mediaEnteredFrom = null;   // switchToMediaSection 标记：这次是从游戏区进来的
+let mediaTabCameFrom = null;   // 进当前标签之前在哪：媒体标签 id，或 'games'（分区用它做「返回」）
 
 function updateMediaTabUI() {
     if (prevActiveMediaTab && prevActiveMediaTab !== activeMediaTab) {
         Omni.call(prevActiveMediaTab, 'deactivate');
     }
+    if (mediaEnteredFrom || prevActiveMediaTab !== activeMediaTab) mediaTabCameFrom = mediaEnteredFrom || prevActiveMediaTab;
+    mediaEnteredFrom = null;
     prevActiveMediaTab = activeMediaTab;
     for (const s of Omni.sections('media')) {
         const view = document.getElementById(`media-${s.id}-view`);

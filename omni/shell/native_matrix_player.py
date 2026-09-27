@@ -18,6 +18,12 @@ native_matrix_player.py - 短视频多联放映（本机原生多路播放）
 （选几屏、每屏的频道/随机/静音/声源，存进 shortvideo_matrix 的配置），点「开始播放」才调
 start_matrix()；这里改动的设置也写回同一份配置，退出后网页设置页看到的就是最新的。
 
+同一个 Omni 进程里退出再进来，每屏接着上次的频道 / 顺序 / 第几条 / 第几秒（音声同理），
+只有在设置页里改了频道或随机的那屏才重新开始；进来时一律是暂停状态，按 ⏯ / 空格 开播。
+退出时解码器和文件照样释放，记住的只是位置。退出有两种（closed 信号带原因给网页）：
+  collapse ⤓ 收起：回到进多联之前的页面（比如去开一局游戏），再点多联标签直接回到播放器；
+  settings ⚙ 设置：回到网页设置页。
+
 键盘（Steam Input 可映射）：1/2/3 选焦点屏，空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
 """
 import random
@@ -103,6 +109,12 @@ class MatrixSlotWidget(QFrame):
         self.user_muted = False          # 这一屏的静音
         self.focus_silenced = False      # 焦点出声模式下不是焦点屏
         self.user_paused = False         # 用户暂停了这一屏（换片时播放器短暂 Stopped 不算）
+        self._seek_on_load = 0           # 恢复进度：片源载入后跳到这里（毫秒）
+        self._aseek_on_load = 0
+        self._resume_ms = 0              # stop() 时记下的位置，下次打开接着放
+        self._aresume_ms = 0
+        self._session: Optional[tuple] = None    # 视频列表是按什么设置取的（频道, 随机）；对不上就重新取
+        self._asession: Optional[tuple] = None   # 音声列表同理（范围, 随机）
 
         # 音声（代替视频原声）
         self.sound = "video"             # video | audio
@@ -208,7 +220,8 @@ class MatrixSlotWidget(QFrame):
             self.audio.setMuted(True)
             if heard and not self.user_paused and not self.player.source().isEmpty() and self.tracks:
                 if self.aplayer.source().isEmpty():
-                    self._load_track()
+                    self._load_track(self._aresume_ms)   # 上次退出时放到的位置（新列表是 0）
+                    self._aresume_ms = 0
                 self.aplayer.play()
             else:
                 self.aplayer.pause()
@@ -255,6 +268,8 @@ class MatrixSlotWidget(QFrame):
     def _load_tracks(self):
         """换范围：重新取列表，从头（或随机的第一段）开始，但只在该出声时才真的播。"""
         self.tracks = mx.get_audio_tracks(self.audio_scope)
+        self._asession = (self.audio_scope, self.audio_shuffle)
+        self._aresume_ms = 0
         self._make_aorder()
         self.apos = 0
         self._askips = 0
@@ -263,8 +278,9 @@ class MatrixSlotWidget(QFrame):
         self._apply_audio()
         self.changed.emit(self.index)
 
-    def _load_track(self):
+    def _load_track(self, start_ms: int = 0):
         path = mx.resolve_track(self.tracks[self.aorder[self.apos]])
+        self._aseek_on_load = start_ms
         if path:
             self.aplayer.setSource(QUrl.fromLocalFile(path))
         else:
@@ -293,7 +309,10 @@ class MatrixSlotWidget(QFrame):
         QTimer.singleShot(300, lambda: self.astep(1, manual=False))
 
     def _on_astatus(self, status):
-        if status == QMediaPlayer.MediaStatus.BufferedMedia:
+        if status == QMediaPlayer.MediaStatus.LoadedMedia and self._aseek_on_load:
+            self.aplayer.setPosition(self._aseek_on_load)
+            self._aseek_on_load = 0
+        elif status == QMediaPlayer.MediaStatus.BufferedMedia:
             self._askips = 0
         elif status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.astep(1, manual=False)
@@ -322,12 +341,22 @@ class MatrixSlotWidget(QFrame):
     def load_channel(self, channel_id: str):
         self.channel_id = channel_id
         self.videos = mx.get_channel_videos(channel_id)
+        self._session = (channel_id, self.shuffle)
+        self._resume_ms = 0
         self._make_order()
         self.pos = 0
         self._skips = 0
         self._play_current()
 
-    def _play_current(self):
+    def resume_or_load(self):
+        """打开放映 / 3 屏切回来：列表还是按同样设置取的就接着上次的位置，否则重新取。"""
+        if self.videos and self._session == (self.channel_id, self.shuffle):
+            self._play_current(self._resume_ms)
+            self._resume_ms = 0
+        else:
+            self.load_channel(self.channel_id)
+
+    def _play_current(self, start_ms: int = 0):
         it = self.current_video()
         if not it:
             self.stop()
@@ -340,8 +369,12 @@ class MatrixSlotWidget(QFrame):
             self._skip_broken()
             return
         self._check_orientation = not it.get("width")   # 扫描时没拿到宽高的，等解码出尺寸再判横竖
+        self._seek_on_load = start_ms
         self.player.setSource(QUrl.fromLocalFile(path))
-        self.player.play()
+        if self.user_paused:
+            self.player.pause()      # 暂停着换片：载入并停在第一帧
+        else:
+            self.player.play()
         self.changed.emit(self.index)
 
     def _skip_broken(self):
@@ -383,7 +416,11 @@ class MatrixSlotWidget(QFrame):
         return bool(it) and sv.is_shortvideo_liked(it["platform"], it["rel_path"])
 
     def stop(self):
-        """停解码并释放文件，隐藏/切换布局/退出时调用。音声的进度也清掉，下次打开从新的一段开始。"""
+        """停解码并释放文件，隐藏/切换布局/退出时调用。先记下位置，下次打开接着放。"""
+        if not self.player.source().isEmpty():
+            self._resume_ms = self.player.position()
+        if not self.aplayer.source().isEmpty():
+            self._aresume_ms = self.aplayer.position()
         self.player.stop()
         self.player.setSource(QUrl())
         self.aplayer.stop()
@@ -399,6 +436,9 @@ class MatrixSlotWidget(QFrame):
     def _on_status(self, status):
         if status == QMediaPlayer.MediaStatus.LoadedMedia:
             self._set_video_audio_track()   # 每换一条视频，音轨选择要重新设
+            if self._seek_on_load:
+                self.player.setPosition(self._seek_on_load)
+                self._seek_on_load = 0
         elif status == QMediaPlayer.MediaStatus.BufferedMedia:
             self._skips = 0          # 真放起来了，坏片计数清零
             if self.sound == "audio" and self.aplayer.source().isEmpty():
@@ -422,7 +462,7 @@ class MatrixSlotWidget(QFrame):
 class NativeMatrixPlayerWidget(QWidget):
     """多联放映全屏容器：顶栏（全局 + 焦点屏控制台）+ 2/3 个等宽并排、没有控件的 MatrixSlotWidget。"""
 
-    closed = pyqtSignal()
+    closed = pyqtSignal(str)             # 退出原因：collapse（收起）| settings（去设置页）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -538,7 +578,9 @@ class NativeMatrixPlayerWidget(QWidget):
         sep()
 
         button("⏯", self.toggle_all_play, "全部 暂停 / 继续")
-        close = button("✕", self.close_matrix, "退出（Esc）")
+        button("⚙", lambda: self.close_matrix("settings"), "回到设置页（改每屏的频道 / 声源等）")
+        close = button("⤓", lambda: self.close_matrix("collapse"),
+                       "收起（Esc）：记住各屏位置，回到进来之前的页面；再点多联标签接着看")
         close.setObjectName("matrixClose")
         root.addWidget(top_bar)
 
@@ -634,7 +676,7 @@ class NativeMatrixPlayerWidget(QWidget):
         else:
             third.show()
             if autoload and third.player.source().isEmpty():
-                third.load_channel(third.channel_id)
+                third.resume_or_load()
         if save:
             self.save_config()
 
@@ -668,8 +710,9 @@ class NativeMatrixPlayerWidget(QWidget):
 
     # ---- 生命周期 ----
     def start_matrix(self):
-        """网页设置页点「开始播放」后调用：按配置填频道、设随机/静音/声源，错峰起播
-        （SD 卡上几路同时 seek 会互相堵）。"""
+        """网页设置页点「开始播放」后调用：按配置填频道、设随机/静音/声源，全部以暂停状态载入
+        （停在当前帧，按 ⏯ / 空格 开播）；错峰载入，SD 卡上几路同时 seek 会互相堵。
+        设置跟这一屏上次放的一样（同一进程里退出再进来）就接着上次的位置。"""
         cfg = mx.load_config()
         channels = mx.get_channels()
         self.audio_scopes = mx.get_audio_scopes()
@@ -681,18 +724,20 @@ class NativeMatrixPlayerWidget(QWidget):
         scope_ids = {x["id"] for x in self.audio_scopes}
         for s, s_cfg in zip(self.slots, cfg["slots"]):
             # 配置里的作者/专辑已经不在了（删光了/改名），退回全部
+            # （直接赋值，不走 set_shuffle：那个会把当前顺序重新洗一遍，恢复进度就对不上了）
             s.channel_id = s_cfg["channel_id"] if s_cfg["channel_id"] in ids else "all"
-            s.set_shuffle(s_cfg["shuffle"])
-            s.user_paused = False
+            s.shuffle = s_cfg["shuffle"]
+            s.user_paused = True
             s.set_muted(s_cfg["muted"])
             s.audio_scope = s_cfg["audio_scope"] if s_cfg["audio_scope"] in scope_ids else "all"
             s.audio_shuffle = s_cfg["audio_shuffle"]
-            s.tracks = []            # 每次打开重新取音声列表（音声库可能变了）
+            if s._asession != (s.audio_scope, s.audio_shuffle):
+                s.tracks = []        # 设置页改过音声范围/随机：重新取
             s.set_sound(s_cfg["sound"])
         self.set_layout_mode(cfg["layout"], autoload=False)
         self.set_focus_audio(cfg["focus_audio"])
         for i, s in enumerate(self.visible_slots()):
-            QTimer.singleShot(i * 200, lambda s=s: s.load_channel(s.channel_id))
+            QTimer.singleShot(i * 200, s.resume_or_load)
         self.activate_slot(0)
         self.setFocus()
 
@@ -711,10 +756,10 @@ class NativeMatrixPlayerWidget(QWidget):
             s.stop()
         self.hide()
 
-    def close_matrix(self):
+    def close_matrix(self, reason: str = "collapse"):
         self.save_config()
         self.stop_and_hide()
-        self.closed.emit()
+        self.closed.emit(reason)
 
     def keyPressEvent(self, event):
         key = event.key()

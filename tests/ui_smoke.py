@@ -58,10 +58,19 @@ STEPS.append(("media-shortvideo-matrix-play", "startMatrix()", 15000,
               "(function(){ const t = webSlots.map(s => s.cur + 1 + '/' + s.total); "
               "return [webSlots.some(s => s.total > 0), 'counts=' + t.join(',')]; })()"))
 STEPS.append(("media-shortvideo-matrix-audio",
-              "activateWebSlot(1); if (matrixConfig.slots[1].muted) barToggleMute(); if (matrixConfig.slots[1].sound !== 'audio') barToggleSound()", 10000,
+              "activateWebSlot(1); setWebSlotPaused(1, false); if (matrixConfig.slots[1].muted) barToggleMute(); if (matrixConfig.slots[1].sound !== 'audio') barToggleSound()", 10000,
               "(function(){ const a = document.getElementById('matrix-audio-1'); "
               "return [webSlots[1].tracks.length > 0 && !!a.getAttribute('src') && document.getElementById('matrix-video-1').muted, "
               "'tracks=' + webSlots[1].tracks.length + ' ' + document.getElementById('matrix-bar-scope').title.split('\\n')[1]]; })()"))
+STEPS.append(("media-shortvideo-matrix-collapse",
+              "window.__mxBefore = webSlots.map(s => s.cur + '/' + s.total).join(','); collapseWebMatrix()", 5000,
+              "[activeMediaTab !== 'shortvideo-matrix', '收起后回到 ' + (activePrimarySection === 'games' ? '游戏区' : activeMediaTab)]"))
+STEPS.append(("media-shortvideo-matrix-return",
+              "if (activePrimarySection !== 'media') switchToMediaSection(); switchMediaTab('shortvideo-matrix', document.getElementById('media-tab-shortvideo-matrix'))", 5000,
+              "(function(){ const shown = document.getElementById('matrix-web-container').style.display !== 'none'; "
+              "const paused = [0,1,2].every(i => document.getElementById('matrix-video-' + i).paused); "
+              "const now = webSlots.map(s => s.cur + '/' + s.total).join(','); "
+              "return [shown && paused && now === window.__mxBefore, '直接回播放器=' + shown + ' 全暂停=' + paused + ' 位置 ' + window.__mxBefore + ' -> ' + now]; })()"))
 STEPS.append(("privacy-modal", "openNsfwModal()", 3000,
               "[document.getElementById('nsfw-lock-modal').style.display === 'flex', 'nsfw modal']"))
 STEPS.append(("library-picker", "closeNsfwModal(); openLibraryPicker('library-add-path')", 8000,

@@ -641,9 +641,11 @@ class MainWindow(QMainWindow):
             self.native_matrix_player.stop_and_hide()
             self.native_matrix_player.hide()
 
-    def _on_native_matrix_closed(self):
+    def _on_native_matrix_closed(self, reason: str):
+        """原生多联放映退出：reason = collapse（收起，网页回到进多联之前的页面）| settings（回设置页）。"""
         self.hide_native_matrix_player()
-        self.webview.page().runJavaScript("if (typeof onNativeMatrixClosed === 'function') onNativeMatrixClosed();")
+        self.webview.page().runJavaScript(
+            f"if (typeof onNativeMatrixClosed === 'function') onNativeMatrixClosed({json.dumps(reason)});")
 
     def on_load_finished(self, ok):
         """网页加载完毕后，若处于游戏状态则自动计算并显示右上角控制胶囊。
