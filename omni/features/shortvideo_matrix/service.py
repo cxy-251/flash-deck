@@ -137,7 +137,7 @@ def resolve_track(it: Dict[str, Any]) -> Optional[str]:
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "layout": 3,
-    "focus_audio": True,   # 焦点出声：没手动静音的屏里，只有鼠标所在/点中的那一屏出声
+    "focus_audio": True,   # 焦点出声：没手动静音的屏里，只有焦点屏（点中的那一屏）出声
     "bar_pinned": False,   # 顶栏固定显示（关 = 自动隐藏，鼠标移到顶端才出来）
     "bar_float": True,     # 本机顶栏悬浮在视频上（独立弹出层窗口）；关 = 留出一条固定位置
     "slots": [{"channel_id": "liked", "shuffle": False, "muted": False},

@@ -165,24 +165,17 @@ window.onNativeMatrixClosed = function (reason) {
 
 // ---------------- 网页版播放 ----------------
 // 每屏只有画面 + 底部细进度线；顶栏一套控件，操作的永远是焦点屏（matrixActiveSlot）。
-// 焦点：点击立即；鼠标停留 MATRIX_HOVER_MS 才换（去点顶栏时斜着划过别的屏不算）。
+// 焦点：只认点击（不做悬停切换，容易误触）。
 
-const MATRIX_HOVER_MS = 300;
-let matrixHoverTimer = 0;
 
 const SLOT_TEMPLATE = (i) => `
-    <div class="matrix-web-slot" id="matrix-slot-${i}" onmouseenter="hoverWebSlot(${i})" onmouseleave="clearTimeout(matrixHoverTimer)" onclick="activateWebSlot(${i})">
+    <div class="matrix-web-slot" id="matrix-slot-${i}" onclick="activateWebSlot(${i})">
         <div class="matrix-video-wrapper">
             <video id="matrix-video-${i}" class="matrix-video-el" playsinline></video>
         </div>
         <div class="matrix-slot-progress"><div id="matrix-progress-${i}"></div></div>
         <audio id="matrix-audio-${i}" preload="none"></audio>
     </div>`;
-
-function hoverWebSlot(i) {
-    clearTimeout(matrixHoverTimer);
-    matrixHoverTimer = setTimeout(() => activateWebSlot(i), MATRIX_HOVER_MS);
-}
 
 function startWebMatrix() {
     matrixWebPlaying = true;
@@ -413,7 +406,6 @@ function toggleWebMatrixFocus() {
 }
 
 function activateWebSlot(i) {
-    clearTimeout(matrixHoverTimer);
     if (i >= matrixConfig.layout || i === matrixActiveSlot) return;
     matrixActiveSlot = i;
     webSlots.forEach((_, j) => matrixEl('slot', j).classList.toggle('active', j === i));

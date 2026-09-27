@@ -4,7 +4,7 @@ native_matrix_player.py - 短视频多联放映（本机原生多路播放）
 2 屏 / 3 屏并排，每屏一个独立的 QMediaPlayer（Qt 的 FFmpeg 后端，能用 VA-API 就走硬解），
 独立选频道、独立顺序/随机、独立静音（静音跟着这一屏走，换下一条也保持）。
 
-「焦点屏」是整个放映的核心：鼠标在某屏停留一会儿（路过不算）或点中它、或按 1/2/3，它就成为焦点。
+「焦点屏」是整个放映的核心：点中某屏、或按 1/2/3，它就成为焦点（不做悬停切换，容易误触）。
   - 控件：每屏不放任何控件（画面尽量大，3 屏时竖屏视频正好铺满），顶栏只有一套控件，
     操作的永远是焦点屏；换焦点时顶栏刷新成那一屏的状态。
   - 声音：手动静音 OR（开了焦点出声 且 不是焦点屏）→ 不出声。手动静音的屏永远不出声，
@@ -118,12 +118,11 @@ def _no_width_hint(w: QWidget) -> None:
 class MatrixSlotWidget(QFrame):
     """一屏：视频画面 + 底部一条细进度线，没有控件。播放状态和操作都在这里，顶栏只是调用它。"""
 
-    activated = pyqtSignal(int)          # 要成为焦点屏（点击立即；鼠标停留 HOVER_MS 后）
+    activated = pyqtSignal(int)          # 要成为焦点屏（点中这一屏）
     changed = pyqtSignal(int)            # 顶栏要显示的状态变了（换片、点赞、暂停、声源…）
     settingsChanged = pyqtSignal()       # 频道/随机/静音/声源变了，让容器写回配置
 
     MAX_SKIP = 5                         # 连续这么多条都放不了就停下，别无限跳
-    HOVER_MS = 300                       # 鼠标停留多久才换焦点：去点顶栏时斜着划过别的屏不算
 
     def __init__(self, index: int, parent=None):
         super().__init__(parent)
@@ -180,10 +179,6 @@ class MatrixSlotWidget(QFrame):
         v.addWidget(self.video_widget, 1)
         v.addWidget(self.progress)
 
-        self._hover = QTimer(self)
-        self._hover.setSingleShot(True)
-        self._hover.setInterval(self.HOVER_MS)
-        self._hover.timeout.connect(lambda: self.activated.emit(self.index))
 
         p = self.player
         p.positionChanged.connect(self._on_position)
@@ -195,15 +190,7 @@ class MatrixSlotWidget(QFrame):
         self.aplayer.mediaStatusChanged.connect(self._on_astatus)
         self.aplayer.errorOccurred.connect(self._on_aerror)
 
-    # ---- 焦点：点击立即，鼠标停留 HOVER_MS 后 ----
-    def enterEvent(self, event):
-        super().enterEvent(event)
-        self._hover.start()
-
-    def leaveEvent(self, event):
-        super().leaveEvent(event)
-        self._hover.stop()
-
+    # ---- 焦点：只认点击（悬停切换容易误触） ----
     def mousePressEvent(self, event):
         self.activated.emit(self.index)
         super().mousePressEvent(event)
