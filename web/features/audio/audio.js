@@ -498,16 +498,20 @@ function cycleAudioSpeed() {
     if (quickBtn) quickBtn.textContent = text;
 }
 
+const AUDIO_MODE_NAMES = { list: '🔁 列表', single: '🔂 单曲', random: '🔀 随机' };
+
+function setAudioPlayMode(mode) {
+    if (!AUDIO_MODE_NAMES[mode]) return;
+    audioPlayMode = mode;
+    for (const id of ['player-mode-btn', 'player-mode-quick-btn']) {
+        const btn = document.getElementById(id);
+        if (btn) btn.textContent = AUDIO_MODE_NAMES[mode];
+    }
+}
+
 function cycleAudioMode() {
-    const modes = ['list', 'single', 'random'];
-    const names = ['🔁 列表', '🔂 单曲', '🔀 随机'];
-    const curIdx = modes.indexOf(audioPlayMode);
-    const nextIdx = (curIdx + 1) % modes.length;
-    audioPlayMode = modes[nextIdx];
-    const btn = document.getElementById('player-mode-btn');
-    const quickBtn = document.getElementById('player-mode-quick-btn');
-    if (btn) btn.textContent = names[nextIdx];
-    if (quickBtn) quickBtn.textContent = names[nextIdx];
+    const modes = Object.keys(AUDIO_MODE_NAMES);
+    setAudioPlayMode(modes[(modes.indexOf(audioPlayMode) + 1) % modes.length]);
 }
 
 function cycleSleepTimer() {

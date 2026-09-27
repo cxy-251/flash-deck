@@ -21,20 +21,21 @@ Chromium 开源发布版本为了不背专利费责任故意不带）。但同�
 （通过 QWebEngineView.page().runJavaScript() 调用网页里对应的 JS 函数），网页算出"下一条
 该放哪个文件"之后，再通过 QWebChannel 桥接对象重新喊一次 Python 播放。
 
-播放速度/睡眠定时/章节跳转这几个不需要知道"列表"的功能，直接在 Qt 这边自己闭环，不用
-麻烦网页。章节数据由网页在喊播放时一并传过来（audio_service 本来就带 chapters 字段）。
+音频模式的控件整条换成 audio_controls.AudioControlBar（跟多联放映里的音声控件是同一个），
+倍速 / 模式 / 定时 / 章节 / 快退快进 / 断点续听都在那里闭环；上一首 / 下一首 / 删除仍然转发
+网页（列表在网页），网页按播放模式挑下一首——模式以这边为准，变了就通过 audioModeChanged
+同步给网页。章节数据由网页在喊播放时一并传过来（audio_service 本来就带 chapters 字段）。
 """
 import json
 import time
 from PyQt6.QtCore import Qt, QUrl, QObject, QEvent, QTimer, pyqtSlot, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QLabel, QComboBox, QFrame
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QLabel
 )
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
-SPEEDS = [1.0, 1.25, 1.5, 1.75, 2.0]
-SLEEP_MINS = [0, 15, 30, 45, 60]   # 0 = 关闭
+from omni.shell.audio_controls import AudioControlBar, AudioSession
 
 
 def _fmt_ms(ms: int) -> str:
@@ -64,6 +65,9 @@ _CONTROL_QSS = """
     QSlider::groove:horizontal { height:4px; background:rgba(255,255,255,0.25); border-radius:2px; }
     QSlider::handle:horizontal { width:13px; margin:-5px 0; background:#58a6ff; border-radius:6px; }
     QSlider::sub-page:horizontal { background:#58a6ff; border-radius:2px; }
+    QToolButton { color:#fff; background:rgba(255,255,255,0.12); border:none; border-radius:6px; padding:6px 10px; font-size:13px; }
+    QToolButton::menu-indicator { image:none; }
+    QPushButton[active="true"] { background:#58a6ff; color:#04101d; }
 """
 
 
@@ -76,6 +80,7 @@ class NativePlayerWidget(QWidget):
     nextRequested = pyqtSignal()
     deleteRequested = pyqtSignal()
     likeToggled = pyqtSignal(bool)
+    audioModeChanged = pyqtSignal(str)   # 音频播放模式（list/single/random）变了，网页据此挑下一首
 
     def __init__(self, parent=None):
         """构造播放器悬浮控件并组装好视频区/控制条/所有信号连接，初始处于隐藏状态。
@@ -133,45 +138,28 @@ class NativePlayerWidget(QWidget):
         self.seek = QSlider(Qt.Orientation.Horizontal)
         self.seek.setRange(0, 1000)
         self.time_label = QLabel("0:00 / 0:00")
-        self.btn_delete = QPushButton("🗑")
         self.btn_close = QPushButton("✕ 关闭")
 
-        # 音频专属：倍速 / 睡眠定时 / 章节——这几个不用麻烦网页，Qt 自己闭环
-        self.btn_speed = QPushButton("1.0x")
-        self.btn_sleep = QPushButton("⏳ 定时")
-        self.chapter_combo = QComboBox()
-        self.chapter_combo.setMinimumWidth(120)
-        self._speed_idx = 0
-        self._sleep_idx = 0
-        self._chapters = []
-        self._sleep_timer = QTimer(self)
-        self._sleep_timer.setSingleShot(True)
-        self._sleep_timer.timeout.connect(self._on_sleep_fire)
+        # 视频模式的控件放在 video_box；音频模式整条换成 audio_bar（跟多联里的音声控件同一个组件）
+        self.video_box = QWidget()
+        vrow = QHBoxLayout(self.video_box)
+        vrow.setContentsMargins(0, 0, 0, 0)
+        vrow.setSpacing(8)
+        for w in (self.btn_prev, self.btn_play, self.btn_next, self.btn_loop, self.btn_like, self.btn_mute):
+            vrow.addWidget(w)
+        vrow.addWidget(self.seek, 1)
+        vrow.addWidget(self.time_label)
+
+        self.audio_session = AudioSession(self.player, self)
+        self.audio_bar = AudioControlBar(self)
+        self.audio_bar.bind(self.audio_session)
+        self.audio_bar.hide()
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
-        btn_row.addWidget(self.btn_prev)
-        btn_row.addWidget(self.btn_play)
-        btn_row.addWidget(self.btn_next)
-        btn_row.addWidget(self.btn_loop)
-        btn_row.addWidget(self.btn_like)
-        btn_row.addWidget(self.btn_mute)
-        btn_row.addWidget(self.seek, 1)
-        btn_row.addWidget(self.time_label)
-        btn_row.addWidget(self.chapter_combo)
-        btn_row.addWidget(self.btn_speed)
-        btn_row.addWidget(self.btn_sleep)
-
-        # 删除按钮离前面这些常用按钮拉开一点距离（加个分隔线），免得手滑误触。
-        # 视频播放界面干脆不放删除按钮（删除放在网格卡片上就够了，播放器里点惯了容易
-        # 手滑删错）——只有音频模式才显示这一段，见 play_local() 里的 setVisible。
-        btn_row.addSpacing(18)
-        self.delete_divider = QFrame()
-        self.delete_divider.setFrameShape(QFrame.Shape.VLine)
-        self.delete_divider.setStyleSheet("background: rgba(255,255,255,0.22); max-width: 1px; min-width: 1px;")
-        btn_row.addWidget(self.delete_divider)
-        btn_row.addSpacing(10)
-        btn_row.addWidget(self.btn_delete)
+        btn_row.addWidget(self.video_box, 1)
+        btn_row.addWidget(self.audio_bar, 1)
+        btn_row.addSpacing(12)
         btn_row.addWidget(self.btn_close)
 
         ctrl_layout = QVBoxLayout(self.controls)
@@ -194,10 +182,14 @@ class NativePlayerWidget(QWidget):
         self.btn_like.clicked.connect(self._toggle_like)
         self.btn_mute.clicked.connect(self._toggle_mute)
         self.btn_close.clicked.connect(self.close_player)
-        self.btn_delete.clicked.connect(self.deleteRequested.emit)
-        self.btn_speed.clicked.connect(self._cycle_speed)
-        self.btn_sleep.clicked.connect(self._cycle_sleep)
-        self.chapter_combo.activated.connect(self._on_chapter_selected)
+        # 音频：上一首 / 下一首 / 删除 转发网页（列表在网页），播放 / 定时 在这边
+        self.audio_session.nextRequested.connect(self.nextRequested.emit)
+        self.audio_session.prevRequested.connect(self.prevRequested.emit)
+        self.audio_bar.deleteRequested.connect(self.deleteRequested.emit)
+        self.audio_bar.playToggled.connect(self._toggle_play)
+        self.audio_bar.sleepFired.connect(self.player.pause)
+        self._last_mode = self.audio_session.mode
+        self.audio_session.changed.connect(self._on_audio_session_changed)
 
         self._seeking = False
         self.seek.sliderPressed.connect(lambda: setattr(self, '_seeking', True))
@@ -215,6 +207,11 @@ class NativePlayerWidget(QWidget):
         self._drag_start = None
         self._drag_start_t = 0.0
         self.video_widget.installEventFilter(self)
+
+    def _on_audio_session_changed(self):
+        if self.audio_session.mode != self._last_mode:
+            self._last_mode = self.audio_session.mode
+            self.audioModeChanged.emit(self._last_mode)
 
     def _toggle_loop(self):
         """在"列表循环"和"单片循环"之间切换，同步按钮图标与提示文案。"""
@@ -340,7 +337,8 @@ class NativePlayerWidget(QWidget):
         if self.transition_label.isVisible():
             self._position_transition_overlay()
 
-    def play_local(self, full_path: str, is_audio: bool, title: str = "", chapters=None, is_liked: bool = False):
+    def play_local(self, full_path: str, is_audio: bool, title: str = "", chapters=None, is_liked: bool = False,
+                   progress_key: str = ""):
         """加载并播放一个本地文件，按 is_audio 切换视频/音频两种界面布局。
 
         Args:
@@ -349,15 +347,12 @@ class NativePlayerWidget(QWidget):
             title: 显示标题（音频模式下居中大字展示）。
             chapters: 章节列表，每项含 title/index 等字段，音频模式下填充章节下拉框。
             is_liked: 该条目当前是否已点赞，用于同步点赞按钮外观。
+            progress_key: 音频的断点续听记录键（playback.progress_key），为空则不续听。
         """
+        was_audio = self.is_audio_mode
         self.is_audio_mode = is_audio
-        self.chapter_combo.setVisible(is_audio)
-        self.btn_speed.setVisible(is_audio)
-        self.btn_sleep.setVisible(is_audio)
-        self.btn_delete.setVisible(is_audio)
-        self.delete_divider.setVisible(is_audio)
-        self.btn_like.setVisible(not is_audio)
-        self.btn_mute.setVisible(not is_audio)
+        self.video_box.setVisible(not is_audio)
+        self.audio_bar.setVisible(is_audio)
         self.set_liked(is_liked)
         self._apply_mute()
         self.title_label.setText(title or "")
@@ -369,16 +364,16 @@ class NativePlayerWidget(QWidget):
         if is_audio:
             self._end_transition()
 
-        self._speed_idx = 0
-        self.btn_speed.setText("1.0x")
-        self._chapters = chapters or []
-        self.chapter_combo.clear()
-        if self._chapters:
-            for ch in self._chapters:
-                self.chapter_combo.addItem(f"{ch.get('title') or ('第' + str(ch.get('index', '')) + '章')}")
-
-        self.player.setSource(QUrl.fromLocalFile(full_path))
-        self.player.setPlaybackRate(SPEEDS[self._speed_idx])
+        if is_audio:
+            # 倍速 / 模式跟着这个播放器走（换下一首不重置）；续听位置从服务器取
+            self.audio_session.load(full_path, progress_key, title, chapters)
+            if not was_audio:
+                self.audioModeChanged.emit(self.audio_session.mode)   # 网页那边的模式对齐到这边
+        else:
+            if was_audio:
+                self.audio_session.clear()   # 从音频切到视频：先把有声书的进度存掉
+            self.player.setSource(QUrl.fromLocalFile(full_path))
+            self.player.setPlaybackRate(1.0)   # 视频不调速（同一个播放器，音频模式可能调过）
         self.player.play()
 
     # ---- 播放/暂停/进度 ----
@@ -406,7 +401,7 @@ class NativePlayerWidget(QWidget):
         Args:
             status: QMediaPlayer.MediaStatus 枚举值。
         """
-        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and not self.is_audio_mode:   # 音频的播完由 AudioSession 处理
             if self.loop_mode == "single":
                 self.player.setPosition(0)
                 self.player.play()
@@ -436,17 +431,6 @@ class NativePlayerWidget(QWidget):
         self.seek.setValue(int(pos / dur * 1000))
         self.seek.blockSignals(False)
         self.time_label.setText(f"{_fmt_ms(pos)} / {_fmt_ms(self.player.duration())}")
-        # 高亮当前章节
-        if self._chapters:
-            secs = pos / 1000.0
-            cur = 0
-            for i, ch in enumerate(self._chapters):
-                if secs >= ch.get('start', 0):
-                    cur = i
-            if self.chapter_combo.currentIndex() != cur:
-                self.chapter_combo.blockSignals(True)
-                self.chapter_combo.setCurrentIndex(cur)
-                self.chapter_combo.blockSignals(False)
 
     def _on_duration(self, dur):
         """媒体总时长变化回调（切换新文件时触发）：刷新时间文案。
@@ -463,47 +447,13 @@ class NativePlayerWidget(QWidget):
         if dur > 0:
             self.player.setPosition(int(self.seek.value() / 1000 * dur))
 
-    # ---- 音频专属：倍速 / 睡眠定时 / 章节（自己闭环，不用麻烦网页） ----
-
-    def _cycle_speed(self):
-        """倍速按钮：按 SPEEDS 列表循环切到下一档播放速度。"""
-        self._speed_idx = (self._speed_idx + 1) % len(SPEEDS)
-        rate = SPEEDS[self._speed_idx]
-        self.player.setPlaybackRate(rate)
-        self.btn_speed.setText(f"{rate:g}x")
-
-    def _cycle_sleep(self):
-        """睡眠定时按钮：按 SLEEP_MINS 列表循环切到下一档定时时长（0 表示关闭定时）。"""
-        self._sleep_idx = (self._sleep_idx + 1) % len(SLEEP_MINS)
-        mins = SLEEP_MINS[self._sleep_idx]
-        self._sleep_timer.stop()
-        if mins > 0:
-            self.btn_sleep.setText(f"⏳ {mins}分")
-            self._sleep_timer.start(mins * 60 * 1000)
-        else:
-            self.btn_sleep.setText("⏳ 定时")
-
-    def _on_sleep_fire(self):
-        """睡眠定时到点回调：暂停播放并把定时按钮重置回"关闭"状态。"""
-        self.player.pause()
-        self._sleep_idx = 0
-        self.btn_sleep.setText("⏳ 定时")
-
-    def _on_chapter_selected(self, idx: int):
-        """章节下拉框选中回调：跳转播放位置到该章节起始时间。
-
-        Args:
-            idx: 选中的章节在 self._chapters 里的下标。
-        """
-        if 0 <= idx < len(self._chapters):
-            start_ms = int(self._chapters[idx].get('start', 0) * 1000)
-            self.player.setPosition(start_ms)
-
     def stop_and_hide(self):
         """停止播放、清空媒体源、停掉所有定时器，但不隐藏控件本身（外部决定何时隐藏/复用）。"""
+        if self.is_audio_mode:
+            self.audio_session.clear()   # 先存续听进度
+            self.audio_bar.cancel_sleep()
         self.player.stop()
         self.player.setSource(QUrl())
-        self._sleep_timer.stop()
         self._trans_timeout.stop()
         self.transition_label.hide()
 
@@ -566,7 +516,9 @@ class PlayerBridge(QObject):
                 chapters = json.loads(chapters_json) if chapters_json else []
             except Exception:
                 chapters = []
-            self.win.show_native_player(full_p, is_audio=True, title=title or rel_path.rsplit('/', 1)[-1], chapters=chapters)
+            from omni.features.audio import playback
+            self.win.show_native_player(full_p, is_audio=True, title=title or rel_path.rsplit('/', 1)[-1], chapters=chapters,
+                                        progress_key=playback.progress_key(rel_path, nsfw_flag == '1'))
 
     @pyqtSlot()
     def closePlayer(self):

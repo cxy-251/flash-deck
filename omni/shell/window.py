@@ -539,6 +539,8 @@ class MainWindow(QMainWindow):
             lambda: self.webview.page().runJavaScript("window.nativePlayerNext && window.nativePlayerNext()"))
         self.native_player.deleteRequested.connect(
             lambda: self.webview.page().runJavaScript("window.nativePlayerDelete && window.nativePlayerDelete()"))
+        self.native_player.audioModeChanged.connect(
+            lambda mode: self.webview.page().runJavaScript(f"window.nativeAudioModeChanged && window.nativeAudioModeChanged({json.dumps(mode)})"))
         self.native_player.likeToggled.connect(
             lambda liked: self.webview.page().runJavaScript(f"window.nativePlayerToggleLike && window.nativePlayerToggleLike({json.dumps(liked)})"))
 
@@ -579,7 +581,8 @@ class MainWindow(QMainWindow):
         else:
             log("WARN", "qwebchannel.js 资源读取失败，本机原生播放桥接不可用（会自动退回网页内置播放器）", tag="NativePlayer")
 
-    def show_native_player(self, full_path: str, is_audio: bool, title: str = "", chapters=None, is_liked: bool = False):
+    def show_native_player(self, full_path: str, is_audio: bool, title: str = "", chapters=None, is_liked: bool = False,
+                           progress_key: str = ""):
         """显示原生播放器并播放指定文件；同模式下切歌不重新摆窗口，避免闪一下露出网页。
 
         Args:
@@ -588,6 +591,7 @@ class MainWindow(QMainWindow):
             title: 展示标题。
             chapters: 章节列表，可选。
             is_liked: 当前条目是否已点赞。
+            progress_key: 音频的断点续听记录键。
         """
         # 视频：铺满整个窗口（专注观看，跟原来的网页视频弹窗一个体验）。
         # 音频：只占底部一条细长的控制条，不挡住上面的网页——有声书本来就是"边听边逛"，
@@ -600,7 +604,8 @@ class MainWindow(QMainWindow):
         already_showing_same_mode = (
             self.native_player.isVisible() and self.native_player.is_audio_mode == is_audio
         )
-        self.native_player.play_local(full_path, is_audio, title, chapters=chapters, is_liked=is_liked)
+        self.native_player.play_local(full_path, is_audio, title, chapters=chapters, is_liked=is_liked,
+                                      progress_key=progress_key)
         if not already_showing_same_mode:
             self._layout_native_player()
             self.native_player.show()

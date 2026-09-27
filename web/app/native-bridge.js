@@ -32,6 +32,13 @@ function nativePlayerToggleLike(liked) {
     if (nativePlaybackKind === 'shortvideo') toggleShortVideoLikeFromPlayer();
 }
 
+// 本机音频播放器的播放模式（列表/单曲/随机）以原生那边为准，变了推过来，playNextAudio 按它挑下一首
+function nativeAudioModeChanged(mode) {
+    if (typeof setAudioPlayMode === 'function') setAudioPlayMode(mode);
+}
+
+window.nativeAudioModeChanged = nativeAudioModeChanged;
+
 window.nativePlayerNext = nativePlayerNext;
 
 window.nativePlayerPrev = nativePlayerPrev;
