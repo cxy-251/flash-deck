@@ -1,0 +1,231 @@
+/* 短视频多联放映室样式 */
+.shortvideo-matrix-view {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: calc(100vh - 70px);
+    background: #090a0d;
+    color: #e6edf3;
+    overflow-x: hidden;
+}
+
+.matrix-native-banner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+.matrix-banner-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 32px 40px;
+    max-width: 580px;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.matrix-banner-icon {
+    font-size: 56px;
+    margin-bottom: 16px;
+}
+
+.matrix-banner-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+}
+
+.matrix-banner-desc {
+    font-size: 13px;
+    color: #8b949e;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.matrix-btn-primary {
+    background: #238636;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.matrix-btn-primary:hover {
+    background: #2ea043;
+}
+
+/* Web 模式视口 */
+.matrix-web-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 200px);   /* 减去大厅顶栏 + 分区标签栏 */
+}
+
+.matrix-web-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.matrix-web-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.matrix-web-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.matrix-btn-group {
+    display: flex;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.matrix-tab-btn {
+    background: transparent;
+    border: none;
+    color: #8b949e;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.matrix-tab-btn:hover {
+    color: #fff;
+}
+.matrix-tab-btn.active {
+    background: #1f6feb;
+    color: #fff;
+    font-weight: 600;
+}
+
+/* 3 槽位网格 */
+.matrix-web-slots {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+    justify-content: center;
+    align-items: stretch;
+    min-height: 0;
+}
+
+.matrix-web-slot {
+    flex: 1;
+    max-width: 420px;
+    background: #000;
+    border: 2px solid #22272e;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+.matrix-web-slot.active {
+    border-color: #58a6ff;
+}
+
+.matrix-slot-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: #161b22;
+    border-bottom: 1px solid #22272e;
+}
+
+.matrix-slot-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: #58a6ff;
+}
+
+.matrix-channel-select {
+    flex: 1;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #e6edf3;
+    padding: 3px 6px;
+    font-size: 11px;
+    outline: none;
+}
+
+.matrix-slot-count {
+    font-size: 11px;
+    color: #8b949e;
+}
+
+.matrix-video-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    min-height: 0;
+    position: relative;
+}
+
+.matrix-video-el {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+}
+
+.matrix-slot-meta {
+    padding: 4px 8px;
+    background: rgba(10,12,16,0.9);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.matrix-video-title {
+    font-size: 11px;
+    color: #c9d1d9;
+}
+
+.matrix-slot-bar {
+    display: flex;
+    gap: 6px;
+    padding: 4px 8px;
+    background: #161b22;
+    border-top: 1px solid #22272e;
+}
+
+.matrix-tool-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    color: #e6edf3;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.matrix-tool-btn:hover {
+    background: rgba(255,255,255,0.18);
+}
+
+/* 手机竖屏：三屏改成上下排 */
+@media (max-width: 760px) {
+    .matrix-web-container { height: auto; }
+    .matrix-web-topbar { flex-direction: column; align-items: stretch; gap: 8px; }
+    .matrix-web-controls { flex-wrap: wrap; }
+    .matrix-web-slots { flex-direction: column; }
+    .matrix-web-slot { max-width: none; height: 70vh; }
+}

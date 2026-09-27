@@ -6,7 +6,7 @@
      "portal": ["fav", "rpg", "standalone", "sc2", "retro", "slg", "flash"],
      "tabs": ["fav", "rpg", "standalone", "retro", "slg", "flash", "sc2"]},
     {"id": "media", "title": "媒体专区", "brand": "📖 Omni Deck Media",
-     "tabs": ["docs", "manga", "novels", "audio", "shortvideo", "shortvideo-douyin", "shortvideo-tiktok", "mega", "downloads", "library"]}
+     "tabs": ["docs", "manga", "novels", "audio", "shortvideo", "shortvideo-douyin", "shortvideo-tiktok", "shortvideo-matrix", "mega", "downloads", "library"]}
   ],
   "sections": [
     {"id": "fav", "group": "games", "module": "games", "title": "我的喜欢", "card_title": "收藏与喜欢", "icon": "⭐", "access": "public",
@@ -49,6 +49,7 @@
     {"id": "shortvideo-tiktok", "group": "media", "module": "shortvideo", "title": "TikTok", "icon": "🎵", "access": "nsfw",
      "platform": "tiktok", "dir_name": "TikTok", "creator": "创作者", "plugin_hint": "TikTok 采集插件(004)",
      "library": ["media.shortvideo.tiktok"]},
+    {"id": "shortvideo-matrix", "group": "media", "module": "shortvideo_matrix", "title": "多联放映", "icon": "📺", "access": "nsfw"},
     {"id": "mega", "group": "media", "title": "MEGA", "icon": "☁️", "access": "local"},
     {"id": "downloads", "group": "media", "title": "下载中心", "icon": "⬇️", "access": "local"},
     {"id": "library", "group": "media", "title": "存储与游戏库", "icon": "🗄️", "access": "local"}
@@ -64,7 +65,7 @@
              "app/core.js", "app/zh.js", "app/access.js", "app/shell.js", "app/events.js", "app/native-bridge.js"],
     "modules": ["ui/reader", "features/privacy", "features/system", "features/games", "features/sc2",
                 "features/manga", "features/novels", "features/docs", "features/audio", "features/shortvideo",
-                "features/mega", "features/downloads", "features/library"],
+                "features/shortvideo_matrix", "features/mega", "features/downloads", "features/library"],
     "tail": ["ui/responsive.css", "app/boot.js"]
   }
 }

@@ -28,8 +28,8 @@ _GATE_PAGE = ("<html><body style='background:#0d1117;color:#f0f6fc;font-family:s
 def load_features():
     """导入全部功能模块的 api.py（导入即登记路由）。"""
     ids = list(CORE_FEATURES)
-    for sid in manifest.section_ids():
-        pkg = sid.split("-")[0]  # shortvideo-douyin 等变体共用 shortvideo 模块
+    for s in manifest.load()["sections"]:
+        pkg = s.get("module") or s["id"].split("-")[0]
         if pkg not in ids:
             ids.append(pkg)
     for pkg in ids:

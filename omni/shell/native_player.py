@@ -572,3 +572,15 @@ class PlayerBridge(QObject):
     def closePlayer(self):
         """网页 JS 调用：关闭原生播放器，恢复显示网页。"""
         self.win.hide_native_player()
+
+    @pyqtSlot()
+    def openMatrixPlayer(self):
+        """网页 JS 调用：开启多联并列放映室（原生硬件解码）。"""
+        if hasattr(self.win, "show_native_matrix_player"):
+            self.win.show_native_matrix_player()
+
+    @pyqtSlot()
+    def closeMatrixPlayer(self):
+        """网页 JS 调用：关闭多联并列放映室。"""
+        if hasattr(self.win, "hide_native_matrix_player"):
+            self.win.hide_native_matrix_player()

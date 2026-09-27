@@ -525,6 +525,11 @@ class MainWindow(QMainWindow):
         self.native_player = NativePlayerWidget(self)
         self.native_player.hide()
         self.native_player.closed.connect(self.hide_native_player)
+
+        from omni.shell.native_matrix_player import NativeMatrixPlayerWidget
+        self.native_matrix_player = NativeMatrixPlayerWidget(self)
+        self.native_matrix_player.hide()
+        self.native_matrix_player.closed.connect(self._on_native_matrix_closed)
         # 上一条/下一条/删除：原生播放器自己不维护列表，转发回网页，网页算出下一条该放
         # 哪个文件之后，会再通过 bridge 重新喊一次 Python 播放（见 hub.js 里的
         # nativePlayerPrev/Next/Delete）。
@@ -615,6 +620,30 @@ class MainWindow(QMainWindow):
         """停止播放并隐藏原生播放器，恢复显示底下的网页。"""
         self.native_player.stop_and_hide()
         self.native_player.hide()
+
+    def show_native_matrix_player(self):
+        """开启多联并列放映室（原生硬件解码多屏）。"""
+        if hasattr(self, 'native_player') and self.native_player.isVisible():
+            self.native_player.stop_and_hide()
+            self.native_player.hide()
+        self._layout_native_matrix_player()
+        self.native_matrix_player.show()
+        self.native_matrix_player.raise_()
+        self.native_matrix_player.start_matrix()
+
+    def _layout_native_matrix_player(self):
+        if hasattr(self, 'native_matrix_player'):
+            self.native_matrix_player.setGeometry(0, 0, self.width(), self.height())
+
+    def hide_native_matrix_player(self):
+        """停止播放并隐藏多联并列放映室。"""
+        if hasattr(self, 'native_matrix_player'):
+            self.native_matrix_player.stop_and_hide()
+            self.native_matrix_player.hide()
+
+    def _on_native_matrix_closed(self):
+        self.hide_native_matrix_player()
+        self.webview.page().runJavaScript("if (typeof onNativeMatrixClosed === 'function') onNativeMatrixClosed();")
 
     def on_load_finished(self, ok):
         """网页加载完毕后，若处于游戏状态则自动计算并显示右上角控制胶囊。
@@ -711,6 +740,8 @@ class MainWindow(QMainWindow):
         self.overlay.move(self.width() - self.overlay.width() - 16, 16)
         if hasattr(self, 'native_player') and self.native_player.isVisible():
             self._layout_native_player()
+        if hasattr(self, 'native_matrix_player') and self.native_matrix_player.isVisible():
+            self._layout_native_matrix_player()
 
     def load_hub(self):
         """加载 Omni Deck 首页大厅 (hub.html) 并重置游戏状态"""
@@ -974,6 +1005,8 @@ class MainWindow(QMainWindow):
         try:
             if hasattr(self, 'native_player'):
                 self.native_player.stop_and_hide()
+            if hasattr(self, 'native_matrix_player'):
+                self.native_matrix_player.stop_and_hide()
         except Exception:
             pass
         process.shutdown()

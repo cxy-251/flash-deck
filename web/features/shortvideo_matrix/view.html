@@ -1,0 +1,31 @@
+<div id="media-shortvideo-matrix-view" class="shortvideo-matrix-view" style="display:none; padding:16px;">
+    <!-- 本机：原生多路播放器盖在网页上，这里只留一个重新打开的入口 -->
+    <div id="matrix-native-banner" class="matrix-native-banner" style="display:none;">
+        <div class="matrix-banner-card">
+            <div class="matrix-banner-icon">📺</div>
+            <div class="matrix-banner-title">短视频多联放映</div>
+            <div class="matrix-banner-desc">2 屏 / 3 屏并排播放，各屏独立选频道；焦点所在的一屏出声。</div>
+            <button class="matrix-btn-primary" onclick="launchNativeMatrixPlayer()">▶ 开启多联放映</button>
+        </div>
+    </div>
+
+    <!-- 局域网 / 远程浏览器：网页版，槽位由 shortvideo_matrix.js 按模板生成 -->
+    <div id="matrix-web-container" class="matrix-web-container" style="display:none;">
+        <div class="matrix-web-topbar">
+            <div class="matrix-web-title">📺 多联放映</div>
+            <div class="matrix-web-controls">
+                <div class="matrix-btn-group">
+                    <button id="matrix-web-layout-2" class="matrix-tab-btn" onclick="setWebMatrixLayout(2, true)">2 屏</button>
+                    <button id="matrix-web-layout-3" class="matrix-tab-btn" onclick="setWebMatrixLayout(3, true)">3 屏</button>
+                </div>
+                <div class="matrix-btn-group">
+                    <button id="matrix-web-audio-focus" class="matrix-tab-btn" onclick="setWebMatrixAudio('focus', true)">🎯 焦点出声</button>
+                    <button id="matrix-web-audio-manual" class="matrix-tab-btn" onclick="setWebMatrixAudio('manual', true)">🎛 手动混音</button>
+                </div>
+                <button class="matrix-tab-btn" onclick="toggleWebMatrixAllPlay()">⏯ 齐播/齐停</button>
+                <button class="matrix-tab-btn" onclick="randomWebMatrixAll()">🔀 全部随机</button>
+            </div>
+        </div>
+        <div id="matrix-web-slots" class="matrix-web-slots"></div>
+    </div>
+</div>

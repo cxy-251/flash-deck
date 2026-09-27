@@ -61,7 +61,13 @@ function switchMediaTab(tab, btnEl) {
     if (typeof checkScrollTopVisibility === 'function') setTimeout(checkScrollTopVisibility, 50);
 }
 
+let prevActiveMediaTab = null;
+
 function updateMediaTabUI() {
+    if (prevActiveMediaTab && prevActiveMediaTab !== activeMediaTab) {
+        Omni.call(prevActiveMediaTab, 'deactivate');
+    }
+    prevActiveMediaTab = activeMediaTab;
     for (const s of Omni.sections('media')) {
         const view = document.getElementById(`media-${s.id}-view`);
         if (view) view.style.display = activeMediaTab === s.id ? 'block' : 'none';
@@ -75,6 +81,9 @@ function prewarmMediaLibraries() {
 }
 
 function switchToGamesSection() {
+    if (prevActiveMediaTab) {
+        Omni.call(prevActiveMediaTab, 'deactivate');
+    }
     activePrimarySection = 'games';
     try { localStorage.setItem('omni_primary_section', 'games'); } catch(e) {}
     document.body.classList.remove('section-media');

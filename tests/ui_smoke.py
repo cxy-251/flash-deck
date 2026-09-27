@@ -44,6 +44,10 @@ for tab in MEDIA:
                   f"(function(){{ const v = document.getElementById('media-{tab}-view'); "
                   f"return [!!v && v.style.display === 'block' && v.innerText.trim().length > 20, "
                   f"'badge=' + document.getElementById('total-badge').textContent + ' | stats=' + document.getElementById('media-sub-stats').textContent]; }})()"))
+STEPS.append(("media-shortvideo-matrix-channels",
+              "switchMediaTab('shortvideo-matrix', document.getElementById('media-tab-shortvideo-matrix'))", 15000,
+              "(function(){ const n = document.querySelectorAll('#matrix-select-0 option').length; "
+              "const t = (document.getElementById('matrix-title-0') || {}).textContent; return [n > 0, 'channels=' + n + ' 屏1=' + t]; })()"))
 STEPS.append(("privacy-modal", "openNsfwModal()", 3000,
               "[document.getElementById('nsfw-lock-modal').style.display === 'flex', 'nsfw modal']"))
 STEPS.append(("library-picker", "closeNsfwModal(); openLibraryPicker('library-add-path')", 8000,
