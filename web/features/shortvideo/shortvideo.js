@@ -12,6 +12,9 @@ const SV_LABEL = Object.fromEntries(SV_SECTIONS.map(s => [s.platform, s.title]))
 let svPlayerPlatform = 'kuaishou';   // 播放器弹窗当前在播哪个平台的列表
 
 let shortVideoLoopMode = 'list';     // 'list' | 'single'
+// 短视频静音开关：记在本设备浏览器里，下次打开播放器还是同样状态
+let shortVideoMuted = false;
+try { shortVideoMuted = localStorage.getItem('omni.shortvideo.muted') === '1'; } catch (e) { /* 隐私模式等读不到就按有声 */ }
 
 try {
     shortVideoLoopMode = localStorage.getItem('omni_shortvideo_loop_mode') || 'list';
@@ -362,6 +365,8 @@ function openShortVideoPlayer(platform, index) {
     if (titleEl) titleEl.textContent = item.title;
     if (metaEl) metaEl.textContent = `${item.folder} · ${item.mtime_str} · ${item.size_mb} MB`;
     updateShortVideoLoopBtnUI();
+    videoEl.muted = shortVideoMuted;
+    updateShortVideoMuteBtnUI();
     const likeBtn = document.getElementById('shortvideo-like-btn');
     if (likeBtn) {
         likeBtn.textContent = item.liked ? '❤️' : '🤍';
@@ -369,6 +374,21 @@ function openShortVideoPlayer(platform, index) {
     }
     modal.style.display = 'flex';
     videoEl.play().catch((e) => console.log('Autoplay policy:', e));
+}
+
+function toggleShortVideoMute() {
+    shortVideoMuted = !shortVideoMuted;
+    try { localStorage.setItem('omni.shortvideo.muted', shortVideoMuted ? '1' : '0'); } catch (e) { /* 存不了就只在本次生效 */ }
+    const videoEl = document.getElementById('shortvideo-player-el');
+    if (videoEl) videoEl.muted = shortVideoMuted;
+    updateShortVideoMuteBtnUI();
+}
+
+function updateShortVideoMuteBtnUI() {
+    const btn = document.getElementById('shortvideo-mute-btn');
+    if (!btn) return;
+    btn.textContent = shortVideoMuted ? '🔇' : '🔊';
+    btn.title = shortVideoMuted ? '取消静音' : '静音';
 }
 
 function closeShortVideoPlayer() {

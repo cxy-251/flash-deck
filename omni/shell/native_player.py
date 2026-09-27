@@ -126,6 +126,10 @@ class NativePlayerWidget(QWidget):
         self.btn_loop.setToolTip("循环模式：列表循环（点击切换为单片循环）")
         self.btn_like = QPushButton("🤍")
         self.btn_like.setToolTip("点赞")
+        # 短视频静音开关：只管视频模式，切上一条/下一条保持不变；音频模式（有声书）不受影响
+        self.sv_muted = False
+        self.btn_mute = QPushButton("🔊")
+        self.btn_mute.setToolTip("静音")
         self.seek = QSlider(Qt.Orientation.Horizontal)
         self.seek.setRange(0, 1000)
         self.time_label = QLabel("0:00 / 0:00")
@@ -151,6 +155,7 @@ class NativePlayerWidget(QWidget):
         btn_row.addWidget(self.btn_next)
         btn_row.addWidget(self.btn_loop)
         btn_row.addWidget(self.btn_like)
+        btn_row.addWidget(self.btn_mute)
         btn_row.addWidget(self.seek, 1)
         btn_row.addWidget(self.time_label)
         btn_row.addWidget(self.chapter_combo)
@@ -187,6 +192,7 @@ class NativePlayerWidget(QWidget):
         self.btn_next.clicked.connect(lambda: self._trigger_nav(1))
         self.btn_loop.clicked.connect(self._toggle_loop)
         self.btn_like.clicked.connect(self._toggle_like)
+        self.btn_mute.clicked.connect(self._toggle_mute)
         self.btn_close.clicked.connect(self.close_player)
         self.btn_delete.clicked.connect(self.deleteRequested.emit)
         self.btn_speed.clicked.connect(self._cycle_speed)
@@ -227,6 +233,18 @@ class NativePlayerWidget(QWidget):
         self.btn_like.setText("❤️" if self.is_liked else "🤍")
         self.btn_like.setToolTip("取消点赞" if self.is_liked else "点赞")
         self.likeToggled.emit(self.is_liked)
+
+    def _toggle_mute(self):
+        """短视频静音开关：切换静音状态并同步按钮图标。"""
+        self.sv_muted = not self.sv_muted
+        self._apply_mute()
+
+    def _apply_mute(self):
+        """按当前模式应用静音：视频模式跟随 sv_muted，音频模式始终有声。"""
+        muted = self.sv_muted and not self.is_audio_mode
+        self.audio_output.setMuted(muted)
+        self.btn_mute.setText("🔇" if self.sv_muted else "🔊")
+        self.btn_mute.setToolTip("取消静音" if self.sv_muted else "静音")
 
     def set_liked(self, liked: bool):
         """由外部（网页那边喊播放时）设置当前条目的点赞状态，只更新按钮外观，不发信号。
@@ -339,7 +357,9 @@ class NativePlayerWidget(QWidget):
         self.btn_delete.setVisible(is_audio)
         self.delete_divider.setVisible(is_audio)
         self.btn_like.setVisible(not is_audio)
+        self.btn_mute.setVisible(not is_audio)
         self.set_liked(is_liked)
+        self._apply_mute()
         self.title_label.setText(title or "")
 
         # video_widget 只在音频/视频"模式"切换（不常发生）时才会真的变化；同模式下的
