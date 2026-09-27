@@ -27,9 +27,11 @@ start_matrix()；这里改动的设置也写回同一份配置，退出后网页
   settings ⚙ 设置：回到网页设置页。
 
 顶栏默认自动隐藏：进来先显示 3 秒，之后鼠标移到最顶端才出来，移开 1.5 秒收起（下拉 / 菜单 / 搜索框
-打开时不收）；📌 固定后一直显示。顶栏是悬浮的，盖在三屏上面，出没不改变播放区大小。
-视频是原生子窗口（QVideoWidget 里面是 QWindowContainer），普通控件盖不住它，所以顶栏也设成原生
-窗口（WA_NativeWindow），显示时 raise_() 到视频上层。
+打开时不收）；📌 固定后一直显示。顶栏那一条的位置始终留着（bar_slot，固定高度），收起时只是控件
+不见、留一条深色空白，所以出没不改变播放区大小，也不压视频。
+不做成悬浮盖在视频上：视频是原生子窗口（QVideoWidget 里是 QWindowContainer），普通控件盖不住；
+把顶栏设成原生窗口去盖，会连带把三屏所在区域也变成原生窗口——真机上实测视频变黑（只有声音），
+后来再显示的第三屏又压在顶栏上面。3 屏时竖屏视频本来就是宽度撑满，留出这一条不影响画面大小。
 
 键盘（Steam Input 可映射）：Tab 显示 / 收起顶栏，1/2/3 选焦点屏，空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
 """
@@ -496,15 +498,19 @@ class NativeMatrixPlayerWidget(QWidget):
         root.setSpacing(0)
 
         # 顶栏：第一行 全局 + 焦点屏视频控件；第二行 音声控件（只在焦点屏用音声时展开）
-        # 悬浮顶栏：不进布局，手动摆在最上面（_place_bar），原生窗口才能盖住下面的原生视频窗口
-        top_bar = self.top_bar = QWidget(self)
-        top_bar.setObjectName("matrixTopBar")
-        top_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        top_bar.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
-        rows = QVBoxLayout(top_bar)
+        # bar_slot：顶栏的固定位置（高度见 _update_reserve），顶栏收起时它还在，只剩深色空白
+        self.bar_slot = QWidget(self)
+        self.bar_slot.setObjectName("matrixTopBar")
+        self.bar_slot.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        slot_lay = QVBoxLayout(self.bar_slot)
+        slot_lay.setContentsMargins(0, 0, 0, 0)
+        top_bar = self.top_bar = QWidget(self.bar_slot)
+        slot_lay.addWidget(top_bar)
+        slot_lay.addStretch(1)
+        rows = self._rows = QVBoxLayout(top_bar)
         rows.setContentsMargins(10, 4, 10, 4)
         rows.setSpacing(4)
-        top = QHBoxLayout()
+        top = self._top_row = QHBoxLayout()
         top.setSpacing(4)
         rows.addLayout(top)
 
@@ -608,10 +614,11 @@ class NativeMatrixPlayerWidget(QWidget):
         for i in range(3):
             s = MatrixSlotWidget(i, area)
             s.activated.connect(self.activate_slot)
-            s.changed.connect(lambda idx: idx == self.active and self.refresh_bar())
+            s.changed.connect(lambda idx: (self._update_reserve(), idx == self.active and self.refresh_bar()))
             s.settingsChanged.connect(self.save_config)
             h.addWidget(s, 1)   # 等分；配合 _no_width_hint，宽度不再随视频变
             self.slots.append(s)
+        root.addWidget(self.bar_slot)
         root.addWidget(area, 1)
         install_tips(self)
 
@@ -643,7 +650,7 @@ class NativeMatrixPlayerWidget(QWidget):
         self.btn_sound.setToolTip("声音：音声（点击换回视频原声）" if audio else "声音：视频原声（点击换成音声）")
         _set_active_prop(self.btn_sound, audio)
         self.audio_box.setVisible(audio)
-        self._place_bar()   # 音声那一行出没，顶栏高度跟着变
+
         self.audio_bar.bind(s.asession)
         if audio:
             sc = next((x for x in self.audio_scopes if x["id"] == s.audio_scope), None)
@@ -697,10 +704,7 @@ class NativeMatrixPlayerWidget(QWidget):
             third.show()
             if autoload and third.player.source().isEmpty():
                 third.resume_or_load()
-            # 第三屏重新显示时它的原生视频窗口会被放到最上层，把顶栏抬回去（视频窗口可能晚一点才建好，再补一次）
-            if self.top_bar.isVisible():
-                for ms in (0, 300):
-                    QTimer.singleShot(ms, self.top_bar.raise_)
+        self._update_reserve()
         if save:
             self.save_config()
 
@@ -733,19 +737,23 @@ class NativeMatrixPlayerWidget(QWidget):
             s.set_paused(playing)
 
     # ---- 生命周期 ----
-    # ---- 顶栏：悬浮 + 自动隐藏 ----
-    def _place_bar(self):
-        """顶栏贴在最上面、跟窗口一样宽，高度按内容（一行 / 两行）。"""
-        self.top_bar.setGeometry(0, 0, self.width(), self.top_bar.sizeHint().height())
+    # ---- 顶栏：固定留位 + 自动隐藏 ----
+    def _update_reserve(self):
+        """顶栏留多高：只要有一屏用音声就按两行留，否则一行——焦点换来换去、顶栏出没都不变。"""
+        if self.top_bar.isVisible() or not hasattr(self, "_row_h"):
+            # 只在顶栏显示时量（藏起来时 Qt 给的 sizeHint 是 0），量完缓存
+            m = self._rows.contentsMargins()
+            self._row_h = max(m.top() + m.bottom() + self._top_row.sizeHint().height(), getattr(self, "_row_h", 0))
+            self._audio_row_h = max(self._rows.spacing() + self.audio_box.sizeHint().height(), getattr(self, "_audio_row_h", 0))
+        need = self._row_h
+        if any(s.sound == "audio" for s in self.visible_slots()):
+            need += self._audio_row_h
+        if getattr(self, "_reserved", None) != need:   # 别拿 height() 比：自然高度碰巧相等时就没被固定住，顶栏一藏就塌成 0
+            self._reserved = need
+            self.bar_slot.setFixedHeight(need)
 
     def _raise_bar(self):
-        self._place_bar()
         self.top_bar.show()
-        self.top_bar.raise_()   # 压在原生视频窗口上面
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._place_bar()
 
     # ---- 顶栏自动隐藏 ----
     def set_bar_pinned(self, on: bool, save: bool = False):
@@ -775,13 +783,11 @@ class NativeMatrixPlayerWidget(QWidget):
     def _poll_bar(self):
         if not self.isVisible():
             return
-        if self.top_bar.isVisible():
-            self.top_bar.raise_()   # 保险：有原生视频窗口新冒出来（换布局 / 换片）时，顶栏始终在最上面
         if self.bar_pinned:
             return
         p = self.mapFromGlobal(QCursor.pos())
         inside_x = 0 <= p.x() < self.width()
-        edge = self.top_bar.height() if self.top_bar.isVisible() else 6   # 收着时只认最顶端几像素
+        edge = self.bar_slot.height()   # 顶栏那一条留着的空白，鼠标移上去就出来
         if inside_x and 0 <= p.y() <= edge:
             self._bar_hide.stop()
             self._raise_bar()
