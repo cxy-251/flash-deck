@@ -61,7 +61,7 @@ STEPS.append(("media-shortvideo-matrix-audio",
               "activateWebSlot(1); setWebSlotPaused(1, false); if (matrixConfig.slots[1].muted) barToggleMute(); if (matrixConfig.slots[1].sound !== 'audio') barToggleSound()", 10000,
               "(function(){ const a = document.getElementById('matrix-audio-1'); "
               "return [webSlots[1].tracks.length > 0 && !!a.getAttribute('src') && document.getElementById('matrix-video-1').muted, "
-              "'tracks=' + webSlots[1].tracks.length + ' ' + document.getElementById('matrix-bar-scope').title.split('\\n')[1]]; })()"))
+              "'tracks=' + webSlots[1].tracks.length + ' 模式=' + document.getElementById('matrix-bar-amode').textContent + ' ' + document.getElementById('matrix-bar-atitle').textContent]; })()"))
 STEPS.append(("media-shortvideo-matrix-rate", "barCycleRate()", 3000,
               "(function(){ const a = document.getElementById('matrix-audio-1'), v = document.getElementById('matrix-video-1'); "
               "return [a.playbackRate === 1.25 && v.playbackRate === 1, '音声 ' + a.playbackRate + 'x 视频 ' + v.playbackRate + 'x 按钮 ' + document.getElementById('matrix-bar-arate').textContent]; })()"))

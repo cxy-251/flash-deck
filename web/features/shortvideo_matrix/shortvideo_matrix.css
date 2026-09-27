@@ -283,10 +283,10 @@
 .matrix-bar-spacer { flex: 1; }
 .matrix-bar-audio {
     display: flex;
+    flex: 1 0 100%;          /* 独占顶栏第二行 */
     align-items: center;
     gap: 4px;
-    margin-left: 4px;
-    padding: 2px 6px 2px 2px;
+    padding: 2px 6px;
     background: rgba(210,168,255,0.10);
     border: 1px solid rgba(210,168,255,0.30);
     border-radius: 8px;
@@ -294,7 +294,15 @@
 .matrix-bar-audio .matrix-bar-btn.active { background: #8957e5; border-color: #d2a8ff; }
 .matrix-bar-audio .matrix-scope-btn { max-width: 150px; text-align: left; }
 .matrix-bar-rate { min-width: 44px; font-size: 12px; font-variant-numeric: tabular-nums; }
-.matrix-bar-audio .matrix-audio-seek { width: 110px; flex: none; }
+.matrix-bar-audio .matrix-audio-seek { flex: 1; min-width: 80px; width: auto; }
+.matrix-bar-atitle { width: 180px; flex: none; font-size: 11px; color: #d2a8ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.matrix-bar-chapter { flex: 0 0 110px; }
+.matrix-bar-more { position: relative; }
+.matrix-bar-more > summary { list-style: none; display: inline-flex; align-items: center; justify-content: center; }
+.matrix-bar-more > summary::-webkit-details-marker { display: none; }
+.matrix-bar-menu { position: absolute; right: 0; top: 34px; z-index: 5; background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 4px; }
+.matrix-bar-menu button { background: none; border: none; color: #ffa198; padding: 6px 10px; cursor: pointer; white-space: nowrap; font-size: 12px; }
+.matrix-bar-menu button:hover { background: rgba(255,255,255,0.08); }
 
 /* 每屏：只剩画面 + 底部细进度线 */
 .matrix-web-slot { border-width: 2px; }

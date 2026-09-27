@@ -5,7 +5,9 @@
 // 设置只有后端一份（/api/shortvideo_matrix/config），两边播放中改的也写回去，下次打开设置页就是最新的。
 // 声音 = 手动静音 OR（焦点出声 且 不是焦点屏）：手动静音的屏永远不出声，焦点出声只在没静音的屏之间挑。
 // 每屏的声音可换成「音声」分区的音频（🎬/🎧）：一个隐藏的 <audio>，跟视频各播各的；
-// 这一屏听不到或视频被暂停时音声暂停，回来接着放。音声只选范围（全部 / 专辑），不挑单个文件。
+// 这一屏听不到或视频被暂停时音声暂停，回来接着放。音声只选范围（全部 / 专辑），不挑单个文件；
+// 控件功能跟网页音声专区一样，档位（AUDIO_SPEEDS / SLEEP_TIMER_MINS / AUDIO_SKIP）和断点续听
+// （fetchAudioProgress / saveAudioProgress）直接用 audio.js 里统一的那份。
 // 同一次页面生命周期里：⤓ 收起 回到进多联之前的页面（去开游戏等），再点多联标签直接回到播放器；
 // 各屏的频道/顺序/第几条/第几秒都记着，进来一律暂停（按 ⏯ 开播）；⚙ 回设置页，没改过的屏照样接着放。
 
@@ -13,14 +15,14 @@ const MATRIX_SLOTS = 3;
 const MATRIX_PAGE = 300;   // 频道视频分页取（抖音全部动辄两万多条）
 let matrixChannels = null;
 let matrixAudioScopes = [];
-let matrixAudioRates = [1];
 let matrixConfig = null;   // {layout, focus_audio, slots: [{channel_id, shuffle, muted}]}
 let matrixWebPlaying = false;
 let matrixActiveSlot = 0;
 let matrixSessionStarted = false;   // 这次页面里点过「开始播放」：再进分区直接回播放器
 let matrixReturnTo = 'games';        // ⤓ 收起 回到哪：进多联之前的媒体标签，或游戏区
 const webSlots = Array.from({ length: MATRIX_SLOTS }, () => ({ total: 0, base: 0, page: [], cur: 0, seed: 0, singleLoop: false, skips: 0,
-    userPaused: false, tracks: [], aorder: [], apos: 0, askips: 0 }));
+    userPaused: false, tracks: [], tracksScope: null, apos: 0, askips: 0, asavedAt: 0 }));
+const MATRIX_AUDIO_MODES = { list: ['🔁', '列表循环'], single: ['🔂', '单曲循环'], random: ['🔀', '随机播放'] };
 
 const matrixEl = (name, i) => document.getElementById(`matrix-${name}-${i}`);
 const matrixIsNative = () => Boolean(window.omniBridge && typeof window.omniBridge.openMatrixPlayer === 'function');
@@ -73,7 +75,7 @@ async function showMatrixSetup() {
             matrixChannels ? null : fetch('/api/shortvideo_matrix/channels').then(r => r.json()),
             fetch('/api/shortvideo_matrix/config').then(r => r.json()),
         ]);
-        if (ch) { matrixChannels = ch.channels || []; matrixAudioScopes = ch.audio_scopes || []; matrixAudioRates = ch.audio_rates || [1]; }
+        if (ch) { matrixChannels = ch.channels || []; matrixAudioScopes = ch.audio_scopes || []; }
         matrixConfig = cfg.config;
     } catch (e) {
         document.getElementById('matrix-setup-rows').textContent = '频道加载失败，稍后再切回这个分区试试';
@@ -96,7 +98,7 @@ function renderMatrixSetup() {
             </div>
             <span id="matrix-setup-audio-${i}" class="matrix-setup-audio">
                 <button class="matrix-tab-btn matrix-scope-btn" id="matrix-setup-scope-${i}" onclick="cycleMatrixSetupScope(${i})" title="点击切到下一个专辑"></button>
-                <button class="matrix-tab-btn" id="matrix-setup-ashuffle-${i}" onclick="toggleMatrixSetupAShuffle(${i})" title="音声随机顺序">🔀</button>
+                <button class="matrix-tab-btn" id="matrix-setup-amode-${i}" onclick="cycleMatrixSetupAMode(${i})"></button>
             </span>
         </div>`).join('');
     matrixConfig.slots.forEach((_, i) => updateMatrixSetupSound(i));
@@ -111,12 +113,16 @@ function updateMatrixSetupSound(i) {
     document.getElementById(`matrix-setup-snd-audio-${i}`).classList.toggle('active', s.sound === 'audio');
     document.getElementById(`matrix-setup-audio-${i}`).style.display = s.sound === 'audio' ? 'flex' : 'none';
     document.getElementById(`matrix-setup-scope-${i}`).textContent = matrixScopeLabel(s.audio_scope);
-    document.getElementById(`matrix-setup-ashuffle-${i}`).classList.toggle('active', s.audio_shuffle);
+    const [icon, name] = MATRIX_AUDIO_MODES[s.audio_mode] || MATRIX_AUDIO_MODES.list;
+    const modeBtn = document.getElementById(`matrix-setup-amode-${i}`);
+    modeBtn.textContent = `${icon} ${name}`;
+    modeBtn.title = '音声播放模式（点击切换）';
 }
 
 function setMatrixSetupSound(i, sound) { matrixConfig.slots[i].sound = sound; updateMatrixSetupSound(i); }
 function cycleMatrixSetupScope(i) { const s = matrixConfig.slots[i]; s.audio_scope = matrixNextScope(s.audio_scope); updateMatrixSetupSound(i); }
-function toggleMatrixSetupAShuffle(i) { const s = matrixConfig.slots[i]; s.audio_shuffle = !s.audio_shuffle; updateMatrixSetupSound(i); }
+function matrixNextAudioMode(m) { const ks = Object.keys(MATRIX_AUDIO_MODES); return ks[(ks.indexOf(m) + 1) % ks.length]; }
+function cycleMatrixSetupAMode(i) { const s = matrixConfig.slots[i]; s.audio_mode = matrixNextAudioMode(s.audio_mode); updateMatrixSetupSound(i); }
 
 function setMatrixSetupLayout(n) {
     matrixConfig.layout = n === 2 ? 2 : 3;
@@ -198,7 +204,7 @@ function startWebMatrix() {
         slot.userPaused = true;      // 进来一律暂停，按 ⏯ 开播
         bindWebSlotAudio(i);
         if (slot.session !== `${cfg.channel_id}|${cfg.shuffle}`) { slot.total = 0; slot.seed = matrixNewSeed(); }
-        if (slot.asession !== `${cfg.audio_scope}|${cfg.audio_shuffle}`) { slot.tracks = []; slot.aresumeAt = 0; }
+        if (slot.tracksScope !== cfg.audio_scope) slot.tracks = [];   // 设置页改过音声范围：重新取
         if (cfg.sound === 'audio' && !slot.tracks.length) loadWebSlotTracks(i);
     });
     setWebMatrixLayout(matrixConfig.layout);
@@ -221,7 +227,7 @@ function stopWebMatrix() {
         const v = matrixEl('video', i), a = matrixEl('audio', i);
         if (!v) return;
         slot.resumeAt = v.currentTime;
-        if (a.getAttribute('src')) slot.aresumeAt = a.currentTime;
+        saveWebSlotAudioProgress(i);   // 音声进度存服务器（跟音声专区共用）
         for (const el of [v, a]) { el.pause(); el.removeAttribute('src'); el.load(); }
     });
     showMatrixSetup();
@@ -251,16 +257,7 @@ function refreshWebBar() {
     $('matrix-bar-sound').title = audio ? '声音：音声（点击换回视频原声）' : '声音：视频原声（点击换成音声）';
     $('matrix-bar-sound').classList.toggle('active', audio);
     $('matrix-bar-audio').style.display = audio ? 'flex' : 'none';
-    if (audio) {
-        $('matrix-bar-ashuffle').classList.toggle('active', cfg.audio_shuffle);
-        $('matrix-bar-arate').textContent = `${cfg.audio_rate}x`;
-        $('matrix-bar-arate').classList.toggle('active', cfg.audio_rate !== 1);
-        $('matrix-bar-scope').textContent = matrixScopeLabel(cfg.audio_scope).replace(/ \(\d+\)$/, '');
-        const tr = slot.tracks.length && matrixEl('audio', i).getAttribute('src') ? slot.tracks[slot.aorder[slot.apos]] : null;
-        $('matrix-bar-scope').title = `范围：${matrixScopeLabel(cfg.audio_scope)}` + (tr ? `\n正在放：${tr.title}` : '') + '\n点击切到下一个专辑';
-        $('matrix-bar-aseek').title = tr ? tr.title : '';
-        updateWebAudioProgress(i);
-    }
+    if (audio) refreshWebAudioBar(i);
 }
 
 function currentWebVideo(i) {
@@ -416,25 +413,74 @@ function activateWebSlot(i) {
 }
 
 // ---------------- 音声（代替视频原声） ----------------
+// 跟网页音声专区同样的功能：上/下一首、快退快进、列表/单曲/随机、倍速、定时、章节、进度与总长、
+// 断点续听（服务器）、移到回收站。列表是这一屏的「范围」，按自然顺序；随机模式下一首随机挑。
 
-const fmtMatrixTime = (t) => { t = Math.floor(t || 0); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+const fmtMatrixTime = (t) => (typeof formatAudioTime === 'function' ? formatAudioTime(t || 0) : `${Math.floor((t || 0) / 60)}:${String(Math.floor(t || 0) % 60).padStart(2, '0')}`);
 let matrixASeeking = false;
+let matrixSleepTimer = 0, matrixSleepIdx = 0, matrixSleepEnd = 0;
+
+const currentWebTrack = (i) => {
+    const slot = webSlots[i];
+    return slot.tracks.length && matrixEl('audio', i) && matrixEl('audio', i).getAttribute('src') ? slot.tracks[slot.apos] : null;
+};
 
 function bindWebSlotAudio(i) {
     const slot = webSlots[i], a = matrixEl('audio', i);
-    a.onended = () => astepWebSlot(i, 1, false);
+    a.onended = () => {
+        const tr = currentWebTrack(i);
+        if (tr) saveAudioProgress(tr, a.duration || 0, a.duration || 0);   // 听完：清掉续听记录
+        if (matrixConfig.slots[i].audio_mode === 'single') { a.currentTime = 0; a.play().catch(() => {}); }
+        else astepWebSlot(i, 1, false);
+    };
     a.onplaying = () => { slot.askips = 0; };
+    a.onpause = () => { if (!a.ended) saveWebSlotAudioProgress(i); };
     a.onerror = () => {
         if (!a.getAttribute('src')) return;
         if (++slot.askips > Math.min(5, slot.tracks.length)) return;
         setTimeout(() => astepWebSlot(i, 1, false), 300);
     };
-    a.ontimeupdate = () => { if (i === matrixActiveSlot) updateWebAudioProgress(i); };
+    a.ontimeupdate = () => {
+        if (Date.now() - slot.asavedAt > 10000 && !a.paused) saveWebSlotAudioProgress(i);
+        if (i === matrixActiveSlot) updateWebAudioProgress(i);
+    };
+    a.ondurationchange = () => { if (i === matrixActiveSlot) updateWebAudioProgress(i); };
+}
+
+function saveWebSlotAudioProgress(i) {
+    const tr = currentWebTrack(i), a = matrixEl('audio', i);
+    if (!tr || !a) return;
+    webSlots[i].asavedAt = Date.now();
+    saveAudioProgress(tr, a.currentTime, a.duration);
+}
+
+function refreshWebAudioBar(i) {
+    const $ = (id) => document.getElementById(id), cfg = matrixConfig.slots[i], tr = currentWebTrack(i);
+    const [icon, name] = MATRIX_AUDIO_MODES[cfg.audio_mode] || MATRIX_AUDIO_MODES.list;
+    $('matrix-bar-amode').textContent = icon;
+    $('matrix-bar-amode').title = `播放模式：${name}（点击切换）`;
+    $('matrix-bar-arate').textContent = `${cfg.audio_rate}x`;
+    $('matrix-bar-arate').classList.toggle('active', cfg.audio_rate !== 1);
+    $('matrix-bar-scope').textContent = matrixScopeLabel(cfg.audio_scope).replace(/ \(\d+\)$/, '');
+    $('matrix-bar-scope').title = `音声范围：${matrixScopeLabel(cfg.audio_scope)}\n点击切到下一个专辑`;
+    const title = tr ? tr.title : (webSlots[i].tracks.length ? '' : '这个范围没有音声');
+    $('matrix-bar-atitle').textContent = title;
+    $('matrix-bar-atitle').title = tr ? `${tr.album} / ${tr.title}` : title;
+    const chapters = (tr && tr.chapters) || [];
+    const chSel = $('matrix-bar-chapter');
+    chSel.style.display = chapters.length ? '' : 'none';
+    if (chSel.dataset.track !== (tr && tr.rel_path)) {
+        chSel.dataset.track = tr ? tr.rel_path : '';
+        chSel.innerHTML = '<option value="">📑 章节</option>' + chapters.map((c, k) =>
+            `<option value="${c.start || 0}">${escapeHtml(c.title || `第${k + 1}章`)}</option>`).join('');
+    }
+    updateWebAudioProgress(i);
 }
 
 function updateWebAudioProgress(i) {
     const a = matrixEl('audio', i), seek = document.getElementById('matrix-bar-aseek');
-    document.getElementById('matrix-bar-atime').textContent = fmtMatrixTime(a.currentTime);
+    if (!a) return;
+    document.getElementById('matrix-bar-atime').textContent = `${fmtMatrixTime(a.currentTime)} / ${fmtMatrixTime(a.duration)}`;
     if (!matrixASeeking) seek.value = a.duration ? Math.round(a.currentTime / a.duration * 1000) : 0;
 }
 
@@ -444,40 +490,43 @@ function barASeek(value, done) {
     if (done && a.duration) a.currentTime = value / 1000 * a.duration;
 }
 
+function barASkip(dir) {
+    const a = matrixEl('audio', barSlot());
+    if (a.duration) a.currentTime = Math.max(0, Math.min(a.duration - 0.5, a.currentTime + dir * (dir < 0 ? AUDIO_SKIP.back : AUDIO_SKIP.fwd)));
+}
+
+function barAChapter(start) {
+    if (start === '') return;
+    matrixEl('audio', barSlot()).currentTime = parseFloat(start);
+    document.getElementById('matrix-bar-chapter').value = '';
+}
+
 function loadWebSlotTracks(i) {
     const slot = webSlots[i], scope = matrixConfig.slots[i].audio_scope, a = matrixEl('audio', i);
+    saveWebSlotAudioProgress(i);
     a.pause();
     a.removeAttribute('src');
     fetch(`/api/shortvideo_matrix/audio?scope=${encodeURIComponent(scope)}`).then(r => r.json()).then(res => {
         if (matrixConfig.slots[i].audio_scope !== scope) return;
         slot.tracks = res.tracks || [];
-        slot.asession = `${scope}|${matrixConfig.slots[i].audio_shuffle}`;
-        slot.aresumeAt = 0;
-        makeWebSlotAOrder(i);
-        slot.apos = 0;
+        slot.tracksScope = scope;
+        slot.apos = slot.tracks.length && matrixConfig.slots[i].audio_mode === 'random' ? Math.floor(Math.random() * slot.tracks.length) : 0;
         slot.askips = 0;
         applyWebMatrixAudio();
     }).catch(e => console.warn(`[Matrix] 屏 ${i + 1} 音声列表加载失败`, e));
 }
 
-function makeWebSlotAOrder(i) {
-    const slot = webSlots[i];
-    slot.aorder = slot.tracks.map((_, k) => k);
-    if (matrixConfig.slots[i].audio_shuffle) {
-        for (let k = slot.aorder.length - 1; k > 0; k--) {
-            const j = Math.floor(Math.random() * (k + 1));
-            [slot.aorder[k], slot.aorder[j]] = [slot.aorder[j], slot.aorder[k]];
-        }
-    }
-}
-
+// 载入当前这段：续听位置从服务器取（跟音声专区共用）
 function loadWebSlotTrack(i) {
-    const slot = webSlots[i], a = matrixEl('audio', i);
-    a.src = slot.tracks[slot.aorder[slot.apos]].stream_url;
+    const slot = webSlots[i], a = matrixEl('audio', i), tr = slot.tracks[slot.apos];
+    a.src = tr.stream_url;
     applyWebSlotRate(i);   // 换 src 会把 playbackRate 重置成 defaultPlaybackRate，两个都设
-    const at = slot.aresumeAt;
-    slot.aresumeAt = 0;
-    if (at) a.addEventListener('loadedmetadata', () => { a.currentTime = at; }, { once: true });
+    fetchAudioProgress(tr).then(pos => {
+        if (pos <= 0 || slot.tracks[slot.apos] !== tr) return;
+        const go = () => { if (pos < (a.duration || Infinity) - 5) a.currentTime = pos; };
+        if (a.readyState >= 1) go(); else a.addEventListener('loadedmetadata', go, { once: true });
+    });
+    if (i === matrixActiveSlot) refreshWebAudioBar(i);
 }
 
 function applyWebSlotRate(i) {
@@ -486,21 +535,34 @@ function applyWebSlotRate(i) {
     a.playbackRate = rate;
 }
 
-// 音声倍速：按档位循环切（视频不调速）
 function barCycleRate() {
-    const i = barSlot(), cfg = matrixConfig.slots[i], rates = matrixAudioRates;
-    const k = rates.indexOf(cfg.audio_rate);
-    cfg.audio_rate = rates[(k + 1) % rates.length];
+    const i = barSlot(), cfg = matrixConfig.slots[i], rates = AUDIO_SPEEDS;
+    cfg.audio_rate = rates[(rates.indexOf(cfg.audio_rate) + 1) % rates.length];
     applyWebSlotRate(i);
     refreshWebBar();
     saveMatrixConfig();
 }
 
+function barCycleAMode() {
+    const cfg = matrixConfig.slots[barSlot()];
+    cfg.audio_mode = matrixNextAudioMode(cfg.audio_mode);
+    refreshWebBar();
+    saveMatrixConfig();
+}
+
+// 下一首按播放模式挑（跟音声专区一样）：随机 → 随机一段；其它 → 按列表顺序
 function astepWebSlot(i, delta, manual = true) {
-    const slot = webSlots[i];
-    if (!slot.tracks.length) return;
+    const slot = webSlots[i], n = slot.tracks.length;
+    if (!n) return;
     if (manual) slot.askips = 0;
-    slot.apos = (slot.apos + delta + slot.tracks.length) % slot.tracks.length;
+    saveWebSlotAudioProgress(i);
+    if (delta > 0 && matrixConfig.slots[i].audio_mode === 'random' && n > 1) {
+        let k;
+        do { k = Math.floor(Math.random() * n); } while (k === slot.apos);
+        slot.apos = k;
+    } else {
+        slot.apos = (slot.apos + delta + n) % n;
+    }
     loadWebSlotTrack(i);
     applyWebMatrixAudio();
 }
@@ -521,18 +583,50 @@ function barCycleScope() {
     saveMatrixConfig();
 }
 
-// 切随机/顺序：当前这段接着放，只重排后面的
-function barToggleAShuffle() {
-    const i = barSlot(), cfg = matrixConfig.slots[i], slot = webSlots[i];
-    cfg.audio_shuffle = !cfg.audio_shuffle;
-    if (slot.tracks.length) {
-        const current = slot.aorder[slot.apos];
-        makeWebSlotAOrder(i);
-        slot.apos = slot.aorder.indexOf(current);
+// 定时关闭：到点全部暂停（多联里跟音声专区一样按档位循环）
+function barCycleSleep() {
+    const mins = SLEEP_TIMER_MINS;
+    matrixSleepIdx = (matrixSleepIdx + 1) % mins.length;
+    clearTimeout(matrixSleepTimer);
+    matrixSleepEnd = 0;
+    if (mins[matrixSleepIdx] > 0) {
+        matrixSleepEnd = Date.now() + mins[matrixSleepIdx] * 60000;
+        matrixSleepTimer = setTimeout(() => {
+            matrixSleepIdx = 0;
+            matrixSleepEnd = 0;
+            for (let k = 0; k < matrixConfig.layout; k++) setWebSlotPaused(k, true);
+            updateWebSleepBtn();
+        }, mins[matrixSleepIdx] * 60000);
     }
-    slot.asession = `${cfg.audio_scope}|${cfg.audio_shuffle}`;
-    refreshWebBar();
-    saveMatrixConfig();
+    updateWebSleepBtn();
+}
+
+function updateWebSleepBtn() {
+    const btn = document.getElementById('matrix-bar-sleep');
+    const left = matrixSleepEnd ? Math.ceil((matrixSleepEnd - Date.now()) / 60000) : 0;
+    btn.textContent = left ? `⏳${left}` : '⏳';
+    btn.title = left ? `定时关闭：还剩 ${left} 分钟（点击切下一档）` : '定时关闭：关（点击切下一档）';
+    btn.classList.toggle('active', !!left);
+}
+setInterval(() => { if (matrixSleepEnd) updateWebSleepBtn(); }, 60000);
+
+function barDeleteTrack() {
+    const i = barSlot(), slot = webSlots[i], tr = currentWebTrack(i);
+    document.getElementById('matrix-bar-more').open = false;
+    if (!tr || !confirm(`确定将音声《${tr.title}》移至回收站吗？`)) return;
+    fetch('/api/audio/trash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: tr.rel_path, is_nsfw: !!tr.is_nsfw }),
+    }).then(r => r.json()).then(res => {
+        if (res.status !== 'ok') return;
+        const a = matrixEl('audio', i);
+        a.pause();
+        a.removeAttribute('src');
+        slot.tracks.splice(slot.apos, 1);
+        if (slot.tracks.length) slot.apos %= slot.tracks.length;
+        applyWebMatrixAudio();
+    }).catch(() => {});
 }
 
 // ---------------- 布局 / 全局 ----------------
@@ -561,6 +655,7 @@ function toggleWebMatrixAllPlay() {
 
 Omni.register('shortvideo_matrix', {
     activate() {
+        if (typeof loadAudioPlayerSpec === 'function') loadAudioPlayerSpec();   // 倍速 / 定时档位（跟音声专区同一份）
         document.getElementById('total-badge').textContent = '多联放映';
         const subStats = document.getElementById('media-sub-stats');
         if (subStats) subStats.textContent = '2 / 3 屏并排 · 顶栏控制焦点屏 · 焦点出声 · 音声可代替原声';

@@ -36,6 +36,8 @@ let sleepTimerTimeout = null;
 
 let SLEEP_TIMER_MINS = [0, 15, 30, 45, 60];
 
+let AUDIO_SKIP = { back: 15, fwd: 30 };   // 快退 / 快进秒数（多联网页版用）
+
 let audioPlayerSpecLoaded = null;
 
 function loadAudioPlayerSpec() {
@@ -43,6 +45,7 @@ function loadAudioPlayerSpec() {
         audioPlayerSpecLoaded = fetch('/api/audio/player_spec').then(r => r.json()).then(spec => {
             if (Array.isArray(spec.speeds) && spec.speeds.length) AUDIO_SPEEDS = spec.speeds;
             if (Array.isArray(spec.sleep_mins) && spec.sleep_mins.length) SLEEP_TIMER_MINS = spec.sleep_mins;
+            if (spec.skip_back) AUDIO_SKIP = { back: spec.skip_back, fwd: spec.skip_fwd };
         }).catch(() => { audioPlayerSpecLoaded = null; });
     }
     return audioPlayerSpecLoaded;
