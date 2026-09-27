@@ -3,14 +3,16 @@ icons.py - 本机原生控件的图标（Material Symbols Rounded，跟网页 we
 
 SVG 在 web/vendor/icons/；渲染前把颜色填进 <svg fill="…">，按 (名字, 颜色, 尺寸) 缓存成 QIcon。
 按钮统一用 set_icon()：去掉文字、设图标与图标尺寸。
+install_tips()：悬停 0.25 秒就在按钮正下方弹出说明气泡（文字取按钮的 toolTip），
+比 Qt 默认的 0.7 秒快，位置也固定，不跟着鼠标跑。气泡样式见 TIP_QSS。
 """
 import os
 from functools import lru_cache
 
-from PyQt6.QtCore import QByteArray, QSize, Qt
+from PyQt6.QtCore import QByteArray, QEvent, QObject, QPoint, QSize, Qt, QTimer
 from PyQt6.QtGui import QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtWidgets import QAbstractButton
+from PyQt6.QtWidgets import QAbstractButton, QToolTip, QWidget
 
 from omni.core import paths
 
@@ -46,3 +48,52 @@ def set_icon(btn: QAbstractButton, name: str, color: str = FG, size: int = 22, t
     btn.setIcon(icon(name, color, size))
     btn.setIconSize(QSize(size, size))
     btn.setText(text)
+
+
+# 气泡样式：拼进各播放器自己的样式表（QToolTip 会继承弹出它的控件那棵树上的样式表）
+TIP_QSS = """
+    QToolTip { color:#e6edf3; background:#1f242c; border:1px solid #3a414b; border-radius:6px;
+               padding:4px 8px; font-size:12px; }
+"""
+
+
+class _TipFilter(QObject):
+    """装在按钮上：Enter 后 250ms 在按钮下方显示 toolTip；Leave / 点击就收；吞掉 Qt 自己那个慢半拍的气泡。"""
+
+    def __init__(self):
+        super().__init__()
+        self._target = None
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(250)
+        self._timer.timeout.connect(self._show)
+
+    def eventFilter(self, obj, ev):
+        t = ev.type()
+        if t == QEvent.Type.Enter:
+            self._target = obj
+            self._timer.start()
+        elif t in (QEvent.Type.Leave, QEvent.Type.MouseButtonPress, QEvent.Type.Hide):
+            self._timer.stop()
+            if obj is self._target:
+                QToolTip.hideText()
+        elif t == QEvent.Type.ToolTip:
+            return True
+        return False
+
+    def _show(self):
+        w = self._target
+        if w is not None and w.isVisible() and w.toolTip():
+            QToolTip.showText(w.mapToGlobal(QPoint(0, w.height() + 6)), w.toolTip(), w)
+
+
+_TIPS = None
+
+
+def install_tips(root: QWidget) -> None:
+    """root 下所有按钮都用快速气泡（后面新建的按钮要再调一次）。"""
+    global _TIPS
+    if _TIPS is None:
+        _TIPS = _TipFilter()
+    for b in root.findChildren(QAbstractButton):
+        b.installEventFilter(_TIPS)

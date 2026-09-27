@@ -346,3 +346,16 @@
 .matrix-bar-menu .ico { width: 16px; height: 16px; }
 .matrix-tab-btn .ico, .matrix-btn-primary .ico { width: 16px; height: 16px; margin-right: 2px; }
 .matrix-btn-primary { display: inline-flex; align-items: center; gap: 4px; }
+
+/* 顶栏悬浮在三屏上面：出没不改变播放区高度 */
+.matrix-web-topbar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 5;
+    margin-bottom: 0;
+    background: rgba(13,16,21,0.88);
+    backdrop-filter: blur(8px);
+}
+@media (max-width: 760px) {
+    .matrix-web-topbar { position: static; }   /* 手机上顶栏折成几行，浮起来会盖住第一屏，照旧占位 */
+}

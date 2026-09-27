@@ -27,8 +27,9 @@ start_matrix()；这里改动的设置也写回同一份配置，退出后网页
   settings ⚙ 设置：回到网页设置页。
 
 顶栏默认自动隐藏：进来先显示 3 秒，之后鼠标移到最顶端才出来，移开 1.5 秒收起（下拉 / 菜单 / 搜索框
-打开时不收）；📌 固定后一直显示。3 屏时竖屏视频本来就是宽度撑满，顶栏出没不影响画面大小，所以
-顶栏直接进布局（让出 / 挤回空间），不做浮层——视频是原生子窗口，普通控件盖不住它。
+打开时不收）；📌 固定后一直显示。顶栏是悬浮的，盖在三屏上面，出没不改变播放区大小。
+视频是原生子窗口（QVideoWidget 里面是 QWindowContainer），普通控件盖不住它，所以顶栏也设成原生
+窗口（WA_NativeWindow），显示时 raise_() 到视频上层。
 
 键盘（Steam Input 可映射）：Tab 显示 / 收起顶栏，1/2/3 选焦点屏，空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
 """
@@ -46,7 +47,7 @@ from omni.features.audio import playback, service as audio_service
 from omni.features.shortvideo import service as sv
 from omni.features.shortvideo_matrix import service as mx
 from omni.shell.audio_controls import AudioControlBar, AudioSession
-from omni.shell.icons import ACCENT, AUDIO, FG, LIKE, icon, set_icon
+from omni.shell.icons import ACCENT, AUDIO, FG, LIKE, TIP_QSS, icon, install_tips, set_icon
 
 
 # Qt 样式表不认 CSS 的 .class 选择器，高亮一律用动态属性 [active="true"]，改完属性要 polish 一下才生效
@@ -472,7 +473,7 @@ class NativeMatrixPlayerWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("NativeMatrixPlayerWidget{background:#0a0a0c;}" + _QSS)
+        self.setStyleSheet("NativeMatrixPlayerWidget{background:#0a0a0c;}" + _QSS + TIP_QSS)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.layout_mode = 3
@@ -495,9 +496,11 @@ class NativeMatrixPlayerWidget(QWidget):
         root.setSpacing(0)
 
         # 顶栏：第一行 全局 + 焦点屏视频控件；第二行 音声控件（只在焦点屏用音声时展开）
+        # 悬浮顶栏：不进布局，手动摆在最上面（_place_bar），原生窗口才能盖住下面的原生视频窗口
         top_bar = self.top_bar = QWidget(self)
         top_bar.setObjectName("matrixTopBar")
         top_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        top_bar.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         rows = QVBoxLayout(top_bar)
         rows.setContentsMargins(10, 4, 10, 4)
         rows.setSpacing(4)
@@ -556,7 +559,8 @@ class NativeMatrixPlayerWidget(QWidget):
         self.btn_shuffle = button("shuffle", lambda: self.cur().set_shuffle(not self.cur().shuffle, user=True), "视频随机顺序")
         self.btn_like = button("favorite", lambda: self.cur().toggle_like(), "点赞")
         self.btn_mute = button("volume_up-fill", lambda: self.cur().set_muted(not self.cur().user_muted, user=True), "静音（M）")
-        self.btn_sound = button("movie-fill", lambda: self.cur().set_sound("video" if self.cur().sound == "audio" else "audio", user=True))
+        self.btn_sound = button("movie-fill", lambda: self.cur().set_sound("video" if self.cur().sound == "audio" else "audio", user=True),
+                                "声音：视频原声（点击换成音声）")
 
         top.addStretch(0)
         sep()
@@ -595,7 +599,6 @@ class NativeMatrixPlayerWidget(QWidget):
         ab.addWidget(self.audio_bar, 1)
         self.audio_box.hide()
         rows.addWidget(self.audio_box)
-        root.addWidget(top_bar)
 
         area = QWidget(self)
         h = QHBoxLayout(area)
@@ -610,6 +613,7 @@ class NativeMatrixPlayerWidget(QWidget):
             h.addWidget(s, 1)   # 等分；配合 _no_width_hint，宽度不再随视频变
             self.slots.append(s)
         root.addWidget(area, 1)
+        install_tips(self)
 
     def cur(self) -> MatrixSlotWidget:
         return self.slots[self.active]
@@ -639,6 +643,7 @@ class NativeMatrixPlayerWidget(QWidget):
         self.btn_sound.setToolTip("声音：音声（点击换回视频原声）" if audio else "声音：视频原声（点击换成音声）")
         _set_active_prop(self.btn_sound, audio)
         self.audio_box.setVisible(audio)
+        self._place_bar()   # 音声那一行出没，顶栏高度跟着变
         self.audio_bar.bind(s.asession)
         if audio:
             sc = next((x for x in self.audio_scopes if x["id"] == s.audio_scope), None)
@@ -724,20 +729,34 @@ class NativeMatrixPlayerWidget(QWidget):
             s.set_paused(playing)
 
     # ---- 生命周期 ----
+    # ---- 顶栏：悬浮 + 自动隐藏 ----
+    def _place_bar(self):
+        """顶栏贴在最上面、跟窗口一样宽，高度按内容（一行 / 两行）。"""
+        self.top_bar.setGeometry(0, 0, self.width(), self.top_bar.sizeHint().height())
+
+    def _raise_bar(self):
+        self._place_bar()
+        self.top_bar.show()
+        self.top_bar.raise_()   # 压在原生视频窗口上面
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_bar()
+
     # ---- 顶栏自动隐藏 ----
     def set_bar_pinned(self, on: bool, save: bool = False):
         self.bar_pinned = on
         _toggle_icon(self.btn_pin, on, "keep", "keep-fill")
         if on:
             self._bar_hide.stop()
-            self.top_bar.show()
+            self._raise_bar()
         else:
             self._bar_hide.start(1500)
         if save:
             self.save_config()
 
     def show_bar(self, linger_ms: int = 0):
-        self.top_bar.show()
+        self._raise_bar()
         if linger_ms and not self.bar_pinned:
             self._bar_hide.start(linger_ms)
 
@@ -757,7 +776,7 @@ class NativeMatrixPlayerWidget(QWidget):
         edge = self.top_bar.height() if self.top_bar.isVisible() else 6   # 收着时只认最顶端几像素
         if inside_x and 0 <= p.y() <= edge:
             self._bar_hide.stop()
-            self.top_bar.show()
+            self._raise_bar()
         elif self.top_bar.isVisible() and not self._bar_hide.isActive():
             self._bar_hide.start(1500)
 

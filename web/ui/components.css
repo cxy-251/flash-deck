@@ -137,3 +137,20 @@
 .ico-btn.liked { color: #ff4d6d; }
 .ico-btn.danger { color: #ff7b72; }
 .ico-btn.big .ico { width: 28px; height: 28px; }
+
+/* 图标按钮的说明气泡（web/ui/icons.js） */
+.omni-tip {
+    position: fixed;
+    z-index: 100000;
+    display: none;
+    pointer-events: none;
+    padding: 4px 9px;
+    border-radius: 6px;
+    background: #1f242c;
+    border: 1px solid #3a414b;
+    color: #e6edf3;
+    font-size: 12px;
+    white-space: pre-line;
+    max-width: 320px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+}

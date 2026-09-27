@@ -36,7 +36,7 @@ from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
 from omni.shell.audio_controls import AudioControlBar, AudioSession
-from omni.shell.icons import FG, LIKE, set_icon
+from omni.shell.icons import FG, LIKE, TIP_QSS, install_tips, set_icon
 
 
 def _fmt_ms(ms: int) -> str:
@@ -121,7 +121,7 @@ class NativePlayerWidget(QWidget):
 
         self.controls = QWidget(self)
         self.controls.setObjectName("dyaCtrlBar")
-        self.controls.setStyleSheet(_CONTROL_QSS)
+        self.controls.setStyleSheet(_CONTROL_QSS + TIP_QSS)
 
         self.title_label = QLabel("")
         self.title_label.setStyleSheet("QLabel{font-size:13px;font-weight:600;color:#fff;}")
@@ -147,6 +147,8 @@ class NativePlayerWidget(QWidget):
             set_icon(b, name, size=26 if b is self.btn_play else 22)
             b.setFixedSize(34, 34)
         self.btn_close.setToolTip("关闭")
+        for b, tip in ((self.btn_prev, "上一条"), (self.btn_play, "播放 / 暂停"), (self.btn_next, "下一条")):
+            b.setToolTip(tip)
 
         # 视频模式的控件放在 video_box；音频模式整条换成 audio_bar（跟多联里的音声控件同一个组件）
         self.video_box = QWidget()
@@ -215,6 +217,7 @@ class NativePlayerWidget(QWidget):
         self._drag_start = None
         self._drag_start_t = 0.0
         self.video_widget.installEventFilter(self)
+        install_tips(self.controls)
 
     def _on_audio_session_changed(self):
         if self.audio_session.mode != self._last_mode:
