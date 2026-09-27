@@ -105,6 +105,9 @@ function renderMatrixSetup() {
     matrixConfig.slots.forEach((_, i) => updateMatrixSetupSound(i));
     setMatrixSetupLayout(matrixConfig.layout);
     document.getElementById('matrix-setup-focus').checked = matrixConfig.focus_audio;
+    // 「控制栏悬浮」只管本机原生播放器（网页版顶栏本来就浮在视频上）
+    document.getElementById('matrix-setup-float-wrap').style.display = matrixIsNative() ? 'flex' : 'none';
+    document.getElementById('matrix-setup-float').checked = matrixConfig.bar_float !== false;
     document.getElementById('matrix-start-btn').disabled = false;
 }
 

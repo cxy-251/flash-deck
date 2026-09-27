@@ -27,11 +27,13 @@ start_matrix()；这里改动的设置也写回同一份配置，退出后网页
   settings ⚙ 设置：回到网页设置页。
 
 顶栏默认自动隐藏：进来先显示 3 秒，之后鼠标移到最顶端才出来，移开 1.5 秒收起（下拉 / 菜单 / 搜索框
-打开时不收）；📌 固定后一直显示。顶栏那一条的位置始终留着（bar_slot，固定高度），收起时只是控件
-不见、留一条深色空白，所以出没不改变播放区大小，也不压视频。
-不做成悬浮盖在视频上：视频是原生子窗口（QVideoWidget 里是 QWindowContainer），普通控件盖不住；
-把顶栏设成原生窗口去盖，会连带把三屏所在区域也变成原生窗口——真机上实测视频变黑（只有声音），
-后来再显示的第三屏又压在顶栏上面。3 屏时竖屏视频本来就是宽度撑满，留出这一条不影响画面大小。
+打开时不收）；📌 固定后一直显示。顶栏有两种摆法（配置 bar_float，设置页可切）：
+  悬浮（默认）：顶栏是一个独立的无边框弹出层窗口（Qt.ToolTip，跟悬停气泡 / 下拉框同一类），
+      贴在播放器顶上盖住视频。视频是原生子窗口（QVideoWidget 里是 QWindowContainer），同一窗口里的
+      控件盖不住它——把顶栏设成原生子窗口去盖会连带把三屏区域也变成原生窗口，真机实测视频变黑；
+      独立的弹出层窗口由合成器叠在整个主窗口上面，不受这个影响。弹出层拿不到键盘焦点，所以频道
+      搜索走单独的对话框（ChannelSearchDialog），快捷键仍由播放器本身接收；应用失去焦点时收起。
+  留位：顶栏那一条位置始终留着（bar_slot，固定高度），收起时只剩深色空白，也不改变播放区大小。
 
 键盘（Steam Input 可映射）：Tab 显示 / 收起顶栏，1/2/3 选焦点屏，空格 暂停/继续，←/→ 上/下一条，M 静音，Esc 退出。
 """
@@ -40,8 +42,10 @@ from typing import Any, Dict, List, Optional
 
 from PyQt6.QtCore import Qt, QUrl, QEvent, QTimer, pyqtSignal
 from PyQt6.QtGui import QCursor
+from PyQt6.QtCore import QPoint
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSlider, QLabel, QComboBox,
-                             QFrame, QSizePolicy, QCompleter, QProgressBar)
+                             QFrame, QSizePolicy, QProgressBar, QDialog, QLineEdit, QListWidget, QListWidgetItem,
+                             QApplication)
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
@@ -468,6 +472,56 @@ class MatrixSlotWidget(QFrame):
             self._skip_broken()
 
 
+class ChannelSearchDialog(QDialog):
+    """搜主播（文件夹名）：普通对话框，能拿键盘焦点、能用输入法；选中一项就关。"""
+
+    def __init__(self, channels: List[Dict[str, Any]], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("搜索主播")
+        self.resize(420, 520)
+        self.setStyleSheet(_QSS + "QDialog{background:#0d1015;} QLineEdit{background:rgba(255,255,255,0.07); "
+                           "border:1px solid rgba(255,255,255,0.12); border-radius:16px; padding:6px 12px; font-size:14px;} "
+                           "QListWidget{background:#0d1015; border:none; font-size:13px;} "
+                           "QListWidget::item{padding:6px 8px; border-radius:6px;} "
+                           "QListWidget::item:selected{background:#1f6feb;}")
+        self.channels = channels
+        self.chosen: Optional[str] = None
+        v = QVBoxLayout(self)
+        self.edit = QLineEdit()
+        self.edit.setPlaceholderText("输入主播名的任意一段")
+        self.edit.addAction(icon("search", "#8b949e", 18), QLineEdit.ActionPosition.LeadingPosition)
+        self.edit.textChanged.connect(self._filter)
+        self.edit.returnPressed.connect(self._pick_first)
+        self.list = QListWidget()
+        self.list.itemActivated.connect(self._pick)
+        self.list.itemClicked.connect(self._pick)
+        v.addWidget(self.edit)
+        v.addWidget(self.list, 1)
+        self._filter("")
+
+    def _label(self, ch):
+        return ch["label"] if ch.get("group") == "常用" else f"[{ch.get('group')}] {ch['label']}"
+
+    def _filter(self, text: str):
+        q = text.strip().lower()
+        self.list.clear()
+        for ch in self.channels:
+            if not q or q in ch["label"].lower():
+                it = QListWidgetItem(self._label(ch))
+                it.setData(Qt.ItemDataRole.UserRole, ch["id"])
+                self.list.addItem(it)
+        if self.list.count():
+            self.list.setCurrentRow(0)
+
+    def _pick_first(self):
+        if self.list.currentItem():
+            self._pick(self.list.currentItem())
+
+    def _pick(self, item):
+        self.chosen = item.data(Qt.ItemDataRole.UserRole)
+        self.accept()
+
+
 class NativeMatrixPlayerWidget(QWidget):
     """多联放映全屏容器：顶栏（全局 + 焦点屏控制台）+ 2/3 个等宽并排、没有控件的 MatrixSlotWidget。"""
 
@@ -482,6 +536,7 @@ class NativeMatrixPlayerWidget(QWidget):
         self.active = 0
         self.focus_audio = True
         self.bar_pinned = False
+        self.bar_float = True                  # 顶栏悬浮在视频上（独立弹出层窗口）；False = 留位
         self._bar_hide = QTimer(self)          # 离开顶栏后多久收起
         self._bar_hide.setSingleShot(True)
         self._bar_hide.timeout.connect(self._hide_bar_if_idle)
@@ -502,7 +557,7 @@ class NativeMatrixPlayerWidget(QWidget):
         self.bar_slot = QWidget(self)
         self.bar_slot.setObjectName("matrixTopBar")
         self.bar_slot.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        slot_lay = QVBoxLayout(self.bar_slot)
+        slot_lay = self._slot_lay = QVBoxLayout(self.bar_slot)
         slot_lay.setContentsMargins(0, 0, 0, 0)
         top_bar = self.top_bar = QWidget(self.bar_slot)
         slot_lay.addWidget(top_bar)
@@ -547,18 +602,11 @@ class NativeMatrixPlayerWidget(QWidget):
         self.combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.combo.setMinimumContentsLength(10)
         self.combo.setMaximumWidth(240)
-        # 可输入搜索：打主播名（文件夹名）的任意一段，弹出匹配项，选中即切换
-        self.combo.setEditable(True)
-        self.combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.combo.lineEdit().setPlaceholderText("搜索主播")
-        self.combo.lineEdit().addAction(icon("search", "#8b949e", 18), self.combo.lineEdit().ActionPosition.LeadingPosition)
-        completer = QCompleter(self.combo.model(), self.combo)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
-        self.combo.setCompleter(completer)
+        self.combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.combo.activated.connect(self._on_combo)   # 只响应用户选择，程序里 setCurrentIndex 不触发
+        self.btn_search = button("search", self._search_channel, "搜索主播")
         top.addWidget(self.combo, 1)
+        top.addWidget(self.btn_search)
         self.btn_prev = button("skip_previous-fill", lambda: self.cur().step(-1), "上一条（←）")
         self.btn_play = button("pause-fill", lambda: self.cur().set_paused(self.cur().is_playing()), "暂停 / 继续（空格）")
         self.btn_next = button("skip_next-fill", lambda: self.cur().step(1), "下一条（→）")
@@ -663,14 +711,28 @@ class NativeMatrixPlayerWidget(QWidget):
             self.lbl_atitle.setToolTip(f"{tr.get('album')} / {title}" if tr else title)
 
     def _on_combo(self, _i: int):
-        cid = self.combo.currentData()
+        self._set_channel(self.combo.currentData())
+
+    def _set_channel(self, cid):
         s = self.cur()
         if cid and cid != s.channel_id:
             s.load_channel(cid)
             self.save_config()
-        else:   # 打了字但没选中任何频道：把框里的文字还原成当前频道
-            self.combo.setCurrentIndex(max(0, self.combo.findData(s.channel_id)))
+        self.combo.setCurrentIndex(max(0, self.combo.findData(s.channel_id)))
         self.setFocus()
+
+    def _search_channel(self):
+        """悬浮顶栏拿不到键盘，搜索开一个正常对话框（输入法可用）。"""
+        self._bar_hide.stop()
+        dlg = ChannelSearchDialog(self._channels, self)
+        self._searching = True
+        try:
+            if dlg.exec() == QDialog.DialogCode.Accepted and dlg.chosen:
+                self._set_channel(dlg.chosen)
+        finally:
+            self._searching = False
+            self.activateWindow()
+            self.setFocus()
 
     def _next_scope(self):
         ids = [x["id"] for x in self.audio_scopes] or ["all"]
@@ -716,8 +778,7 @@ class NativeMatrixPlayerWidget(QWidget):
             s.set_active(i == idx)
         self._apply_focus_audio()
         self.refresh_bar()
-        if not self.combo.lineEdit().hasFocus():   # 正在频道框里打字时别把焦点抢走
-            self.setFocus()
+        self.setFocus()
 
     def set_focus_audio(self, on: bool, save: bool = False):
         self.focus_audio = on
@@ -738,8 +799,61 @@ class NativeMatrixPlayerWidget(QWidget):
 
     # ---- 生命周期 ----
     # ---- 顶栏：固定留位 + 自动隐藏 ----
+    def set_bar_float(self, on: bool):
+        """切换顶栏摆法：悬浮（独立弹出层窗口盖在视频上）/ 留位（在布局里占一条）。"""
+        if on == self.bar_float and self.top_bar.parent() is not None and \
+                bool(self.top_bar.windowFlags() & Qt.WindowType.ToolTip) == on:
+            return
+        self.bar_float = on
+        visible = self.top_bar.isVisible()
+        if on:
+            # 以播放器为父的无边框弹出层：样式表照样继承，合成器把它叠在整个主窗口（含视频）上面
+            self.top_bar.setParent(self, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        else:
+            self.top_bar.setParent(self.bar_slot, Qt.WindowType.Widget)
+            self._slot_lay.insertWidget(0, self.top_bar)
+        self._reserved = None
+        self._update_reserve()
+        if visible:
+            self._raise_bar()
+
+    def _place_float(self):
+        """悬浮顶栏贴在播放器顶上、同宽，高度按内容（一行 / 两行）。"""
+        self.top_bar.setFixedWidth(self.width())
+        self.top_bar.adjustSize()
+        self.top_bar.move(self.mapToGlobal(QPoint(0, 0)))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.bar_float and self.top_bar.isVisible():
+            self._place_float()
+
+    def eventFilter(self, obj, event):
+        # 主窗口挪动 / 变大小：悬浮顶栏跟着；失去激活（切到别的程序）：收起，免得浮在别的窗口上
+        if obj is self.window() and self.bar_float:
+            t = event.type()
+            if t in (QEvent.Type.Move, QEvent.Type.Resize) and self.top_bar.isVisible():
+                self._place_float()
+            elif t == QEvent.Type.WindowDeactivate and not getattr(self, "_searching", False):
+                if QApplication.activePopupWidget() is None:
+                    self.top_bar.hide()
+        return False
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.window().removeEventFilter(self)
+        self.window().installEventFilter(self)
+
     def _update_reserve(self):
-        """顶栏留多高：只要有一屏用音声就按两行留，否则一行——焦点换来换去、顶栏出没都不变。"""
+        """留位模式下顶栏留多高：只要有一屏用音声就按两行留，否则一行——焦点换来换去、顶栏出没都不变。
+        悬浮模式不留（0）。"""
+        if self.bar_float:
+            if getattr(self, "_reserved", None) != 0:
+                self._reserved = 0
+                self.bar_slot.setFixedHeight(0)
+            if self.top_bar.isVisible():
+                self._place_float()   # 音声那一行出没，悬浮顶栏高度跟着变
+            return
         if self.top_bar.isVisible() or not hasattr(self, "_row_h"):
             # 只在顶栏显示时量（藏起来时 Qt 给的 sizeHint 是 0），量完缓存
             m = self._rows.contentsMargins()
@@ -753,7 +867,12 @@ class NativeMatrixPlayerWidget(QWidget):
             self.bar_slot.setFixedHeight(need)
 
     def _raise_bar(self):
-        self.top_bar.show()
+        if self.bar_float:
+            self.top_bar.show()     # 先显示再量高度：藏着时 adjustSize 量不准（会漏掉音声那一行）
+            self._place_float()
+            self.top_bar.raise_()
+        else:
+            self.top_bar.show()
 
     # ---- 顶栏自动隐藏 ----
     def set_bar_pinned(self, on: bool, save: bool = False):
@@ -773,12 +892,8 @@ class NativeMatrixPlayerWidget(QWidget):
             self._bar_hide.start(linger_ms)
 
     def _bar_busy(self) -> bool:
-        """下拉 / 菜单打开着，或者正在频道框里打字搜索（框里的字跟当前频道不一样），别收。
-        光是框有键盘焦点不算——刚显示时它会自己拿到焦点。"""
-        from PyQt6.QtWidgets import QApplication
-        le = self.combo.lineEdit()
-        typing = le.hasFocus() and le.text() != self.combo.currentText()
-        return bool(QApplication.activePopupWidget()) or typing
+        """下拉 / 菜单打开着，或者搜索对话框开着，别收。"""
+        return bool(QApplication.activePopupWidget()) or getattr(self, "_searching", False)
 
     def _poll_bar(self):
         if not self.isVisible():
@@ -787,7 +902,10 @@ class NativeMatrixPlayerWidget(QWidget):
             return
         p = self.mapFromGlobal(QCursor.pos())
         inside_x = 0 <= p.x() < self.width()
-        edge = self.bar_slot.height()   # 顶栏那一条留着的空白，鼠标移上去就出来
+        if self.bar_float:
+            edge = self.top_bar.height() if self.top_bar.isVisible() else 6   # 收着时只认最顶端几像素
+        else:
+            edge = self.bar_slot.height()   # 顶栏那一条留着的空白，鼠标移上去就出来
         if inside_x and 0 <= p.y() <= edge:
             self._bar_hide.stop()
             self._raise_bar()
@@ -809,6 +927,7 @@ class NativeMatrixPlayerWidget(QWidget):
         cfg = mx.load_config()
         channels = mx.get_channels()
         self.audio_scopes = mx.get_audio_scopes()
+        self._channels = channels
         self.combo.clear()
         for ch in channels:
             label = ch["label"] if ch.get("group") == "常用" else f"[{ch.get('group')}] {ch['label']}"
@@ -830,6 +949,7 @@ class NativeMatrixPlayerWidget(QWidget):
             s.set_sound(s_cfg["sound"])
         self.set_layout_mode(cfg["layout"], autoload=False)
         self.set_focus_audio(cfg["focus_audio"])
+        self.set_bar_float(cfg["bar_float"])
         self.set_bar_pinned(cfg["bar_pinned"])
         self.show_bar(linger_ms=3000)   # 进来先亮 3 秒，让人知道控件在上面
         self._bar_poll.start()
@@ -840,7 +960,7 @@ class NativeMatrixPlayerWidget(QWidget):
 
     def save_config(self):
         try:
-            mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio, "bar_pinned": self.bar_pinned,
+            mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio, "bar_pinned": self.bar_pinned, "bar_float": self.bar_float,
                             "slots": [{"channel_id": s.channel_id, "shuffle": s.shuffle, "muted": s.user_muted,
                                        "sound": s.sound, "audio_scope": s.audio_scope,
                                        "audio_mode": s.asession.mode, "audio_rate": s.asession.rate}
@@ -852,6 +972,7 @@ class NativeMatrixPlayerWidget(QWidget):
         """离开分区 / 关闭：停掉所有解码器、释放文件句柄。"""
         self._bar_poll.stop()
         self._bar_hide.stop()
+        self.top_bar.hide()   # 悬浮时它是独立窗口，不会跟着播放器一起藏
         for s in self.slots:
             s.stop()
         self.hide()
