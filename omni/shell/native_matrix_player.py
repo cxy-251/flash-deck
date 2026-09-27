@@ -12,6 +12,8 @@ native_matrix_player.py - 短视频多联放映（本机原生多路播放）
 
 每屏的声音可以换成「音声」分区的音频（🎬/🎧）：音声用一个只出声的 QMediaPlayer，跟视频各播各的
 （视频一条条换，音声连着往下放）；这一屏听不到或视频被暂停时，音声暂停，回来接着放。
+音声的播放逻辑和控件跟本机音声专区是同一个组件（audio_controls.AudioSession / AudioControlBar），
+断点续听也是同一份；焦点屏用音声时顶栏展开第二行放这套控件，多联只多一个「范围」按钮。
 用音声时视频原声的音轨直接关掉，不解码。横屏视频在竖长分屏里只剩一条缝，跳过。
 
 跟 native_player.py 同一个套路：MainWindow 的子控件，盖在网页上面。网页那边先有一个设置页
@@ -35,13 +37,10 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSl
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
+from omni.features.audio import playback, service as audio_service
 from omni.features.shortvideo import service as sv
 from omni.features.shortvideo_matrix import service as mx
-
-
-def _fmt_ms(ms: int) -> str:
-    m, s = divmod(max(0, int(ms)) // 1000, 60)
-    return f"{m}:{s:02d}"
+from omni.shell.audio_controls import AudioControlBar, AudioSession
 
 
 # Qt 样式表不认 CSS 的 .class 选择器，高亮一律用动态属性 [active="true"]，改完属性要 polish 一下才生效
@@ -51,6 +50,11 @@ _QSS = """
     QPushButton { color:#fff; background:rgba(255,255,255,0.10); border:1px solid rgba(255,255,255,0.14);
                   border-radius:6px; padding:4px 6px; min-width:26px; }
     QPushButton:hover { background:rgba(255,255,255,0.22); }
+    QToolButton { color:#fff; background:rgba(255,255,255,0.10); border:1px solid rgba(255,255,255,0.14);
+                  border-radius:6px; padding:4px 8px; }
+    QToolButton:hover { background:rgba(255,255,255,0.22); }
+    QToolButton::menu-indicator { image:none; }
+    QLabel#audioTime { color:#c9d1d9; font-size:11px; }
     QPushButton[active="true"] { background:#1f6feb; border-color:#58a6ff; font-weight:600; }
     QPushButton#matrixClose { background:#b62324; border-color:#da3633; }
     QComboBox { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:3px 8px; }
@@ -88,7 +92,6 @@ class MatrixSlotWidget(QFrame):
 
     activated = pyqtSignal(int)          # 要成为焦点屏（点击立即；鼠标停留 HOVER_MS 后）
     changed = pyqtSignal(int)            # 顶栏要显示的状态变了（换片、点赞、暂停、声源…）
-    audioProgress = pyqtSignal(int, int, int)   # 屏序号, 音声位置, 音声总长（毫秒）
     settingsChanged = pyqtSignal()       # 频道/随机/静音/声源变了，让容器写回配置
 
     MAX_SKIP = 5                         # 连续这么多条都放不了就停下，别无限跳
@@ -110,19 +113,14 @@ class MatrixSlotWidget(QFrame):
         self.focus_silenced = False      # 焦点出声模式下不是焦点屏
         self.user_paused = False         # 用户暂停了这一屏（换片时播放器短暂 Stopped 不算）
         self._seek_on_load = 0           # 恢复进度：片源载入后跳到这里（毫秒）
-        self._aseek_on_load = 0
         self._resume_ms = 0              # stop() 时记下的位置，下次打开接着放
-        self._aresume_ms = 0
         self._session: Optional[tuple] = None    # 视频列表是按什么设置取的（频道, 随机）；对不上就重新取
-        self._asession: Optional[tuple] = None   # 音声列表同理（范围, 随机）
+        self._tracks_scope: Optional[str] = None # 音声列表是按哪个范围取的
 
         # 音声（代替视频原声）
         self.sound = "video"             # video | audio
         self.audio_scope = "all"
-        self.audio_shuffle = True
-        self.audio_rate = 1.0            # 音声倍速（Qt 默认保持音调，人声不会变尖）
-        self.tracks: List[Dict[str, Any]] = []
-        self.aorder: List[int] = []
+        self.tracks: List[Dict[str, Any]] = []   # 范围里的音声（自然顺序；随机模式下一首随机挑）
         self.apos = 0
         self._askips = 0
 
@@ -132,6 +130,11 @@ class MatrixSlotWidget(QFrame):
         self.aplayer = QMediaPlayer(self)
         self.aout = QAudioOutput(self)
         self.aplayer.setAudioOutput(self.aout)
+        # 倍速 / 模式 / 章节 / 续听 都在 AudioSession（跟音声专区同一个）
+        self.asession = AudioSession(self.aplayer, self)
+        self.asession.nextRequested.connect(lambda: self.astep(1, manual=False))
+        self.asession.prevRequested.connect(lambda: self.astep(-1))
+        self.asession.changed.connect(lambda: self.changed.emit(self.index))
 
         self.video_widget = QVideoWidget(self)
         self.video_widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
@@ -161,10 +164,8 @@ class MatrixSlotWidget(QFrame):
         p.errorOccurred.connect(self._on_error)
         # videoSizeChanged 可能从解码线程发出来，排队回到界面线程再处理（在别的线程里切片源会崩）
         self.video_widget.videoSink().videoSizeChanged.connect(self._on_video_size, Qt.ConnectionType.QueuedConnection)
-        a = self.aplayer
-        a.positionChanged.connect(lambda pos: self.audioProgress.emit(self.index, pos, self.aplayer.duration()))
-        a.mediaStatusChanged.connect(self._on_astatus)
-        a.errorOccurred.connect(self._on_aerror)
+        self.aplayer.mediaStatusChanged.connect(self._on_astatus)
+        self.aplayer.errorOccurred.connect(self._on_aerror)
 
     # ---- 焦点：点击立即，鼠标停留 HOVER_MS 后 ----
     def enterEvent(self, event):
@@ -192,7 +193,7 @@ class MatrixSlotWidget(QFrame):
         return self.videos[self.order[self.pos]] if self.videos else None
 
     def current_track(self) -> Optional[Dict[str, Any]]:
-        return self.tracks[self.aorder[self.apos]] if self.tracks and self.aplayer.source().isValid() else None
+        return self.tracks[self.apos] if self.tracks and self.aplayer.source().isValid() else None
 
     def is_playing(self) -> bool:
         return self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
@@ -221,8 +222,7 @@ class MatrixSlotWidget(QFrame):
             self.audio.setMuted(True)
             if heard and not self.user_paused and not self.player.source().isEmpty() and self.tracks:
                 if self.aplayer.source().isEmpty():
-                    self._load_track(self._aresume_ms)   # 上次退出时放到的位置（新列表是 0）
-                    self._aresume_ms = 0
+                    self._load_track()   # 续听位置 AudioSession 从服务器取
                 self.aplayer.play()
             else:
                 self.aplayer.pause()
@@ -243,72 +243,59 @@ class MatrixSlotWidget(QFrame):
         if self.player.activeAudioTrack() != want and (want == -1 or self.player.audioTracks()):
             self.player.setActiveAudioTrack(want)
 
-    # ---- 音声 ----
+    # ---- 音声（播放逻辑在 self.asession；这里管列表：范围、上一首 / 下一首、删除） ----
     def set_audio_scope(self, scope: str, user: bool = False):
         self.audio_scope = scope
         self._load_tracks()
         if user:
             self.settingsChanged.emit()
 
-    def set_audio_shuffle(self, on: bool, user: bool = False):
-        """切随机/顺序：当前这段接着放，只重排后面的。"""
-        self.audio_shuffle = on
-        if self.tracks:
-            current = self.aorder[self.apos]
-            self._make_aorder()
-            self.apos = self.aorder.index(current)
-        self.changed.emit(self.index)
-        if user:
-            self.settingsChanged.emit()
-
-    def set_audio_rate(self, rate: float, user: bool = False):
-        self.audio_rate = rate
-        self.aplayer.setPlaybackRate(rate)
-        self.changed.emit(self.index)
-        if user:
-            self.settingsChanged.emit()
-
-    def _make_aorder(self):
-        self.aorder = list(range(len(self.tracks)))
-        if self.audio_shuffle:
-            random.shuffle(self.aorder)
-
     def _load_tracks(self):
-        """换范围：重新取列表，从头（或随机的第一段）开始，但只在该出声时才真的播。"""
+        """换范围：重新取列表，从第一段（随机模式下随机一段）开始，但只在该出声时才真的播。"""
         self.tracks = mx.get_audio_tracks(self.audio_scope)
-        self._asession = (self.audio_scope, self.audio_shuffle)
-        self._aresume_ms = 0
-        self._make_aorder()
-        self.apos = 0
+        self._tracks_scope = self.audio_scope
+        self.apos = random.randrange(len(self.tracks)) if self.tracks and self.asession.mode == "random" else 0
         self._askips = 0
-        self.aplayer.stop()
-        self.aplayer.setSource(QUrl())
+        self.asession.clear()
         self._apply_audio()
         self.changed.emit(self.index)
 
-    def _load_track(self, start_ms: int = 0):
-        path = mx.resolve_track(self.tracks[self.aorder[self.apos]])
-        self._aseek_on_load = start_ms
+    def _load_track(self):
+        it = self.tracks[self.apos]
+        path = mx.resolve_track(it)
         if path:
-            self.aplayer.setSource(QUrl.fromLocalFile(path))
-            self.aplayer.setPlaybackRate(self.audio_rate)
+            self.asession.load(path, playback.progress_key(it["rel_path"], bool(it.get("is_nsfw"))),
+                               it.get("title") or "", it.get("chapters"))
         else:
             self._askip_broken()
         self.changed.emit(self.index)
 
     def astep(self, delta: int, manual: bool = True):
-        if not self.tracks:
+        """下一首按播放模式挑（跟音声专区一样）：随机 → 随机一段；其它 → 按列表顺序。"""
+        n = len(self.tracks)
+        if not n:
             return
         if manual:
             self._askips = 0
-        self.apos = (self.apos + delta) % len(self.tracks)
+        if delta > 0 and self.asession.mode == "random" and n > 1:
+            self.apos = random.choice([k for k in range(n) if k != self.apos])
+        else:
+            self.apos = (self.apos + delta) % n
         self._load_track()
         self._apply_audio()
 
-    def aseek(self, fraction: float):
-        dur = self.aplayer.duration()
-        if dur > 0:
-            self.aplayer.setPosition(int(fraction * dur))
+    def delete_current_track(self) -> bool:
+        """当前这段移到回收站（gio trash），从列表里拿掉并接着放下一段。"""
+        it = self.current_track()
+        if not it or not audio_service.trash_audio_file(it["rel_path"], is_nsfw=bool(it.get("is_nsfw"))):
+            return False
+        self.asession.clear()
+        self.tracks.pop(self.apos)
+        if self.tracks:
+            self.apos %= len(self.tracks)
+            self._apply_audio()
+        self.changed.emit(self.index)
+        return True
 
     def _askip_broken(self):
         self._askips += 1
@@ -318,13 +305,8 @@ class MatrixSlotWidget(QFrame):
         QTimer.singleShot(300, lambda: self.astep(1, manual=False))
 
     def _on_astatus(self, status):
-        if status == QMediaPlayer.MediaStatus.LoadedMedia and self._aseek_on_load:
-            self.aplayer.setPosition(self._aseek_on_load)
-            self._aseek_on_load = 0
-        elif status == QMediaPlayer.MediaStatus.BufferedMedia:
+        if status == QMediaPlayer.MediaStatus.BufferedMedia:
             self._askips = 0
-        elif status == QMediaPlayer.MediaStatus.EndOfMedia:
-            self.astep(1, manual=False)
 
     def _on_aerror(self, error, _msg=""):
         if error != QMediaPlayer.Error.NoError:
@@ -428,12 +410,9 @@ class MatrixSlotWidget(QFrame):
         """停解码并释放文件，隐藏/切换布局/退出时调用。先记下位置，下次打开接着放。"""
         if not self.player.source().isEmpty():
             self._resume_ms = self.player.position()
-        if not self.aplayer.source().isEmpty():
-            self._aresume_ms = self.aplayer.position()
         self.player.stop()
         self.player.setSource(QUrl())
-        self.aplayer.stop()
-        self.aplayer.setSource(QUrl())
+        self.asession.clear()      # 音声进度存服务器（跟音声专区共用），下次接着放
         self.progress.setValue(0)
 
     # ---- 视频播放器回调 ----
@@ -482,7 +461,6 @@ class NativeMatrixPlayerWidget(QWidget):
         self.active = 0
         self.focus_audio = True
         self.audio_scopes: List[Dict[str, Any]] = []
-        self._aseeking = False
         self._build()
 
     # ---- 界面 ----
@@ -491,13 +469,16 @@ class NativeMatrixPlayerWidget(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
+        # 顶栏：第一行 全局 + 焦点屏视频控件；第二行 音声控件（只在焦点屏用音声时展开）
         top_bar = QWidget(self)
         top_bar.setObjectName("matrixTopBar")
         top_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        top_bar.setFixedHeight(44)
-        top = QHBoxLayout(top_bar)
-        top.setContentsMargins(10, 4, 10, 4)
+        rows = QVBoxLayout(top_bar)
+        rows.setContentsMargins(10, 4, 10, 4)
+        rows.setSpacing(4)
+        top = QHBoxLayout()
         top.setSpacing(4)
+        rows.addLayout(top)
 
         def button(text, slot, tip=""):
             b = QPushButton(text)
@@ -551,42 +532,6 @@ class NativeMatrixPlayerWidget(QWidget):
         self.btn_mute = button("🔊", lambda: self.cur().set_muted(not self.cur().user_muted, user=True), "静音（M）")
         self.btn_sound = button("🎬", lambda: self.cur().set_sound("video" if self.cur().sound == "audio" else "audio", user=True))
 
-        # 音声（焦点屏用音声时才显示）
-        self.audio_box = QWidget()
-        self.audio_box.setObjectName("audioBox")
-        self.audio_box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        ab = QHBoxLayout(self.audio_box)
-        ab.setContentsMargins(4, 2, 6, 2)
-        ab.setSpacing(4)
-        self.btn_anext = QPushButton("⏭")
-        self.btn_ashuffle = QPushButton("🔀")
-        self.btn_scope = QPushButton("📁")
-        self.btn_arate = QPushButton("1x")
-        for b, tip, fn in ((self.btn_anext, "下一段音声", lambda: self.cur().astep(1)),
-                           (self.btn_arate, "音声倍速（点击切下一档）", self._next_rate),
-                           (self.btn_ashuffle, "音声随机顺序", lambda: self.cur().set_audio_shuffle(not self.cur().audio_shuffle, user=True)),
-                           (self.btn_scope, "音声范围（点击切到下一个专辑）", self._next_scope)):
-            b.setToolTip(tip)
-            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            b.clicked.connect(fn)
-            if b is self.btn_arate:
-                b.setFixedWidth(44)
-            elif b is not self.btn_scope:
-                b.setFixedWidth(34)
-            ab.addWidget(b)
-        self.btn_scope.setObjectName("scopeBtn")   # 宽度在 _QSS 里定（样式表的 min-width 会盖过 setMinimumWidth）
-        self.aseek = QSlider(Qt.Orientation.Horizontal)
-        self.aseek.setRange(0, 1000)
-        self.aseek.setFixedWidth(110)
-        self.aseek.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.aseek.sliderPressed.connect(lambda: setattr(self, "_aseeking", True))
-        self.aseek.sliderReleased.connect(self._on_aseek_released)
-        ab.addWidget(self.aseek)
-        self.lbl_atime = QLabel("0:00")
-        self.lbl_atime.setObjectName("slotDim")
-        ab.addWidget(self.lbl_atime)
-        top.addSpacing(6)
-        top.addWidget(self.audio_box)
         top.addStretch(0)
         sep()
 
@@ -595,6 +540,33 @@ class NativeMatrixPlayerWidget(QWidget):
         close = button("⤓", lambda: self.close_matrix("collapse"),
                        "收起（Esc）：记住各屏位置，回到进来之前的页面；再点多联标签接着看")
         close.setObjectName("matrixClose")
+
+        # 第二行：音声 —— 跟本机音声专区同一个控件（AudioControlBar），多联只多一个「范围」
+        self.audio_box = QWidget()
+        self.audio_box.setObjectName("audioBox")
+        self.audio_box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        ab = QHBoxLayout(self.audio_box)
+        ab.setContentsMargins(6, 2, 6, 2)
+        ab.setSpacing(6)
+        self.lbl_atag = QLabel("🎧")
+        ab.addWidget(self.lbl_atag)
+        self.btn_scope = QPushButton("📁")
+        self.btn_scope.setObjectName("scopeBtn")   # 宽度在 _QSS 里定（样式表的 min-width 会盖过 setMinimumWidth）
+        self.btn_scope.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_scope.clicked.connect(self._next_scope)
+        ab.addWidget(self.btn_scope)
+        self.lbl_atitle = QLabel("")
+        self.lbl_atitle.setObjectName("slotDim")
+        self.lbl_atitle.setFixedWidth(180)
+        ab.addWidget(self.lbl_atitle)
+        self.audio_bar = AudioControlBar(self.audio_box, show_play=False)   # 音声跟着那一屏的视频一起停 / 放
+        self.audio_bar.sleepFired.connect(lambda: [s.set_paused(True) for s in self.visible_slots()])
+        self.audio_bar.deleteRequested.connect(self._delete_track)
+        for b in (self.audio_bar.btn_rate, self.audio_bar.btn_mode):
+            b.clicked.connect(self.save_config)
+        ab.addWidget(self.audio_bar, 1)
+        self.audio_box.hide()
+        rows.addWidget(self.audio_box)
         root.addWidget(top_bar)
 
         area = QWidget(self)
@@ -606,7 +578,6 @@ class NativeMatrixPlayerWidget(QWidget):
             s = MatrixSlotWidget(i, area)
             s.activated.connect(self.activate_slot)
             s.changed.connect(lambda idx: idx == self.active and self.refresh_bar())
-            s.audioProgress.connect(self._on_audio_progress)
             s.settingsChanged.connect(self.save_config)
             h.addWidget(s, 1)   # 等分；配合 _no_width_hint，宽度不再随视频变
             self.slots.append(s)
@@ -639,17 +610,16 @@ class NativeMatrixPlayerWidget(QWidget):
         self.btn_sound.setToolTip("声音：音声（点击换回视频原声）" if audio else "声音：视频原声（点击换成音声）")
         _set_active_prop(self.btn_sound, audio)
         self.audio_box.setVisible(audio)
+        self.audio_bar.bind(s.asession)
         if audio:
-            _set_active_prop(self.btn_ashuffle, s.audio_shuffle)
-            self.btn_arate.setText(f"{s.audio_rate:g}x")
-            _set_active_prop(self.btn_arate, s.audio_rate != 1.0)
             sc = next((x for x in self.audio_scopes if x["id"] == s.audio_scope), None)
             name = sc["label"] if sc else "全部音声"
             self.btn_scope.setText(f"📁 {name}")
+            self.btn_scope.setToolTip(f"音声范围：{name}（{sc['count'] if sc else '?'} 段）\n点击切到下一个专辑")
             tr = s.current_track()
-            self.btn_scope.setToolTip(f"范围：{name}" + (f"\n正在放：{tr.get('title')}" if tr else "") + "\n点击切到下一个专辑")
-            self.aseek.setToolTip(tr.get("title") if tr else "")
-            self._on_audio_progress(s.index, s.aplayer.position(), s.aplayer.duration())
+            title = (tr or {}).get("title") or ("这个范围没有音声" if not s.tracks else "")
+            self.lbl_atitle.setText(self.lbl_atitle.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, 176))
+            self.lbl_atitle.setToolTip(f"{tr.get('album')} / {title}" if tr else title)
 
     def _on_combo(self, _i: int):
         cid = self.combo.currentData()
@@ -666,21 +636,17 @@ class NativeMatrixPlayerWidget(QWidget):
         s = self.cur()
         s.set_audio_scope(ids[(ids.index(s.audio_scope) + 1) % len(ids)] if s.audio_scope in ids else ids[0], user=True)
 
-    def _next_rate(self):
+    def _delete_track(self):
+        """⋯ → 移到回收站：焦点屏正在放的这段音声。"""
+        from PyQt6.QtWidgets import QMessageBox
         s = self.cur()
-        rates = mx.AUDIO_RATES
-        s.set_audio_rate(rates[(rates.index(s.audio_rate) + 1) % len(rates)] if s.audio_rate in rates else 1.0, user=True)
-
-    def _on_audio_progress(self, idx: int, pos: int, dur: int):
-        if idx != self.active:
+        tr = s.current_track()
+        if not tr:
             return
-        if not self._aseeking and dur > 0:
-            self.aseek.setValue(int(pos / dur * 1000))
-        self.lbl_atime.setText(_fmt_ms(pos))
-
-    def _on_aseek_released(self):
-        self._aseeking = False
-        self.cur().aseek(self.aseek.value() / 1000)
+        if QMessageBox.question(self, "移到回收站", f"确定把音声《{tr.get('title')}》移到回收站吗？") \
+                == QMessageBox.StandardButton.Yes:
+            s.delete_current_track()
+        self.setFocus()
 
     # ---- 布局 / 焦点 ----
     def set_layout_mode(self, mode: int, save: bool = False, autoload: bool = True):
@@ -750,10 +716,10 @@ class NativeMatrixPlayerWidget(QWidget):
             s.user_paused = True
             s.set_muted(s_cfg["muted"])
             s.audio_scope = s_cfg["audio_scope"] if s_cfg["audio_scope"] in scope_ids else "all"
-            s.audio_shuffle = s_cfg["audio_shuffle"]
-            s.set_audio_rate(s_cfg["audio_rate"])
-            if s._asession != (s.audio_scope, s.audio_shuffle):
-                s.tracks = []        # 设置页改过音声范围/随机：重新取
+            s.asession.set_mode(s_cfg["audio_mode"])
+            s.asession.set_rate(s_cfg["audio_rate"])
+            if s._tracks_scope != s.audio_scope:
+                s.tracks = []        # 设置页改过音声范围：重新取
             s.set_sound(s_cfg["sound"])
         self.set_layout_mode(cfg["layout"], autoload=False)
         self.set_focus_audio(cfg["focus_audio"])
@@ -766,8 +732,8 @@ class NativeMatrixPlayerWidget(QWidget):
         try:
             mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio,
                             "slots": [{"channel_id": s.channel_id, "shuffle": s.shuffle, "muted": s.user_muted,
-                                       "sound": s.sound, "audio_scope": s.audio_scope, "audio_shuffle": s.audio_shuffle,
-                                       "audio_rate": s.audio_rate}
+                                       "sound": s.sound, "audio_scope": s.audio_scope,
+                                       "audio_mode": s.asession.mode, "audio_rate": s.asession.rate}
                                       for s in self.slots]})
         except OSError as e:
             print(f"[matrix] 保存配置失败: {e}")
