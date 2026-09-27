@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 from omni.core import settings  # noqa: E402
@@ -62,6 +63,51 @@ def _import_bake():
         sys.path.insert(0, SC2MOD_DIR)
     import bake  # noqa
     return bake
+
+
+def _kill_prefix_leftovers(since: float) -> None:
+    """杀掉本局期间在 omni-deck Wine 前缀里起的所有残留进程（winedevice.exe 等）。
+
+    上面 SIGKILL 掉 SC2_x64.exe 之后 wineserver 跟着没了，但 Wine 的驱动服务进程
+    winedevice.exe 会留下来当孤儿——连不上 wineserver 就原地空转，每个吃 10~25% CPU，
+    一局留一个，打几局就把 CPU 吃满；还会把 omni-deck 的 Steam 启动（reaper）拖着不退，
+    Steam 一直显示 omni-deck 在运行。
+
+    只杀"这一局开始之后才起的、WINEPREFIX 指向 omni-deck 前缀"的进程，同一个前缀里
+    别的时间点起的 Windows 游戏不会被误杀。
+
+    Args:
+        since: 本局开始时的 time.time()。
+    """
+    import signal
+    prefix = os.environ["SC2MOD_COMPAT_DATA"]   # 模块顶部已 setdefault 成 settings 里的 proton_prefix
+    try:
+        clk = os.sysconf("SC_CLK_TCK")
+        with open("/proc/stat") as f:
+            btime = next(int(l.split()[1]) for l in f if l.startswith("btime"))
+    except Exception as e:
+        print(f"[sc2] 读不到系统启动时间，跳过前缀残留清理: {e}")
+        return
+    killed = []
+    me = os.getpid()
+    for d in os.listdir("/proc"):
+        if not d.isdigit() or int(d) == me:
+            continue
+        try:
+            with open(f"/proc/{d}/environ", "rb") as f:
+                env = f.read()
+            if f"WINEPREFIX={prefix}".encode() not in env:
+                continue
+            with open(f"/proc/{d}/stat") as f:
+                start_ticks = int(f.read().rsplit(")", 1)[1].split()[19])
+            if btime + start_ticks / clk < since - 1:
+                continue
+            os.kill(int(d), signal.SIGKILL)
+            killed.append(d)
+        except (OSError, ValueError, IndexError):
+            continue
+    if killed:
+        print(f"[sc2] 清理了本局留下的 Wine 残留进程: {killed}")
 
 
 def _force_kill_lingering_sc2() -> None:
@@ -106,10 +152,12 @@ def play_one(sel: dict) -> Result | list | None:
         ))
     desc = ", ".join(f'{o["race"]}/{o["difficulty"]}' for o in opponents)
     print(f"[sc2] 开一局：{sel['map']}  你={sel['race']}  电脑({len(opponents)}) = {desc}")
+    started = time.time()
     try:
         return run_game(game_map, players, realtime=True)
     finally:
         _force_kill_lingering_sc2()
+        _kill_prefix_leftovers(started)
 
 
 def main() -> None:
