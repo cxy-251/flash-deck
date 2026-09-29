@@ -120,7 +120,28 @@ def ensure_single_instance(port):
 
 # --------------------------------------------------------------------------- 入口
 
+def _tune_malloc():
+    """glibc 的默认内存策略在这个进程里会把 RSS 越撑越大，启动时（还没起任何线程前）改掉。
+
+    多联三路播放器不停换片，抖音不少竖屏视频是 1900x3378 的 HEVC，一帧解码缓冲就十几到二十几 MB。
+    glibc 的 mmap 阈值是动态的：大块释放一次，阈值就往上涨（最高 32MB），之后这些帧缓冲都改从
+    每线程的 malloc arena 里分配，释放后碎在里面还不给系统。几十个线程各一个 arena（最多 8×核数个），
+    实测三屏各换 80 条片就涨到 1.5GB。固定阈值 1MB（大块一律 mmap，释放即归还）+ 最多 4 个 arena
+    之后同样的测试稳定在 370MB 左右。"""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        M_MMAP_THRESHOLD, M_ARENA_MAX = -3, -8
+        libc.mallopt(M_MMAP_THRESHOLD, 1 << 20)
+        libc.mallopt(M_ARENA_MAX, 4)
+    except (OSError, AttributeError):
+        pass
+
+
 def main(argv=None):
+    _tune_malloc()
     args, qt_args = _parse_args(sys.argv[1:] if argv is None else argv)
 
     from omni.core import migrate
