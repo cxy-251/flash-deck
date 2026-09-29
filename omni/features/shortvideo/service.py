@@ -386,7 +386,7 @@ def _on_index_progress(platform: str, done: int, total: int) -> None:
 
 _CACHE: Dict[str, List[Dict[str, Any]]] = {}
 _LAST_SCAN: Dict[str, float] = {}
-_SCAN_TTL = 20.0
+_SCAN_TTL = 60.0
 _SCAN_RUNNING: Dict[str, bool] = {}   # platform -> 后台全量重扫是否在跑
 
 # 上面那套"旧数据先顶着、后台重扫"的缓存全是进程内存，重启 omni-deck 就清空了——每次重启
@@ -513,9 +513,20 @@ def _do_scan(platform: str) -> List[Dict[str, Any]]:
         })
 
     items.sort(key=_chrono_sort_key)   # 正序：按作品真实发布日期从早到晚
-
-    _save_list_cache(platform, items)
     return items
+
+
+def _store_scan(platform: str, items: List[Dict[str, Any]]) -> bool:
+    """扫描结果写回内存缓存；跟上一份不一样才落盘快照，返回是否有变化。
+
+    抖音一个平台五万多条，快照 JSON 五十多 MB——以前每扫一遍都重写一次，扫完还无条件广播
+    library_indexed，网页收到就拉一次列表，拉列表又触发下一轮后台重扫：只要页面开着就一直
+    转圈似地扫盘写盘、内存跟着来回涨。列表逐条比对是 C 层的 dict 比较，几十毫秒。"""
+    changed = items != _CACHE.get(platform)
+    _CACHE[platform] = items
+    if changed:
+        _save_list_cache(platform, items)
+    return changed
 
 
 def _refresh_in_background(platform: str) -> None:
@@ -530,8 +541,8 @@ def _refresh_in_background(platform: str) -> None:
         """实际执行全量重扫，写回缓存并广播完成事件（无论成败都清掉运行中标记）。"""
         try:
             items = _do_scan(platform)
-            _CACHE[platform] = items
-            _on_index_progress(platform, len(items), len(items))
+            if _store_scan(platform, items):   # 没变化就不通知网页，免得它拉列表又触发下一轮
+                _on_index_progress(platform, len(items), len(items))
         finally:
             _SCAN_RUNNING[platform] = False
 
@@ -542,12 +553,12 @@ def scan_shortvideo_library(platform: str = DEFAULT_PLATFORM, force: bool = Fals
     """<下载目录>/<平台>/ 的视频列表（含 media_index 缓存的时长/分辨率）。
 
     冷启动第一次、或者用户主动点"刷新"（force=True），没有别的选择，只能真去扫一遍、
-    同步等结果。但平常缓存过期（每 20s）这种被动触发的情况，之前是每次都在请求线程里
+    同步等结果。但平常缓存过期（每 60s）这种被动触发的情况，之前是每次都在请求线程里
     同步重新 os.walk 一遍全库（快手 1800+ / 抖音 2000+ 条，一堆图集子文件夹更是加倍拉长
     这个耗时）——这就是"首屏很慢，感觉是一次性加载全部视频"的真实原因：不是一次性把
     全部视频都发给前端（分页一直是对的），而是"扫下一页之前，得先把全库重新扫一遍"这一步
     本身很慢、还挡在请求路径上。现在改成：手头有旧数据就先把旧数据立刻还回去（哪怕过期
-    最多 20s 也无所谓，跟漫画/音声/小说同一个"先给能给的，新数据后台补"的思路），真正的
+    最多 60s 也无所谓，跟漫画/音声/小说同一个"先给能给的，新数据后台补"的思路），真正的
     重扫挪到后台线程，扫完自动通知前端刷新，请求路径上完全不再等这个。"""
     now = time.time()
     cached = _CACHE.get(platform)
@@ -570,7 +581,7 @@ def scan_shortvideo_library(platform: str = DEFAULT_PLATFORM, force: bool = Fals
         # 没有任何旧数据可垫（这台机器第一次打开这个平台的短视频库）、或者用户主动要求
         # 刷新：这次真等
         items = _do_scan(platform)
-        _CACHE[platform] = items
+        _store_scan(platform, items)
         _LAST_SCAN[platform] = now
         return items
 
@@ -906,15 +917,21 @@ def transcode_status(platform: str = DEFAULT_PLATFORM) -> Dict[str, Any]:
 
 
 def trash_shortvideo_file(platform: str, rel_path: str) -> bool:
-    """按 AGENTS.md 准则用 gio trash 安全删除，并让下次扫描重新拾取。
-    视频是单个文件，图集是一整个文件夹——两种都按同一套逻辑：定位到什么删什么。"""
+    """按 AGENTS.md 准则用 gio trash 安全删除。
+    视频是单个文件，图集是一整个文件夹——两种都按同一套逻辑：定位到什么删什么。
+    删完只从内存列表里拿掉这一条，不再同步全量重扫（抖音五万多条，扫一遍要好几秒）；
+    落盘快照等下一轮后台扫描自然更新。"""
     full_p = find_shortvideo_file(platform, rel_path) or find_gallery_dir(platform, rel_path)
     if not full_p:
         return False
     try:
         res = subprocess.run(['gio', 'trash', full_p], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        toggle_shortvideo_like(platform, rel_path, liked=False)
-        scan_shortvideo_library(platform, force=True)
-        return res.returncode == 0
     except Exception:
         return False
+    if res.returncode != 0:
+        return False
+    toggle_shortvideo_like(platform, rel_path, liked=False)
+    cached = _CACHE.get(platform)
+    if cached is not None:
+        _CACHE[platform] = [it for it in cached if it['rel_path'] != rel_path]
+    return True

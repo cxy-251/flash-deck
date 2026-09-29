@@ -431,6 +431,26 @@ class MatrixSlotWidget(QFrame):
             sv.toggle_shortvideo_like(it["platform"], it["rel_path"])
             self.changed.emit(self.index)
 
+    def delete_current_video(self) -> bool:
+        """当前这条视频移到回收站（gio trash），从播放顺序里拿掉，接着放下一条。
+        先停掉解码、释放文件再删；别的屏列表里要是也有这条，轮到时找不到文件会自动跳过。"""
+        it = self.current_video()
+        if not it:
+            return False
+        self.player.stop()
+        self.player.setSource(QUrl())
+        if not sv.trash_shortvideo_file(it["platform"], it["rel_path"]):
+            self._play_current()   # 没删成：接着放这一条
+            return False
+        gone = self.order.pop(self.pos)
+        self.videos.pop(gone)
+        self.order = [k - (k > gone) for k in self.order]   # 后面的下标往前挪一位，order 和 videos 保持对得上
+        if self.order:
+            self.pos %= len(self.order)
+        self._skips = 0
+        self._play_current()
+        return True
+
     def is_liked(self) -> bool:
         it = self.current_video()
         return bool(it) and sv.is_shortvideo_liked(it["platform"], it["rel_path"])
@@ -642,6 +662,7 @@ class NativeMatrixPlayerWidget(QWidget):
         self.btn_next = button("skip_next-fill", lambda: self.cur().step(1), "下一条（→）")
         self.btn_shuffle = button("shuffle", lambda: self.cur().set_shuffle(not self.cur().shuffle, user=True), "视频随机顺序")
         self.btn_like = button("favorite", lambda: self.cur().toggle_like(), "点赞")
+        self.btn_delete = button("delete", self._delete, "移到回收站：焦点屏正在放的视频 / 音声（会先确认）")
         self.btn_mute = button("volume_up-fill", lambda: self.cur().set_muted(not self.cur().user_muted, user=True), "静音（M）")
         self.btn_sound = button("movie-fill", lambda: self.cur().set_sound("video" if self.cur().sound == "audio" else "audio", user=True),
                                 "声音：视频原声（点击换成音声）")
@@ -790,17 +811,47 @@ class NativeMatrixPlayerWidget(QWidget):
         else:
             s.pick_track(data[1], data[2])
 
-    def _delete_track(self):
-        """⋯ → 移到回收站：焦点屏正在放的这段音声。"""
+    def _ask(self, text: str, choices: List[Tuple[str, Any]]) -> Any:
+        """回收站确认框：choices 每项一个按钮，另带「取消」；返回点中那项的数据，取消 / 关掉为 None。
+        跟 _pick 一样：弹框期间顶栏不收、不算失焦，关掉后键盘焦点还给播放器。"""
         from PyQt6.QtWidgets import QMessageBox
+        box = QMessageBox(QMessageBox.Icon.Question, "移到回收站", text, parent=self)
+        buttons = {box.addButton(label, QMessageBox.ButtonRole.AcceptRole): value for label, value in choices}
+        box.setDefaultButton(box.addButton("取消", QMessageBox.ButtonRole.RejectRole))
+        self._bar_hide.stop()
+        self._searching = True
+        try:
+            box.exec()
+            return buttons.get(box.clickedButton())
+        finally:
+            self._searching = False
+            self.activateWindow()
+            self.setFocus()
+
+    def _delete(self):
+        """顶栏 🗑：焦点屏用视频原声时直接删视频；用音声时先问删哪个（视频 / 音声）。
+        都走 gio trash，回收站里能找回来。"""
+        s = self.cur()
+        video, track = s.current_video(), s.current_track()
+        if s.sound == "audio" and track:
+            what = self._ask(f"把焦点屏正在放的哪一个移到回收站？\n\n视频：{(video or {}).get('title') or '（无）'}"
+                             f"\n音声：{track.get('title')}",
+                             ([("视频", "video")] if video else []) + [("音声", "audio")])
+            if what == "audio":        # 这个框本身就是确认，不再二次确认
+                s.delete_current_track()
+            elif what == "video":
+                s.delete_current_video()
+            return
+        if video and self._ask(f"确定把视频《{video.get('title')}》移到回收站吗？\n（{video.get('folder') or ''}）",
+                               [("移到回收站", True)]):
+            s.delete_current_video()
+
+    def _delete_track(self):
+        """移到回收站：焦点屏正在放的这段音声（顶栏 🗑，或音声那一行的 ⋯）。"""
         s = self.cur()
         tr = s.current_track()
-        if not tr:
-            return
-        if QMessageBox.question(self, "移到回收站", f"确定把音声《{tr.get('title')}》移到回收站吗？") \
-                == QMessageBox.StandardButton.Yes:
+        if tr and self._ask(f"确定把音声《{tr.get('title')}》移到回收站吗？", [("移到回收站", True)]):
             s.delete_current_track()
-        self.setFocus()
 
     # ---- 布局 / 焦点 ----
     def set_layout_mode(self, mode: int, save: bool = False, autoload: bool = True):
