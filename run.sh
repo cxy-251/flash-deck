@@ -29,6 +29,32 @@ printf '%s  [run.sh] LD_PRELOAD/Steam overlay 已清，exec python\n' "$(date --
 
 echo "[*] 正在启动 Omni Deck (Native Linux on SteamOS)..."
 
+# ---------------------------------------------------------------------------
+# 让 Omni 作为一个独立应用出现在系统里（KDE 系统监视器「应用程序」页、桌面模式应用菜单）：
+#   1. ~/.local/share/applications/omnideck.desktop —— 应用名、图标；路径跟着仓库位置走，内容变了才重写
+#   2. 在自己的 systemd scope（app-omnideck-<pid>.scope）里运行 —— 系统按 scope 名对上 .desktop，
+#      不然从 Steam 启动时整个进程算在 Steam 的分组下面。--scope 不改变进程父子关系，Steam 照样能跟踪退出。
+# systemd 用户会话不可用时（极少见）跳过，照原样启动。
+# ---------------------------------------------------------------------------
+DESKTOP_FILE="$HOME/.local/share/applications/omnideck.desktop"
+DESKTOP_CONTENT="[Desktop Entry]
+Type=Application
+Name=Omni Deck
+Comment=本地游戏与媒体中心
+Exec=\"$SCRIPT_DIR/run.sh\"
+Icon=applications-games
+Categories=Game;AudioVideo;
+Terminal=false"
+if [ "$(cat "$DESKTOP_FILE" 2>/dev/null)" != "$DESKTOP_CONTENT" ]; then
+    mkdir -p "$(dirname "$DESKTOP_FILE")"
+    printf '%s\n' "$DESKTOP_CONTENT" > "$DESKTOP_FILE" 2>/dev/null || true
+fi
+if [ -z "$OMNI_SCOPED" ] && command -v systemd-run >/dev/null 2>&1 \
+        && systemd-run --user --scope --quiet true >/dev/null 2>&1; then
+    export OMNI_SCOPED=1
+    exec systemd-run --user --scope --quiet --collect --unit="app-omnideck-$$" -- "$SCRIPT_DIR/run.sh" "$@"
+fi
+
 # 直接用 venv 里的 python（比 uv run 每次重解析依赖快好几秒）
 if [ -x "$SCRIPT_DIR/.venv/bin/python" ]; then
     exec "$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/main.py" "$@"

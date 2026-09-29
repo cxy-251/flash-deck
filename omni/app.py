@@ -218,6 +218,9 @@ def _run_qt(qt_args):
     from omni.shell.window import MainWindow, QApplication, QTimer
 
     app = QApplication([sys.argv[0]] + qt_args + CHROMIUM_ARGS)
+    # 窗口的 Wayland app_id = run.sh 装的 omnideck.desktop：任务栏用那里的名字和图标。
+    # （不用 setApplicationName：它会挪动 QtWebEngine 的配置目录。）
+    app.setDesktopFileName("omnideck")
     app.aboutToQuit.connect(process.shutdown)
     # Qt 的 C++ 事件循环会压住 Python 信号处理，用空转定时器定期把控制权交回解释器
     sig_timer = QTimer()
