@@ -140,8 +140,23 @@ def _tune_malloc():
         pass
 
 
+def _set_process_name(name: str = "omni-deck"):
+    """进程列表里默认显示解释器的名字（python）。prctl(PR_SET_NAME) 改的是 /proc/<pid>/comm，
+    系统监视器 / top / ps 显示的就是它（最长 15 字节）；之后新开的线程也继承这个名字。
+    不改 Qt 的 applicationName：那会改变 QtWebEngine 配置目录的位置，网页里存的东西就像被清空了。"""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+        PR_SET_NAME = 15
+        ctypes.CDLL("libc.so.6").prctl(PR_SET_NAME, name.encode()[:15], 0, 0, 0)
+    except (OSError, AttributeError):
+        pass
+
+
 def main(argv=None):
     _tune_malloc()
+    _set_process_name()
     args, qt_args = _parse_args(sys.argv[1:] if argv is None else argv)
 
     from omni.core import migrate
