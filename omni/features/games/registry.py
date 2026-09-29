@@ -363,7 +363,10 @@ def get(game_id: str):
 
 
 def lookup(game_id: str):
-    """不触发重扫的查询（给高频的资源请求用）。"""
+    """不触发重扫的查询（给高频的资源请求用）。启动时不再预扫游戏库（按需加载），
+    所以注册表还空着时先扫一次——比如重启后网页直接停在某个游戏页上、资源请求先到。"""
+    if not REGISTRY:
+        scan()
     if game_id in REGISTRY:
         return REGISTRY[game_id]
     low = game_id.lower()

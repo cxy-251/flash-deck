@@ -176,7 +176,6 @@ def main(argv=None):
 
     from omni.core import process
     from omni.core.http import server
-    from omni.features.games import registry
     from omni.network import lan, wan
 
     lan.PORT = args.port
@@ -190,7 +189,8 @@ def main(argv=None):
         sys.exit(1)
     process.on_shutdown(server.stop)
     boot(f"HTTP server bound 0.0.0.0:{args.port}")
-    registry.scan()
+    # 游戏库不在启动时预扫：133 个游戏找主程序要走十几万个文件，冷启动能卡十几秒。
+    # 打开游戏分区时 /api/games 自己会扫（目录没变就秒回），按 id 查游戏时也会按需补扫。
 
     if not args.no_workers:
         wan.start_daemon()
