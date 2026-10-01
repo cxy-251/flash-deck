@@ -245,7 +245,9 @@ def _rich_parse_video(full_p: str) -> Dict[str, Any]:
     """跑一次 ffprobe 拿时长/分辨率。只在文件新增/变动时被 media_index 调用。"""
     duration, width, height = 0.0, 0, 0
     try:
-        cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', full_p]
+        # 后台补元数据：跟抽缩略图一样降到低 CPU / 空闲 IO 优先级，先让界面和正在播放的视频
+        cmd = ['nice', '-n', '15', 'ionice', '-c3',
+               'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', full_p]
         info = json.loads(subprocess.check_output(cmd, text=True, timeout=15, stderr=subprocess.DEVNULL))
         duration = float((info.get('format') or {}).get('duration') or 0)
         for s in info.get('streams', []):

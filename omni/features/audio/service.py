@@ -58,7 +58,8 @@ def _rich_parse_audio(full_p: str) -> Dict[str, Any]:
             pass
     elif ext == '.m4b':
         try:
-            probe_cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_chapters', full_p]
+            probe_cmd = ['nice', '-n', '15', 'ionice', '-c3',   # 后台补元数据，先让界面
+                         'ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_chapters', full_p]
             p_res = json.loads(subprocess.check_output(probe_cmd, text=True)).get('chapters', [])
             for idx, ch in enumerate(p_res, start=1):
                 st = float(ch.get('start_time', 0))

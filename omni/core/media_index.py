@@ -230,6 +230,27 @@ def thumb_path(src_path: str, tag: str = "") -> str:
     return os.path.join(_THUMB_DIR, key + ".webp")
 
 
+def _identity(path: str, mtime: float, size: int) -> tuple:
+    """不看所在目录的「同一个文件」：文件名 + 大小 + 修改时间（秒）。mv 会保留这三样，
+    所以文件从收件箱挪进资源库（或挪到 SD 卡）以后，缩略图和元数据还认得出来。"""
+    return (os.path.basename(path), int(size), int(mtime))
+
+
+def _identity_thumb_path(src_path: str, st: os.stat_result, tag: str) -> str:
+    name, size, mtime = _identity(src_path, st.st_mtime, st.st_size)
+    key = hashlib.sha1(f"id|{name}|{size}|{mtime}|{tag}".encode("utf-8")).hexdigest()
+    return os.path.join(_THUMB_DIR, key + ".webp")
+
+
+def _link(src: str, dst: str) -> None:
+    """同一张缩略图挂两个名字（按路径 / 按身份），硬链接不占额外空间；失败无所谓。"""
+    try:
+        if not os.path.exists(dst):
+            os.link(src, dst)
+    except OSError:
+        pass
+
+
 # 现算封面这一下（对短视频来说是真的开一个 ffmpeg 子进程抽一帧）不限并发的话，一页 60 个
 # 缩略图全没缓存过时，浏览器几乎同时发出 60 个请求，ThreadingHTTPServer 每个请求一个线程，
 # 等于瞬间拉起 60 个 ffmpeg——CPU 直接打满（切几下标签就看到一堆 ffmpeg 进程，根源在这）。
@@ -254,8 +275,14 @@ def get_or_make_thumb(src_path: str, cover_bytes_fn, max_w: int = 360, tag: str 
     tp = thumb_path(src_path, tag)
     try:
         st_src = os.stat(src_path)
+        idp = _identity_thumb_path(src_path, st_src, tag)
         if os.path.exists(tp) and os.stat(tp).st_mtime >= st_src.st_mtime:
+            _link(tp, idp)   # 老缩略图补一个按身份的名字，以后文件挪了位置也找得到
             return tp
+        if os.path.exists(idp):
+            # 按路径没有、按身份有：文件挪过地方（收件箱 → 资源库之类），直接复用，不再跑 ffmpeg
+            _link(idp, tp)
+            return tp if os.path.exists(tp) else idp
     except OSError:
         return tp if os.path.exists(tp) else None
 
@@ -280,6 +307,7 @@ def get_or_make_thumb(src_path: str, cover_bytes_fn, max_w: int = 360, tag: str 
             tmp = tp + ".tmp"
             im.save(tmp, "WEBP", quality=78, method=4)
             os.replace(tmp, tp)
+            _link(tp, idp)
             return tp
         except Exception as e:
             print(f"[media_index] 生成缩略图失败 {os.path.basename(src_path)}: {e}")
@@ -322,9 +350,32 @@ def diff_scan(kind: str, files: list, parse_one, sync_limit: int = 24,
         else:
             stale.append((path, mtime, size))
 
+    # 挪过位置的文件：新路径不在索引里，但索引里有一个已经不存在的旧路径，文件名 + 大小 + 修改时间都一样。
+    # 直接沿用旧的 meta、改登记到新路径，不用再跑一遍 ffprobe（下面的 prune 会把旧路径清掉）。
+    # 以前收件箱里一万多条视频挪进资源库，每条都重新解析了一遍。
+    changed = bool(stale)   # 下面挪动识别会把 stale 清掉，但旧路径还得 prune
+    if stale:
+        current = {f[0] for f in files}
+        gone = {}
+        for path, hit in idx.items():
+            if path not in current:
+                gone.setdefault(_identity(path, hit["mtime"], hit["size"]), hit["meta"])
+        if gone:
+            moved, still = [], []
+            for one in stale:
+                meta = gone.get(_identity(*one))
+                if meta is not None:
+                    moved.append((one[0], kind, float(one[1]), int(one[2]), meta))
+                    result[one[0]] = meta
+                else:
+                    still.append(one)
+            if moved:
+                put_many(moved)
+                stale = still
+
     # prune 不必每次跑：只在有变动、或距上次 >60s 时做
     now = time.time()
-    if stale or (now - _LAST_PRUNE.get(kind, 0)) > 60:
+    if changed or (now - _LAST_PRUNE.get(kind, 0)) > 60:
         prune(kind, {f[0] for f in files})
         _LAST_PRUNE[kind] = now
 

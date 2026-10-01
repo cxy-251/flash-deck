@@ -262,7 +262,7 @@ function liveRefreshShortVideoLibrary(platform) {
 
 // 作者（文件夹）筛选条：第一行默认只有「全部」「我的点赞」，常看的作者自己钉上去（📌，存服务端，
 // 各设备同一份）；当前选中的作者没钉也临时露在第一行。其余收进「更多作者」：带搜索框、可滚动的面板，
-// 面板里每个作者也能直接钉 / 取消钉，选中一个作者面板自动收起。
+// 面板里每个作者也能直接钉 / 取消钉；选作者不收起面板（点「收起」才收）。
 function svFolderKey(f) {
     return f.key || (f.name === '全部' ? 'all' : f.name);
 }
@@ -289,23 +289,28 @@ function svFolderChip(platform, f) {
         btn.appendChild(pin);
     }
     btn.onclick = () => {
-        st.folder = fKey;
-        st.authorsOpen = false;
+        st.folder = fKey;   // 「更多作者」面板不自动收起：换着看几个作者不用每次重新展开，点「收起」才收
         loadShortVideoLibrary(platform, true);
     };
     return btn;
 }
 
+// 先改界面再发请求：一页缩略图还在现算时，浏览器对同一主机的 6 个连接都被它们占着，钉选请求要排队，
+// 等回应再重画就会「不跟手」。请求失败再改回去。
 function svTogglePin(platform, name, pinned) {
     const st = SV[platform];
+    const before = [...(st.pinned || [])];
+    st.pinned = before.filter(n => n !== name).concat(pinned ? [name] : []);
+    renderShortVideoFolderBar(platform, st.folders);
+    const revert = () => {
+        st.pinned = before;
+        renderShortVideoFolderBar(platform, st.folders);
+        showMegaToast('钉选没保存上，已恢复', true);
+    };
     fetch('/api/shortvideo/pin', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform, folder: name, pinned }),
-    }).then(r => r.json()).then(d => {
-        if (!d || d.status !== 'ok') return showMegaToast('操作失败', true);
-        st.pinned = d.pinned || [];
-        renderShortVideoFolderBar(platform, st.folders);
-    }).catch(() => showMegaToast('操作失败', true));
+    }).then(r => r.json()).then(d => { if (!d || d.status !== 'ok') revert(); }).catch(revert);
 }
 
 function renderShortVideoFolderBar(platform, folders) {
@@ -397,7 +402,7 @@ function renderShortVideoGrid(platform, reset = true) {
         const centerIcon = icon(isGallery ? 'photo_library-fill' : 'play_arrow-fill');
         card.innerHTML = `
             <div class="manga-cover-wrap" style="aspect-ratio:9/16;">
-                <img src="${item.thumb_url}" class="manga-cover" loading="lazy" onerror="shortVideoImgFallback(this)">
+                <img src="${item.thumb_url}" class="manga-cover" loading="lazy" fetchpriority="low" onerror="shortVideoImgFallback(this)">
                 <span class="manga-badge-cbz" style="background:rgba(0,0,0,0.68);">${cornerBadge}</span>
                 ${isLiked ? `<span class="sv-liked-badge" title="已点赞">${icon('favorite-fill')}</span>` : ''}
                 <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
