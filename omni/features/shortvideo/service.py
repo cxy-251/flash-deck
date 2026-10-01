@@ -388,6 +388,8 @@ _CACHE: Dict[str, List[Dict[str, Any]]] = {}
 _LAST_SCAN: Dict[str, float] = {}
 _SCAN_TTL = 60.0
 _SCAN_RUNNING: Dict[str, bool] = {}   # platform -> 后台全量重扫是否在跑
+_LAST_SAVE: Dict[str, float] = {}     # platform -> 上次写落盘快照的时间
+_SAVE_INTERVAL = 600.0                # 只有元数据变化时，快照最多这么久写一次
 
 # 上面那套"旧数据先顶着、后台重扫"的缓存全是进程内存，重启 omni-deck 就清空了——每次重启
 # 后的第一次打开，_CACHE 里没东西可垫，照样要同步跑一遍全量扫描，一样会转圈等。这里再加一层
@@ -522,10 +524,19 @@ def _store_scan(platform: str, items: List[Dict[str, Any]]) -> bool:
     抖音一个平台五万多条，快照 JSON 五十多 MB——以前每扫一遍都重写一次，扫完还无条件广播
     library_indexed，网页收到就拉一次列表，拉列表又触发下一轮后台重扫：只要页面开着就一直
     转圈似地扫盘写盘、内存跟着来回涨。列表逐条比对是 C 层的 dict 比较，几十毫秒。"""
-    changed = items != _CACHE.get(platform)
+    old = _CACHE.get(platform)
+    changed = items != old
     _CACHE[platform] = items
     if changed:
-        _save_list_cache(platform, items)
+        # 文件有增减马上落盘；只是后台 ffprobe 补上了时长 / 分辨率（新下载一万多条时要补好几十分钟，
+        # 每轮都「变了」），最多 10 分钟写一次——快照只是重启后先顶上的垫底数据，元数据本来就在
+        # media_index 里，晚几分钟无所谓。以前补全期间每分钟重写一次 70MB 的抖音快照。
+        files_changed = old is None or len(old) != len(items) or \
+            {it["rel_path"] for it in old} != {it["rel_path"] for it in items}
+        now = time.time()
+        if files_changed or now - _LAST_SAVE.get(platform, 0) >= _SAVE_INTERVAL:
+            _save_list_cache(platform, items)
+            _LAST_SAVE[platform] = now
     return changed
 
 
