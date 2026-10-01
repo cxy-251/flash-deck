@@ -1,0 +1,63 @@
+<!-- 局域网小工具：文件传输（共享文件夹 = 资源库 media_library/shared）+ 消息板。后端 omni/features/tools/ -->
+<div id="media-tools-view" style="display:none;">
+    <div class="tx-tabs">
+        <button class="tx-tab active" data-tab="files" onclick="txSwitchTab('files')">📁 文件传输</button>
+        <button class="tx-tab" data-tab="texts" onclick="txSwitchTab('texts')">💬 消息板</button>
+    </div>
+
+    <div id="tx-locked" class="tx-card tx-hint" style="display:none;">
+        🔒 通过广域网使用传输功能需要先解锁（右上角隐私密码）。局域网内直接可用。
+    </div>
+
+    <!-- 文件传输 -->
+    <div id="tx-pane-files">
+        <div id="tx-drop" class="tx-card tx-drop" onclick="document.getElementById('tx-file-input').click()">
+            <div class="tx-drop-title">点击选择文件，或拖到这里</div>
+            <div class="tx-drop-sub">大文件分块上传，断网会自动续传；刷新页面后重新选同一个文件，会从断点接着传。同名文件自动改名，不覆盖。</div>
+            <div class="tx-drop-actions" onclick="event.stopPropagation()">
+                <button class="tx-btn" onclick="document.getElementById('tx-file-input').click()">选择文件</button>
+                <button class="tx-btn" onclick="document.getElementById('tx-camera-input').click()">📷 拍照发送</button>
+                <button class="tx-btn tx-local-only" style="display:none;" onclick="txOpenFolder()">📂 打开共享文件夹</button>
+            </div>
+            <input id="tx-file-input" type="file" multiple hidden onchange="txPickFiles(this)">
+            <input id="tx-camera-input" type="file" accept="image/*" capture="environment" hidden onchange="txPickFiles(this)">
+        </div>
+
+        <div id="tx-tasks" class="tx-list"></div>
+
+        <div id="tx-pending-box" class="tx-card" style="display:none;">
+            <div class="tx-card-title">⏸ 没传完的上传</div>
+            <div class="tx-dim">重新选同一个文件（同名、同大小）就会从断点接着传。</div>
+            <div id="tx-pending" class="tx-list"></div>
+        </div>
+
+        <div class="tx-card">
+            <div class="tx-head">
+                <div class="tx-card-title">共享文件夹 <span id="tx-file-count" class="tx-dim"></span></div>
+                <div class="tx-head-actions">
+                    <label class="tx-check"><input type="checkbox" id="tx-select-all" onchange="txSelectAll(this.checked)"> 全选</label>
+                    <button class="tx-btn" id="tx-zip-btn" onclick="txDownloadSelected()" disabled>⬇️ 下载所选</button>
+                    <button class="tx-btn tx-danger" id="tx-del-btn" onclick="txDeleteSelected()" disabled>🗑 删除所选</button>
+                </div>
+            </div>
+            <div id="tx-dir" class="tx-dim tx-local-only" style="display:none;"></div>
+            <div id="tx-files" class="tx-list"></div>
+        </div>
+    </div>
+
+    <!-- 消息板 -->
+    <div id="tx-pane-texts" style="display:none;">
+        <div class="tx-card">
+            <textarea id="tx-text-input" class="tx-textarea" rows="3" placeholder="粘贴文字或链接，Ctrl+Enter 发送；所有连着的设备实时收到"
+                      onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();txSendText();}"></textarea>
+            <div class="tx-head">
+                <div class="tx-dim">本机名称：<span id="tx-device-name" class="tx-link" onclick="txRenameDevice()"></span>（点一下修改）</div>
+                <div class="tx-head-actions">
+                    <button class="tx-btn tx-local-only" style="display:none;" onclick="txSendClipboard()">📋 发送剪贴板</button>
+                    <button class="tx-btn tx-primary" onclick="txSendText()">发送</button>
+                </div>
+            </div>
+        </div>
+        <div id="tx-texts" class="tx-list"></div>
+    </div>
+</div>

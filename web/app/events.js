@@ -105,6 +105,8 @@ function initMangaEventStream() {
                         window.__libIdxTimer = setTimeout(doReload, 1500);
                     }
                 }
+                // 新功能模块不用再往上面这串 if 里加：在 Omni.register 里写 onEvent(event) 自己认 type
+                Omni.each('onEvent', event);
             } catch(err) {}
         };
     } catch(e) {}

@@ -47,6 +47,7 @@ MEDIA_LAYOUT = {
     "shortvideo.douyin":   "shortvideo/抖音",
     "shortvideo.tiktok":   "shortvideo/TikTok",
     "docs":                "docs",
+    "shared":              "shared",          # 局域网小工具 · 文件传输的共享文件夹
 }
 
 # 逻辑键 -> 库根目录下的相对路径

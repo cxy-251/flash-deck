@@ -70,7 +70,7 @@ omni-deck/
 │   ├── network/               # lan.py  wan.py(cloudflared 隧道 + DNS 助手)  state.py
 │   ├── shell/                 # Qt 桌面壳：window.py  native_player.py  native_matrix_player.py(多联)  audio_controls.py(音声控件，共用)
 │   │                          #   icons.py(播放器图标/气泡)  flash_runner.py(PyQt5 子进程)
-│   └── features/<module>/     # ★ 与 web/features 对称：games sc2 manga novels docs audio shortvideo shortvideo_matrix mega downloads library privacy system
+│   └── features/<module>/     # ★ 与 web/features 对称：games sc2 manga novels docs audio shortvideo shortvideo_matrix mega downloads library tools privacy system
 ├── web/                       # 前端
 │   ├── index.html             #   页面外壳（{{slot}} / {{nav}} 由 hub.py 按 manifest 填充）
 │   ├── app/                   #   core(Omni 注册表) access(权限表) shell(分区切换/分派) events(SSE) boot
@@ -90,7 +90,7 @@ omni-deck/
 ```text
 <库根>/omnilibrary.json                                  # 库标记（id/名称），换挂载点也能认回来
 <库根>/standalone_games/{rpg,retro,slg,flash,steam,renpy,unity,godot,unreal,wine,3ds,app}_games/<游戏>/
-<库根>/media_library/{manga, novels/{standard,nsfw}, audio/{standard,nsfw}, shortvideo/{快手,抖音,TikTok}, docs}/
+<库根>/media_library/{manga, novels/{standard,nsfw}, audio/{standard,nsfw}, shortvideo/{快手,抖音,TikTok}, docs, shared}/   # shared = 局域网小工具的共享文件夹
 ```
 
 每个游戏目录可放 `omni.json`（显示名、隐藏、图标、主程序、启动参数、环境变量、Proton 容器 appid），

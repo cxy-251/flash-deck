@@ -44,6 +44,8 @@ WEBENGINE_PROFILE = os.path.join(DATA, "webengine")      # QtWebEngine 持久化
 SHORTVIDEO_LIKES = os.path.join(DATA, "shortvideo_likes.json")
 AUDIO_PROGRESS = os.path.join(DATA, "audio_progress.json")   # 音声断点续听（本机/网页/多联共用）
 SHORTVIDEO_MATRIX_CONFIG = os.path.join(DATA, "shortvideo_matrix_config.json")
+TRANSFER_TEXTS = os.path.join(DATA, "transfer_texts.json")       # 局域网小工具 · 消息板
+TRANSFER_UPLOADS = os.path.join(DATA, "transfer_uploads.json")   # 未完成的分块上传（断点续传）
 
 ENGINE_CACHE = os.path.join(CACHE, "engine_cache")       # Chromium 磁盘缓存
 FLASH_CACHE = os.path.join(CACHE, "flash_cache")
