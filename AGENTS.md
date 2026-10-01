@@ -65,7 +65,7 @@ omni-deck/
 │   │   ├── paths.py           #   程序/状态路径唯一来源
 │   │   ├── settings.py        #   var/config/settings.json（全部本机配置）
 │   │   ├── library.py         #   资源库清单 + 目录骨架 LAYOUT
-│   │   ├── manifest.py  access.py  events.py(SSE 总线)  log.py  process.py  vfs.py  media_index.py  migrate.py
+│   │   ├── manifest.py  access.py  events.py(SSE 总线)  log.py  process.py  vfs.py  media_index.py  migrate.py  memwatch.py(内存压力)
 │   │   └── http/              #   router.py(装饰器路由+鉴权) server.py static.py(白名单) hub.py(大厅页面组装)
 │   ├── network/               # lan.py  wan.py(cloudflared 隧道 + DNS 助手)  state.py
 │   ├── shell/                 # Qt 桌面壳：window.py  native_player.py  native_matrix_player.py(多联)  audio_controls.py(音声控件，共用)

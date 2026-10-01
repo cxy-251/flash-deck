@@ -60,12 +60,16 @@ graph TB
 3. 按 `core → modules → tail` 顺序引入 CSS/JS（带 mtime 版本号），并把 manifest 注入 `window.OMNI_MANIFEST`。
 
 前端 `web/app/access.js` 由 manifest 生成 `ACCESS_RULES`；`web/app/shell.js` 只负责一二级切换，具体分区行为通过
-`Omni.register(module, { activate, onScrollEnd, prewarm, onUnlock, onMediaEnter, onLibraryChanged })` 分派。
+`Omni.register(module, { activate, deactivate, trim, onScrollEnd, onUnlock, onMediaEnter, onLibraryChanged, onEvent })` 分派。
+媒体分区按需加载（点进去才读列表）；离开 10 分钟没回来，外壳调 `trim()` 清掉滚动加载出来的部分；`onEvent` 收 SSE 事件。
+性能相关的设计与数据见 [`PERFORMANCE.md`](PERFORMANCE.md)。
 
 ## 5. 启动与进程
 
 `run.sh` 清掉 Steam 注入的环境 → `main.py` → `omni.app.main()`：
-状态迁移（v2 → `var/`）→ 单实例探测（端口被占直接退出，绝不杀进程）→ HTTP 服务 → 游戏扫描 → 后台任务（广域网隧道、漫画元数据巡检）→ Qt 窗口。
+调 glibc 分配器参数 / 进程改名 → 状态迁移（v2 → `var/`）→ 单实例探测（端口被占直接退出，绝不杀进程）→ HTTP 服务 →
+内存压力看门狗（`omni/core/memwatch.py`）→ 后台任务（广域网隧道、漫画元数据巡检）→ Qt 窗口。
+游戏库不在启动时扫：打开游戏分区时按需扫，结果连同目录指纹落盘（`var/cache/games_registry.json`），指纹没变直接读。
 所有子进程登记在 `omni.core.process`；SIGTERM / 关窗 / aboutToQuit 统一走 `process.shutdown()`：清子进程 → 释放端口 → 收后代 → `os._exit`。
 
 ## 6. 本机原生播放
