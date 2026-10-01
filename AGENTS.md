@@ -1,7 +1,7 @@
 # 🤖 Omni Deck — AI Agent & Developer Guidelines (`AGENTS.md`)
 
 > **本文档为所有接手本项目的 AI 编码助手（Claude、Gemini、Cursor 等）与开发者提供架构全景、核心铁律与开发规范。**
-> 架构细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+> 架构细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)；性能调优的方法与案例见 [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)。
 
 ---
 
