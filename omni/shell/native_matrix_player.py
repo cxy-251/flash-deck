@@ -911,6 +911,12 @@ class NativeMatrixPlayerWidget(QWidget):
         if on:
             # 以播放器为父的无边框弹出层：样式表照样继承，合成器把它叠在整个主窗口（含视频）上面
             self.top_bar.setParent(self, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+            # Wayland 的弹出层默认「碰到屏幕边就滑回屏幕里」：主窗口拖出屏幕一截时顶栏会贴在屏幕边上、
+            # 不跟窗口走。0 = 不做任何调整，跟着主窗口一起出屏（Qt 6.8+ 认这个属性，要在显示前设）
+            self.top_bar.winId()
+            handle = self.top_bar.windowHandle()
+            if handle is not None:
+                handle.setProperty("_q_waylandPopupConstraintAdjustment", 0)
         else:
             self.top_bar.setParent(self.bar_slot, Qt.WindowType.Widget)
             self._slot_lay.insertWidget(0, self.top_bar)
@@ -939,6 +945,8 @@ class NativeMatrixPlayerWidget(QWidget):
             elif t == QEvent.Type.WindowDeactivate and not getattr(self, "_searching", False):
                 if QApplication.activePopupWidget() is None:
                     self.top_bar.hide()
+            elif t in (QEvent.Type.WindowStateChange, QEvent.Type.Hide) and not self._window_shown():
+                self.top_bar.hide()   # 最小化 / 主窗口藏起来：独立的弹出层不会跟着走，得自己收
         return False
 
     def showEvent(self, event):
@@ -997,8 +1005,15 @@ class NativeMatrixPlayerWidget(QWidget):
         """下拉 / 菜单打开着，或者搜索对话框开着，别收。"""
         return bool(QApplication.activePopupWidget()) or getattr(self, "_searching", False)
 
+    def _window_shown(self) -> bool:
+        w = self.window()
+        return w.isVisible() and not w.isMinimized()
+
     def _poll_bar(self):
-        if not self.isVisible():
+        if not self.isVisible() or not self._window_shown():
+            return
+        # 悬浮顶栏是独立窗口：主窗口不在前台时（切到别的程序 / 最小化）鼠标碰到屏幕顶端也别叫出来
+        if self.bar_float and not self.window().isActiveWindow() and not self.top_bar.isVisible():
             return
         if self.bar_pinned:
             return
