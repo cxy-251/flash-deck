@@ -14,6 +14,83 @@ const TX = {
     loaded: false,
 };
 
+// ---------------------------------------------------------------- 校验 / 哈希
+// 局域网是普通 http 页面，浏览器不给 crypto.subtle（只在 https / localhost 有），CRC32 和 SHA-256 自己算。
+
+const TX_CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        t[n] = c >>> 0;
+    }
+    return t;
+})();
+
+function txCrc32(bytes) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) c = TX_CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+const TX_SHA_K = new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
+
+// 一次性对一整段字节做 SHA-256（抽样哈希最多 3MB，不用流式），返回十六进制
+function txSha256(bytes) {
+    const len = bytes.length, total = ((len + 9 + 63) >> 6) << 6;
+    const buf = new Uint8Array(total);
+    buf.set(bytes);
+    buf[len] = 0x80;
+    const view = new DataView(buf.buffer);
+    view.setUint32(total - 8, Math.floor(len / 0x20000000));   // 位长度高 32 位（len * 8 >>> 32）
+    view.setUint32(total - 4, (len * 8) >>> 0);
+    const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+    const W = new Uint32Array(64);
+    for (let off = 0; off < total; off += 64) {
+        for (let i = 0; i < 16; i++) W[i] = view.getUint32(off + i * 4);
+        for (let i = 16; i < 64; i++) {
+            const a = W[i - 15], b = W[i - 2];
+            const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+            const s1 = ((b >>> 17) | (b << 15)) ^ ((b >>> 19) | (b << 13)) ^ (b >>> 10);
+            W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
+        }
+        let [a, b, c, d, e, f, g, h] = H;
+        for (let i = 0; i < 64; i++) {
+            const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+            const t1 = (h + S1 + ((e & f) ^ (~e & g)) + TX_SHA_K[i] + W[i]) >>> 0;
+            const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+            const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+            h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+        }
+        H[0] += a; H[1] += b; H[2] += c; H[3] += d; H[4] += e; H[5] += f; H[6] += g; H[7] += h;
+    }
+    return [...H].map(x => x.toString(16).padStart(8, '0')).join('');
+}
+
+// 抽样哈希（跟服务端 service.sample_hash 一致）：sha256(十进制大小 + 开头 / 中间 / 结尾各 1MB)，3MB 以内整个文件
+const TX_SAMPLE = 1024 * 1024;
+
+async function txSampleHash(file) {
+    const size = file.size;
+    const ranges = size <= 3 * TX_SAMPLE ? [[0, size]]
+        : [0, Math.floor(size / 2) - TX_SAMPLE / 2, size - TX_SAMPLE].map(s => [s, s + TX_SAMPLE]);
+    const head = new TextEncoder().encode(String(size));
+    const parts = [head];
+    for (const [a, b] of ranges) parts.push(new Uint8Array(await file.slice(a, b).arrayBuffer()));
+    const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let o = 0;
+    for (const p of parts) { all.set(p, o); o += p.length; }
+    return txSha256(all);
+}
+
 function txFmtBytes(n) {
     if (n >= 1 << 30) return (n / (1 << 30)).toFixed(2) + ' GB';
     if (n >= 1 << 20) return (n / (1 << 20)).toFixed(1) + ' MB';
@@ -237,13 +314,16 @@ function txApi(method, url, body) {
 }
 
 // 一块：用 XHR 才拿得到块内进度（大块在慢网上也能看到进度条在走）
-function txSendChunk(task, offset, blob) {
+async function txSendChunk(task, offset, blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const crc = txCrc32(bytes).toString(16);
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         task.xhr = xhr;
         xhr.open('POST', `/api/tools/uploads/${task.upId}?offset=${offset}`);
         const t = txToken();
         if (t) xhr.setRequestHeader('X-Omni-Token', t);
+        xhr.setRequestHeader('X-Chunk-CRC32', crc);
         xhr.timeout = 120000;
         const started = performance.now();
         xhr.upload.onprogress = e => {
@@ -255,13 +335,13 @@ function txSendChunk(task, offset, blob) {
         xhr.onload = () => {
             let d = {};
             try { d = JSON.parse(xhr.responseText); } catch (e) {}
-            if (xhr.status === 200 || xhr.status === 409) resolve(d);
+            if (xhr.status === 200 || xhr.status === 409 || xhr.status === 422) resolve(d);
             else reject(Object.assign(new Error(d.error || ('HTTP ' + xhr.status)), { status: xhr.status }));
         };
         xhr.onerror = () => reject(new Error('网络中断'));
         xhr.ontimeout = () => reject(new Error('超时'));
         xhr.onabort = () => reject(Object.assign(new Error('已取消'), { canceled: true }));
-        xhr.send(blob);
+        xhr.send(bytes);
     });
 }
 
@@ -271,7 +351,23 @@ async function txUpload(task) {
     txRenderTasks();
     let fails = 0;
     try {
-        const up = await txApi('POST', '/api/tools/uploads', { name: task.name, size: task.size, mtime: task.file.lastModified || 0, client: TX.client });
+        task.state = 'hashing';
+        txRenderTasks();
+        const sample = await txSampleHash(task.file);
+        task.state = 'uploading';
+        txRenderTasks();
+        const meta = { name: task.name, size: task.size, mtime: task.file.lastModified || 0, client: TX.client, sample };
+        let up = await txApi('POST', '/api/tools/uploads', meta);
+        if (up.exists) {
+            // 秒传：共享文件夹里已经有大小、抽样哈希都一样的文件。抽样没读到的中间部分理论上可能不同，所以让用户选
+            if (confirm(`共享文件夹里已经有一样的文件「${up.exists}」（大小相同、抽样比对一致）。\n\n确定 = 跳过，不再上传\n取消 = 仍然上传一份`)) {
+                task.offset = task.size;
+                task.state = 'exists';
+                task.error = '已存在：' + up.exists;
+                return;
+            }
+            up = await txApi('POST', '/api/tools/uploads', { ...meta, force: true });
+        }
         task.upId = up.id;
         task.offset = up.offset || 0;
         const chunk = up.chunk || TX.chunk;
@@ -286,7 +382,14 @@ async function txUpload(task) {
                 const start = task.offset;
                 const d = await txSendChunk(task, start, task.file.slice(start, start + chunk));
                 task.offset = d.offset;
+                if (d.retry) {
+                    // 服务器没收齐 / 校验不对：这一块已经截掉，从块的开头重发
+                    if (++fails > 30) throw new Error('这一块反复校验失败');
+                    task.error = d.retry === 'crc' ? '校验不一致，重发这一块' : '这一块没收齐，重发';
+                    continue;
+                }
                 fails = 0;
+                task.error = '';
                 if (task.state === 'retrying') task.state = 'uploading';
                 if (d.done) { task.state = 'done'; break; }
             } catch (e) {
@@ -342,19 +445,20 @@ function txRetryTask(id) {
 }
 
 function txClearDoneTasks() {
-    TX.tasks = TX.tasks.filter(t => !['done', 'canceled'].includes(t.state));
+    TX.tasks = TX.tasks.filter(t => !['done', 'exists', 'canceled'].includes(t.state));
     txRenderTasks();
 }
 
-const TX_STATE_LABEL = { queued: '排队中', uploading: '上传中', retrying: '重连中', done: '完成', failed: '失败', canceled: '已取消' };
+const TX_STATE_LABEL = { queued: '排队中', hashing: '比对中', uploading: '上传中', retrying: '重连中', done: '完成',
+                         exists: '已存在（秒传）', failed: '失败', canceled: '已取消' };
 
 function txRenderTasks() {
     const box = document.getElementById('tx-tasks');
     if (!box) return;
     if (!TX.tasks.length) { box.innerHTML = ''; return; }
-    const finished = TX.tasks.some(t => ['done', 'canceled'].includes(t.state));
+    const finished = TX.tasks.some(t => ['done', 'exists', 'canceled'].includes(t.state));
     box.innerHTML = TX.tasks.map(t => {
-        const active = ['queued', 'uploading', 'retrying'].includes(t.state);
+        const active = ['queued', 'hashing', 'uploading', 'retrying'].includes(t.state);
         const btn = active ? `<button class="tx-icon-btn" title="取消" onclick="txCancelTask('${t.id}')">✕</button>`
                   : t.state === 'failed' ? `<button class="tx-btn" onclick="txRetryTask('${t.id}')">重试</button>` : '';
         return `<div class="tx-row tx-task tx-state-${t.state}" id="tx-task-${t.id}">

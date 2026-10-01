@@ -97,7 +97,7 @@ def create_upload(req):
     b = req.json_body()
     try:
         up = svc.create_upload(str(b.get("name") or ""), int(b.get("size") or 0), int(b.get("mtime") or 0),
-                               str(b.get("client") or ""))
+                               str(b.get("client") or ""), str(b.get("sample") or ""), bool(b.get("force")))
     except (TypeError, ValueError) as e:
         return req.error(400, str(e))
     return req.json(up)
@@ -113,17 +113,20 @@ def upload_status(req):
 @api.post("/api/tools/uploads/{id}")
 @guarded
 def upload_chunk(req):
-    """请求体就是这一块的原始字节；?offset= 是这一块在文件里的起点。"""
+    """请求体就是这一块的原始字节；?offset= 是这一块在文件里的起点；X-Chunk-CRC32 是这一块的 CRC32（十六进制）。"""
     try:
         length = int(req.headers.get("Content-Length") or 0)
+        crc = req.headers.get("X-Chunk-CRC32")
+        crc = int(crc, 16) if crc else None
     except ValueError:
-        return req.error(400, "缺少 Content-Length")
+        return req.error(400, "Content-Length / X-Chunk-CRC32 格式不对")
     try:
-        result = svc.write_chunk(req.params["id"], req.int_arg("offset", -1), length, req.handler.rfile)
+        result = svc.write_chunk(req.params["id"], req.int_arg("offset", -1), length, req.handler.rfile, crc)
     except KeyError:
         svc._drain(req.handler.rfile, length)
         return req.error(404, "没有这个上传（可能已经完成或被放弃）")
-    return req.json(result, 409 if result.get("mismatch") else 200)
+    status = 409 if result.get("mismatch") else 422 if result.get("retry") else 200
+    return req.json(result, status)
 
 
 @api.delete("/api/tools/uploads/{id}")

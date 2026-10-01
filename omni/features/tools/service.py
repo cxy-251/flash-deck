@@ -6,8 +6,14 @@
 分块上传（大文件、断点续传）：
     create(name, size, mtime)   同一个文件（名字 + 大小 + 修改时间）有没传完的就接着用，返回已收到的字节数
     write_chunk(id, offset, …)  offset 必须等于已收到的字节数，边读边追加写进 .omni-uploads/<id>.part，
-                                内存占用固定；连接中途断了，收到多少算多少，客户端问一下进度接着发
+                                内存占用固定。每块带 CRC32（请求头 X-Chunk-CRC32）：整块收齐且校验对上
+                                才算数；连接中途断了 / 校验不对，这一块截掉，客户端从块的开头重发——
+                                .part 里的每个字节都校验过
     收满 → 改名移进共享文件夹（同名自动改成「名字 (1).ext」，不覆盖）
+
+秒传：客户端算「抽样哈希」= sha256(大小 + 开头 1MB + 中间 1MB + 结尾 1MB)（3MB 以内整个文件），
+共享文件夹里有大小相同、抽样哈希也相同的文件，就告诉客户端「已经有了」，让用户选跳过还是仍然上传——
+抽样哈希没读中间的大部分内容，极小概率两个文件只在没抽到的地方不同，所以不悄悄跳过。
 每块默认 8MB：经 Cloudflare 转发时单个请求上限 100MB，手机上断了重传一块的代价也小。
 未完成上传的登记在 var/data/transfer_uploads.json；放弃一个上传 = .part 移到回收站（gio trash）。
 
@@ -15,6 +21,7 @@
 """
 import hashlib
 import json
+import zlib
 import os
 import secrets
 import shutil
@@ -32,6 +39,7 @@ PART_DIR = ".omni-uploads"          # 放在共享文件夹里（同一个文件
 CHUNK_SIZE = 8 * 1024 * 1024
 READ_SIZE = 1024 * 1024
 FREE_MARGIN = 256 * 1024 * 1024     # 上传前留给系统的余量
+SAMPLE = 1024 * 1024                # 抽样哈希每段 1MB（跟前端 tools.js 的 txSampleHash 一致）
 MAX_TEXTS = 200
 MAX_TEXT_LEN = 100_000
 
@@ -185,14 +193,58 @@ def get_upload(upload_id: str) -> Optional[Dict[str, Any]]:
     return _public(up) if up else None
 
 
-def create_upload(name: str, size: int, mtime: int, client: str = "") -> Dict[str, Any]:
+def sample_hash(path: str, size: int) -> str:
+    """抽样哈希：sha256(十进制大小 + 开头 / 中间 / 结尾各 1MB)；3MB 以内就是整个文件。"""
+    h = hashlib.sha256(str(size).encode())
+    with open(path, "rb") as f:
+        if size <= 3 * SAMPLE:
+            h.update(f.read())
+        else:
+            for start in (0, size // 2 - SAMPLE // 2, size - SAMPLE):
+                f.seek(start)
+                h.update(f.read(SAMPLE))
+    return h.hexdigest()
+
+
+_sample_cache: Dict[str, tuple] = {}   # path -> (size, mtime, hash)
+
+
+def find_same(size: int, sample: str) -> Optional[str]:
+    """共享文件夹里大小相同、抽样哈希也相同的文件名（先按大小筛，只给同样大小的算哈希，每个最多读 3MB）。"""
+    if not sample:
+        return None
+    for f in list_files():
+        if f["size"] != size:
+            continue
+        path = find_file(f["name"])
+        if not path:
+            continue
+        hit = _sample_cache.get(path)
+        if not hit or hit[:2] != (size, f["mtime"]):
+            try:
+                hit = (size, f["mtime"], sample_hash(path, size))
+            except OSError:
+                continue
+            _sample_cache[path] = hit
+        if hit[2] == sample:
+            return f["name"]
+    return None
+
+
+def create_upload(name: str, size: int, mtime: int, client: str = "", sample: str = "",
+                  force: bool = False) -> Dict[str, Any]:
     """开始（或接着）一个上传。同一个文件 = 名字 + 大小 + 修改时间都一样，返回它已收到的进度。
+    带了抽样哈希、又没 force：共享文件夹里已有一样的文件就返回 {"exists": 文件名}，不建上传。
     出错抛 ValueError（文件名不行 / 空间不够），消息给前端直接显示。"""
     clean = safe_name(name)
     if not clean:
         raise ValueError("文件名无效")
     if size < 0:
         raise ValueError("文件大小无效")
+    if not force:
+        same = find_same(size, sample)
+        if same:
+            return {"exists": same, "size": size}
     key = hashlib.sha1(f"{name}\0{size}\0{mtime}".encode("utf-8")).hexdigest()
     with _lock:
         ups = _load_uploads()
@@ -215,8 +267,9 @@ def create_upload(name: str, size: int, mtime: int, client: str = "") -> Dict[st
     return _public(up)
 
 
-def write_chunk(upload_id: str, offset: int, length: int, rfile) -> Dict[str, Any]:
+def write_chunk(upload_id: str, offset: int, length: int, rfile, crc: Optional[int] = None) -> Dict[str, Any]:
     """从 rfile 读 length 字节追加到 .part。offset 对不上已收到的字节数就不写，返回实际进度让客户端对齐。
+    整块收齐、且（带了 crc 时）CRC32 对得上才保留；否则截回块的开头，返回 retry=True 让客户端重发这一块。
     返回 {"offset": 收到的字节数, "done": 是否收满, "name": 落盘的文件名（收满时）}；没有这个上传抛 KeyError。"""
     with _lock:
         up = _load_uploads().get(upload_id)
@@ -228,14 +281,20 @@ def write_chunk(upload_id: str, offset: int, length: int, rfile) -> Dict[str, An
         if offset != have or length < 0 or have + length > up["size"]:
             _drain(rfile, length)
             return {"offset": have, "done": False, "mismatch": True}
-        left = length
+        left, check = length, 0
         with open(up["part"], "ab") as f:
             while left > 0:
                 buf = rfile.read(min(READ_SIZE, left))
-                if not buf:          # 连接断了：收到多少算多少
+                if not buf:          # 连接断了
                     break
                 f.write(buf)
+                check = zlib.crc32(buf, check)
                 left -= len(buf)
+            bad = "incomplete" if left else ("crc" if crc is not None and check != crc else "")
+            if bad:                  # 半块 / 校验不对：截回这一块的开头，只留校验过的数据
+                f.truncate(offset)
+        if bad:
+            return {"offset": offset, "done": False, "retry": bad}
         have = _received(up)
         if have >= up["size"]:
             return {"offset": have, "done": True, "name": _finish(upload_id)}

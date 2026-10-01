@@ -45,7 +45,7 @@ a.tx-name:hover { color: #58a6ff; }
 .tx-task { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
 .tx-bar { height: 5px; background: #21262d; border-radius: 3px; overflow: hidden; margin: 6px 0 3px; }
 .tx-bar-fill { height: 100%; background: #58a6ff; transition: width .2s; }
-.tx-state-done .tx-bar-fill { background: #3fb950; }
+.tx-state-done .tx-bar-fill, .tx-state-exists .tx-bar-fill { background: #3fb950; }
 .tx-state-failed .tx-bar-fill, .tx-state-canceled .tx-bar-fill { background: #f85149; }
 .tx-state-retrying .tx-bar-fill { background: #d29922; }
 .tx-clear-done { text-align: right; }
