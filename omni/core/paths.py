@@ -52,6 +52,7 @@ ENGINE_CACHE = os.path.join(CACHE, "engine_cache")       # Chromium 磁盘缓存
 FLASH_CACHE = os.path.join(CACHE, "flash_cache")
 THUMBS = os.path.join(CACHE, "thumbs")
 MEDIA_INDEX_DB = os.path.join(CACHE, "media_index.db")
+GAMES_REGISTRY_CACHE = os.path.join(CACHE, "games_registry.json")   # 游戏库扫描结果 + 目录指纹（冷启动直接读）
 MANGA_COVERS = os.path.join(CACHE, "manga_covers")
 SHORTVIDEO_WEBM = os.path.join(CACHE, "shortvideo_webm")
 

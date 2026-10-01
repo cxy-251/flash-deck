@@ -19,7 +19,7 @@ import os
 import threading
 import urllib.parse
 
-from omni.core import library, settings
+from omni.core import library, paths, settings
 
 REGISTRY = {}
 META_FILE = "omni.json"
@@ -307,13 +307,50 @@ def _signature():
     return sig
 
 
+def _sig_key(sig) -> str:
+    return json.dumps(sig, sort_keys=True, ensure_ascii=False)
+
+
+def _load_snapshot(sig_key: str):
+    """上次扫描结果的落盘快照；指纹（各分类目录 mtime + 库清单）对得上才用。"""
+    try:
+        with open(paths.GAMES_REGISTRY_CACHE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    games = data.get("games") if isinstance(data, dict) else None
+    return games if data.get("sig") == sig_key and isinstance(games, dict) else None
+
+
+def _save_snapshot(sig_key: str, games: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(paths.GAMES_REGISTRY_CACHE), exist_ok=True)
+        tmp = paths.GAMES_REGISTRY_CACHE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"sig": sig_key, "games": games}, f, ensure_ascii=False)
+        os.replace(tmp, paths.GAMES_REGISTRY_CACHE)
+    except OSError:
+        pass
+
+
 def scan(force=False):
-    """只有游戏目录（或库清单）有变动、或 force=True 时才真正重扫（stat 指纹比较，毫秒级）。"""
+    """只有游戏目录（或库清单）有变动、或 force=True 时才真正重扫（stat 指纹比较，毫秒级）。
+
+    冷启动：指纹跟上次落盘的一样（没增删游戏、没改库清单）就直接读快照——以前每次重启都要给 133 个游戏
+    找主程序、走十几万个文件，冷缓存下要十几秒。只改了游戏目录里面的文件（主程序换名）指纹不会变，
+    跟进程内一样要靠「刷新」（force）或按 id 查不到时的补扫。"""
     global _last_sig
     with _scan_lock:
         sig = _signature()
         if not force and REGISTRY and sig == _last_sig:
             return
+        sig_key = _sig_key(sig)   # 别叫 key：下面的扫描循环 for key, register in ... 会把它盖掉
+        if not force and not REGISTRY:
+            cached = _load_snapshot(sig_key)
+            if cached is not None:
+                REGISTRY.update(cached)
+                _last_sig = sig
+                return
         _last_sig = sig
         found = {}
         for key, register in _scan_plan():
@@ -344,6 +381,7 @@ def scan(force=False):
             found[lime["id"]] = lime
         REGISTRY.clear()
         REGISTRY.update(found)
+        _save_snapshot(sig_key, found)
 
 
 def get(game_id: str):
