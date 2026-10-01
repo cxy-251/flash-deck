@@ -27,6 +27,7 @@ import sys
 import time
 import json
 import subprocess
+import threading
 import urllib.parse
 from typing import List, Dict, Any, Optional
 
@@ -90,6 +91,40 @@ def load_likes() -> Dict[str, set]:
                 print(f"[shortvideo] 读取点赞记录失败: {e}")
         _LIKES_CACHE = res
         return _LIKES_CACHE
+
+
+# ---------------- 作者筛选条：钉住的作者 ----------------
+#
+# 筛选条第一行默认只有「全部」「我的点赞」，用户自己把常看的作者钉上去（顺序 = 钉的先后）。
+# 存服务端（var/data/shortvideo_pins.json），Deck 本机和手机看到的是同一份。
+
+_PINS_LOCK = threading.Lock()
+
+
+def load_pins() -> Dict[str, List[str]]:
+    try:
+        with open(paths.SHORTVIDEO_PINS, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return {k: [str(x) for x in v] for k, v in data.items() if isinstance(v, list)} if isinstance(data, dict) else {}
+
+
+def set_pinned(platform: str, folder: str, pinned: bool) -> List[str]:
+    """钉 / 取消钉一个作者，返回这个平台钉住的作者（按钉的先后）。"""
+    folder = str(folder or '').strip()
+    with _PINS_LOCK:
+        data = load_pins()
+        cur = [f for f in data.get(platform, []) if f != folder]
+        if pinned and folder:
+            cur.append(folder)
+        data[platform] = cur
+        os.makedirs(os.path.dirname(paths.SHORTVIDEO_PINS), exist_ok=True)
+        tmp = paths.SHORTVIDEO_PINS + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, paths.SHORTVIDEO_PINS)
+    return cur
 
 
 def save_likes() -> None:
@@ -688,6 +723,7 @@ def query_shortvideo_library(platform: str = DEFAULT_PLATFORM, q: str = "", fold
         'page_size': page_size,
         'has_more': end < total,
         'folders': folders,
+        'pinned': load_pins().get(platform, []),
         'platform': platform,
         'liked_count': liked_count,
     }

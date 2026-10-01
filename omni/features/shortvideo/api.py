@@ -53,6 +53,14 @@ def stream(req):
     return req.file(full, ctype)
 
 
+@api.post("/api/shortvideo/pin", deny=LOCKED_POST)
+def pin(req):
+    """作者筛选条：把作者钉到 / 取下第一行。"""
+    b = req.json_body()
+    return req.json({"status": "ok", "pinned": sv.set_pinned(b.get("platform") or "kuaishou", b.get("folder", ""),
+                                                            bool(b.get("pinned")))})
+
+
 @api.post("/api/shortvideo/like", deny=LOCKED_POST)
 def like(req):
     b = req.json_body()

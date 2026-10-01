@@ -203,7 +203,10 @@ function loadShortVideoLibrary(platform, reset = false) {
             // 最终高度没变，也可能让浏览器在那一刻重新算一遍上面这块区域的布局，
             // 用户视觉上就会觉得"下面的内容跟着抖了一下/挪了地方"——触底加载更多时
             // 关掉这个重建，问题原样消失。
-            if (reset) renderShortVideoFolderBar(platform, res.folders || []);
+            if (reset) {
+                st.pinned = res.pinned || [];
+                renderShortVideoFolderBar(platform, res.folders || []);
+            }
 
             const badge = svEl(platform, 'total-count-badge');
             if (badge) badge.textContent = `共 ${st.total} 条`;
@@ -257,10 +260,9 @@ function liveRefreshShortVideoLibrary(platform) {
     }).catch(() => {});
 }
 
-// 作者（文件夹）筛选条：抖音四百多个作者，全排出来能占满一屏。平时只排一行——全部 / 点赞 / 当前选中的 /
-// 条数最多的前 SV_TOP_AUTHORS 个，其余收进「更多作者」：点开一个带搜索框、可滚动的面板，选完自动收起。
-const SV_TOP_AUTHORS = 10;
-
+// 作者（文件夹）筛选条：第一行默认只有「全部」「我的点赞」，常看的作者自己钉上去（📌，存服务端，
+// 各设备同一份）；当前选中的作者没钉也临时露在第一行。其余收进「更多作者」：带搜索框、可滚动的面板，
+// 面板里每个作者也能直接钉 / 取消钉，选中一个作者面板自动收起。
 function svFolderKey(f) {
     return f.key || (f.name === '全部' ? 'all' : f.name);
 }
@@ -269,16 +271,41 @@ function svFolderChip(platform, f) {
     const st = SV[platform];
     const fKey = svFolderKey(f);
     const isSelected = st.folder === fKey;
+    const isAuthor = !['all', 'liked'].includes(fKey);
+    const pinned = isAuthor && (st.pinned || []).includes(f.name);
     const btn = document.createElement('button');
     btn.className = 'tab-btn sv-chip' + (isSelected ? ' active' : '') + (fKey === 'liked' ? ' sv-chip-liked' : '');
-    btn.textContent = `${f.name} (${f.count})`;
     btn.title = f.name;
+    const label = document.createElement('span');
+    label.className = 'sv-chip-label';
+    label.textContent = `${f.name} (${f.count})`;
+    btn.appendChild(label);
+    if (isAuthor) {
+        const pin = document.createElement('span');
+        pin.className = 'sv-pin' + (pinned ? ' on' : '');
+        pin.textContent = '📌';
+        pin.title = pinned ? '从第一行取下' : '钉到第一行';
+        pin.onclick = e => { e.stopPropagation(); svTogglePin(platform, f.name, !pinned); };
+        btn.appendChild(pin);
+    }
     btn.onclick = () => {
         st.folder = fKey;
         st.authorsOpen = false;
         loadShortVideoLibrary(platform, true);
     };
     return btn;
+}
+
+function svTogglePin(platform, name, pinned) {
+    const st = SV[platform];
+    fetch('/api/shortvideo/pin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, folder: name, pinned }),
+    }).then(r => r.json()).then(d => {
+        if (!d || d.status !== 'ok') return showMegaToast('操作失败', true);
+        st.pinned = d.pinned || [];
+        renderShortVideoFolderBar(platform, st.folders);
+    }).catch(() => showMegaToast('操作失败', true));
 }
 
 function renderShortVideoFolderBar(platform, folders) {
@@ -291,19 +318,24 @@ function renderShortVideoFolderBar(platform, folders) {
         return;
     }
     st.folders = folders;
+    // 重画时保住面板里搜索框的焦点和光标（钉 / 取消钉会重画）
+    const oldInput = bar.querySelector('.sv-author-search');
+    const hadFocus = oldInput && document.activeElement === oldInput;
+    const listScroll = (bar.querySelector('.sv-author-list') || {}).scrollTop || 0;
     bar.style.display = 'block';
     bar.innerHTML = '';
 
     const fixed = folders.filter(f => ['all', 'liked'].includes(svFolderKey(f)));
     const authors = folders.filter(f => !['all', 'liked'].includes(svFolderKey(f)));   // 后端已按条数从多到少排好
-    const top = authors.slice(0, SV_TOP_AUTHORS);
+    const byName = new Map(authors.map(f => [f.name, f]));
+    const first = (st.pinned || []).map(n => byName.get(n)).filter(Boolean);           // 按钉的先后
     const current = authors.find(f => svFolderKey(f) === st.folder);
-    if (current && !top.includes(current)) top.unshift(current);   // 选中的作者不在前十也要露在外面
+    if (current && !first.includes(current)) first.push(current);
 
     const row = document.createElement('div');
     row.className = 'sv-chip-row';
-    [...fixed, ...top].forEach(f => row.appendChild(svFolderChip(platform, f)));
-    if (authors.length > top.length) {
+    [...fixed, ...first].forEach(f => row.appendChild(svFolderChip(platform, f)));
+    if (authors.length) {
         const more = document.createElement('button');
         more.className = 'tab-btn sv-chip sv-chip-more' + (st.authorsOpen ? ' active' : '');
         more.textContent = st.authorsOpen ? '收起 ▲' : `👤 更多作者 (${authors.length}) ▼`;
@@ -317,7 +349,7 @@ function renderShortVideoFolderBar(platform, folders) {
         panel.className = 'sv-author-panel';
         const input = document.createElement('input');
         input.className = 'search-input sv-author-search';
-        input.placeholder = `🔍 在 ${authors.length} 个作者里搜索`;
+        input.placeholder = `🔍 在 ${authors.length} 个作者里搜索（点 📌 钉到第一行）`;
         input.value = st.authorFilter || '';
         const list = document.createElement('div');
         list.className = 'sv-author-list';
@@ -334,7 +366,8 @@ function renderShortVideoFolderBar(platform, folders) {
         panel.appendChild(list);
         bar.appendChild(panel);
         fill();
-        setTimeout(() => input.focus(), 0);
+        list.scrollTop = listScroll;
+        if (hadFocus || !oldInput) setTimeout(() => input.focus(), 0);
     }
 }
 

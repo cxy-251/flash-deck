@@ -42,6 +42,7 @@ CRAWLER_TASKS = os.path.join(CONFIG, "crawler_tasks")             # 下载中心
 
 WEBENGINE_PROFILE = os.path.join(DATA, "webengine")      # QtWebEngine 持久化存储（Cookie/LocalStorage/IndexedDB）
 SHORTVIDEO_LIKES = os.path.join(DATA, "shortvideo_likes.json")
+SHORTVIDEO_PINS = os.path.join(DATA, "shortvideo_pins.json")   # 作者筛选条第一行钉住的作者（按平台）
 AUDIO_PROGRESS = os.path.join(DATA, "audio_progress.json")   # 音声断点续听（本机/网页/多联共用）
 SHORTVIDEO_MATRIX_CONFIG = os.path.join(DATA, "shortvideo_matrix_config.json")
 TRANSFER_TEXTS = os.path.join(DATA, "transfer_texts.json")       # 局域网小工具 · 消息板
