@@ -192,7 +192,10 @@ function loadShortVideoLibrary(platform, reset = false) {
             const items = res.items || [];
             st.total = res.total || 0;
             st.hasMore = res.has_more || false;
-            st.list = reset ? items : st.list.concat(items);
+            // 翻页追加时跳过已经在列表里的：后台补元数据 / 新下载会触发 liveRefresh，把第一页（最多 60 条）里
+            // 没见过的追加到末尾，正常翻页再拉到它们就重复了（每页条数小于 60 时必现）
+            const known = reset ? null : new Set(st.list.map(x => x.rel_path));
+            st.list = reset ? items : st.list.concat(items.filter(x => !known.has(x.rel_path)));
 
             // 文件夹筛选条只在真正 reset（切筛选/搜索/首次进页）时才重建——翻页加载
             // 更多本来就是同一个查询的下一页，文件夹集合不会变，没必要每次都
@@ -254,6 +257,30 @@ function liveRefreshShortVideoLibrary(platform) {
     }).catch(() => {});
 }
 
+// 作者（文件夹）筛选条：抖音四百多个作者，全排出来能占满一屏。平时只排一行——全部 / 点赞 / 当前选中的 /
+// 条数最多的前 SV_TOP_AUTHORS 个，其余收进「更多作者」：点开一个带搜索框、可滚动的面板，选完自动收起。
+const SV_TOP_AUTHORS = 10;
+
+function svFolderKey(f) {
+    return f.key || (f.name === '全部' ? 'all' : f.name);
+}
+
+function svFolderChip(platform, f) {
+    const st = SV[platform];
+    const fKey = svFolderKey(f);
+    const isSelected = st.folder === fKey;
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn sv-chip' + (isSelected ? ' active' : '') + (fKey === 'liked' ? ' sv-chip-liked' : '');
+    btn.textContent = `${f.name} (${f.count})`;
+    btn.title = f.name;
+    btn.onclick = () => {
+        st.folder = fKey;
+        st.authorsOpen = false;
+        loadShortVideoLibrary(platform, true);
+    };
+    return btn;
+}
+
 function renderShortVideoFolderBar(platform, folders) {
     const bar = svEl(platform, 'folder-filter-bar');
     if (!bar) return;
@@ -263,28 +290,52 @@ function renderShortVideoFolderBar(platform, folders) {
         bar.innerHTML = '';
         return;
     }
-    bar.style.display = 'flex';
+    st.folders = folders;
+    bar.style.display = 'block';
     bar.innerHTML = '';
-    folders.forEach(f => {
-        const btn = document.createElement('button');
-        const fKey = f.key || (f.name === '全部' ? 'all' : f.name);
-        const isSelected = st.folder === fKey;
-        btn.className = 'tab-btn' + (isSelected ? ' active' : '');
-        btn.style.padding = '4px 12px';
-        btn.style.fontSize = '12px';
-        btn.style.borderRadius = '16px';
-        btn.style.cursor = 'pointer';
-        if (fKey === 'liked') {
-            btn.style.color = isSelected ? '#fff' : '#ff7b72';
-            btn.style.borderColor = isSelected ? '#ff7b72' : '#ff7b7288';
-        }
-        btn.textContent = `${f.name} (${f.count})`;
-        btn.onclick = () => {
-            st.folder = fKey;
-            loadShortVideoLibrary(platform, true);
+
+    const fixed = folders.filter(f => ['all', 'liked'].includes(svFolderKey(f)));
+    const authors = folders.filter(f => !['all', 'liked'].includes(svFolderKey(f)));   // 后端已按条数从多到少排好
+    const top = authors.slice(0, SV_TOP_AUTHORS);
+    const current = authors.find(f => svFolderKey(f) === st.folder);
+    if (current && !top.includes(current)) top.unshift(current);   // 选中的作者不在前十也要露在外面
+
+    const row = document.createElement('div');
+    row.className = 'sv-chip-row';
+    [...fixed, ...top].forEach(f => row.appendChild(svFolderChip(platform, f)));
+    if (authors.length > top.length) {
+        const more = document.createElement('button');
+        more.className = 'tab-btn sv-chip sv-chip-more' + (st.authorsOpen ? ' active' : '');
+        more.textContent = st.authorsOpen ? '收起 ▲' : `👤 更多作者 (${authors.length}) ▼`;
+        more.onclick = () => { st.authorsOpen = !st.authorsOpen; renderShortVideoFolderBar(platform, st.folders); };
+        row.appendChild(more);
+    }
+    bar.appendChild(row);
+
+    if (st.authorsOpen) {
+        const panel = document.createElement('div');
+        panel.className = 'sv-author-panel';
+        const input = document.createElement('input');
+        input.className = 'search-input sv-author-search';
+        input.placeholder = `🔍 在 ${authors.length} 个作者里搜索`;
+        input.value = st.authorFilter || '';
+        const list = document.createElement('div');
+        list.className = 'sv-author-list';
+        const fill = () => {
+            const q = input.value.trim().toLowerCase();
+            st.authorFilter = input.value;
+            const hits = q ? authors.filter(f => f.name.toLowerCase().includes(q)) : authors;
+            list.innerHTML = '';
+            hits.forEach(f => list.appendChild(svFolderChip(platform, f)));
+            if (!hits.length) list.innerHTML = '<div class="sv-author-empty">没有匹配的作者</div>';
         };
-        bar.appendChild(btn);
-    });
+        input.oninput = fill;
+        panel.appendChild(input);
+        panel.appendChild(list);
+        bar.appendChild(panel);
+        fill();
+        setTimeout(() => input.focus(), 0);
+    }
 }
 
 function renderShortVideoGrid(platform, reset = true) {
@@ -604,6 +655,18 @@ function deleteShortVideoFile(platform, relPath) {
 
 // 快手 / 抖音 / TikTok 三个分区都由本模块实现（manifest 里 module=shortvideo），按分区 id 区分平台
 Omni.register('shortvideo', {
+    // 离开 10 分钟没回来（app/shell.js）：网格只留第一页，后面翻出来的卡片和缩略图清掉；再往下滚从第 2 页接着拉
+    trim(sectionId) {
+        const platform = svPlatformFromTab(sectionId);
+        const st = SV[platform];
+        const grid = svEl(platform, 'grid');
+        const keep = st.pageSize || 60;
+        if (!grid || st.list.length <= keep) return;
+        while (grid.children.length > keep) grid.lastElementChild.remove();
+        st.list = st.list.slice(0, keep);
+        st.page = 2;
+        st.hasMore = st.total > keep;
+    },
     activate(sectionId) {
         const activeMediaTab = sectionId;
         const subStats = document.getElementById('media-sub-stats');

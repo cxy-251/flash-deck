@@ -20,3 +20,15 @@
 .sv-card-btn .ico { width: 18px; height: 18px; }
 #shortvideo-controls-overlay .ico-btn .ico { width: 24px; height: 24px; }
 #shortvideo-play-btn .ico { width: 28px; height: 28px; }
+
+/* 作者筛选条：一行常用 + 「更多作者」面板（搜索 + 滚动） */
+.sv-chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sv-chip { padding: 4px 12px !important; font-size: 12px !important; border-radius: 16px !important; cursor: pointer;
+           max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-chip-liked { color: #ff7b72; border-color: #ff7b7288; }
+.sv-chip-liked.active { color: #fff; border-color: #ff7b72; }
+.sv-chip-more { color: #58a6ff; border-style: dashed; }
+.sv-author-panel { margin-top: 10px; background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 10px; }
+.sv-author-search { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+.sv-author-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 260px; overflow-y: auto; }
+.sv-author-empty { color: #8b949e; font-size: 12px; padding: 8px; }

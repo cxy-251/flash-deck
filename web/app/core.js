@@ -7,7 +7,8 @@
 //       activate(sectionId)     切到该分区（或该模块负责的某个分区）时
 //       onScrollEnd(sectionId)  分区可见且滚动到接近底部时（无限加载）
 //       onUnlock(sectionId)     NSFW 解锁成功、且当前停在该分区时
-//       prewarm()               启动后静默预热（切进来时不闪 0 条）
+//       deactivate(sectionId)   离开该分区时
+//       trim(sectionId)         离开后 10 分钟还没回来：清掉滚动加载出来的部分，只留第一批（app/shell.js）
 //       onMediaEnter()          从游戏区切到媒体区时
 //   });
 const Omni = window.Omni = {

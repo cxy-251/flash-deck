@@ -797,39 +797,4 @@ Omni.register('audio', {
     },
     onUnlock() { loadAudioLibrary(true); },
     onLibraryChanged() { localAudioList = []; totalAudioCount = 0; },
-    prewarm() {
-        if (!localAudioList || localAudioList.length === 0) {
-                const prefetchUrl = isAudioNsfw 
-                    ? `/api/audio/library?nsfw=1&q=&page=1&page_size=80&t=${Date.now()}`
-                    : `/audio/standard_catalog.json?t=${Date.now()}`;
-                fetch(prefetchUrl)
-                    .then(r => r.json())
-                    .then(res => {
-                        let items = res.items || [];
-                        if (!isAudioNsfw) {
-                            items = items.filter(it => !it.is_nsfw);   // 只看 is_nsfw，不再额外按路径二次过滤，理由见 loadAudioLibrary()
-                        }
-                        items.sort((a, b) => {
-                            const albA = a.album || '';
-                            const albB = b.album || '';
-                            const albCmp = albA.localeCompare(albB, undefined, { numeric: true, sensitivity: 'base' });
-                            if (albCmp !== 0) return albCmp;
-                            return (a.filename || a.title || '').localeCompare(b.filename || b.title || '', undefined, { numeric: true, sensitivity: 'base' });
-                        });
-                        localAudioList = items;
-                        totalAudioCount = isAudioNsfw ? (res.total || items.length) : items.length;
-                        const badge = document.getElementById('audio-total-count-badge');
-                        if (badge) badge.textContent = `共 ${totalAudioCount} 首`;
-                        if (activePrimarySection === 'media' && activeMediaTab === 'audio') {
-                            const label = isAudioNsfw ? '部绅士音声' : '部有声书';
-                            document.getElementById('total-badge').textContent = `${totalAudioCount} ${label}`;
-                            const subStats = document.getElementById('media-sub-stats');
-                            if (subStats) subStats.textContent = `共 ${totalAudioCount} ${label} (支持后台全局播放)`;
-                            if (res.albums) renderAudioAlbumFilterBar(res.albums);
-                            renderAudioTrackList(true);
-                        }
-                    })
-                    .catch(() => {});
-            }
-    },
 });

@@ -28,7 +28,7 @@ import sqlite3
 import threading
 import time
 
-from omni.core import paths
+from omni.core import memwatch, paths
 
 _CACHE_DIR = paths.CACHE
 _DB_PATH = paths.MEDIA_INDEX_DB
@@ -366,6 +366,7 @@ def diff_scan(kind: str, files: list, parse_one, sync_limit: int = 24,
             try:
                 total, done, batch = len(stale), len(head), []
                 for one in tail:
+                    memwatch.wait_if_tight()   # 系统内存紧张时先停（每条要起一个 ffprobe），缓过来再补
                     batch.append(_parse(one))
                     done += 1
                     if len(batch) >= 25:

@@ -23,8 +23,7 @@ try {
     } else {
         loadGames();
     }
-    // 启动时静默预热媒体专区数量与列表，彻底告别 0 部/0 首闪烁与空白页面
-    setTimeout(prewarmMediaLibraries, 50);
+    // 媒体分区不再启动时预热：点进哪个分区才加载哪个（各分区 activate 里列表为空就会去读）
 } catch(e) {
     console.error('Init error:', e);
     loadGames();

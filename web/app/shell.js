@@ -66,10 +66,39 @@ let prevActiveMediaTab = null;
 let mediaEnteredFrom = null;   // switchToMediaSection 标记：这次是从游戏区进来的
 let mediaTabCameFrom = null;   // 进当前标签之前在哪：媒体标签 id，或 'games'（分区用它做「返回」）
 
+// 离开一个媒体分区后过一阵还没回来，才让它清掉滚动加载出来的卡片（刚进来就看得到的第一批保留）。
+// 回来了就取消；不是一离开就清——来回切标签时不用重新加载。分区在 Omni.register 里写 trim() 自己清。
+const MEDIA_TRIM_DELAY = 10 * 60 * 1000;
+const mediaTrimTimers = {};
+
+function scheduleMediaTrim(tab) {
+    if (!tab) return;
+    clearTimeout(mediaTrimTimers[tab]);
+    mediaTrimTimers[tab] = setTimeout(() => {
+        delete mediaTrimTimers[tab];
+        if (!(activePrimarySection === 'media' && activeMediaTab === tab)) Omni.call(tab, 'trim');
+    }, MEDIA_TRIM_DELAY);
+}
+
+// 系统内存紧张（后端 omni/core/memwatch.py 经 SSE 推 memory_pressure）：在等着清理的分区不等 10 分钟了，现在就清
+function trimPendingMediaNow() {
+    for (const tab of Object.keys(mediaTrimTimers)) {
+        cancelMediaTrim(tab);
+        if (!(activePrimarySection === 'media' && activeMediaTab === tab)) Omni.call(tab, 'trim');
+    }
+}
+
+function cancelMediaTrim(tab) {
+    clearTimeout(mediaTrimTimers[tab]);
+    delete mediaTrimTimers[tab];
+}
+
 function updateMediaTabUI() {
     if (prevActiveMediaTab && prevActiveMediaTab !== activeMediaTab) {
         Omni.call(prevActiveMediaTab, 'deactivate');
+        scheduleMediaTrim(prevActiveMediaTab);
     }
+    cancelMediaTrim(activeMediaTab);
     if (mediaEnteredFrom || prevActiveMediaTab !== activeMediaTab) mediaTabCameFrom = mediaEnteredFrom || prevActiveMediaTab;
     mediaEnteredFrom = null;
     prevActiveMediaTab = activeMediaTab;
@@ -80,14 +109,10 @@ function updateMediaTabUI() {
     Omni.call(activeMediaTab, 'activate');
 }
 
-function prewarmMediaLibraries() {
-    // 静默预热各媒体分区（漫画/小说/音声等在各自模块的 prewarm 钩子里），避免首次切入时闪 0 部/0 首
-    Omni.each('prewarm');
-}
-
 function switchToGamesSection() {
     if (prevActiveMediaTab) {
         Omni.call(prevActiveMediaTab, 'deactivate');
+        scheduleMediaTrim(prevActiveMediaTab);
     }
     activePrimarySection = 'games';
     try { localStorage.setItem('omni_primary_section', 'games'); } catch(e) {}

@@ -647,24 +647,11 @@ Omni.register('novels', {
     onScrollEnd() { loadMoreNovelsShelf(); },
     onUnlock() { loadNovelsLibrary(); },
     onLibraryChanged() { localNovelsList = []; },
-    prewarm() {
-        if (!localNovelsList || localNovelsList.length === 0) {
-                fetch(`/api/novels/library?nsfw=${isNovelNsfw ? 1 : 0}&t=${Date.now()}`)
-                    .then(r => r.json())
-                    .then(list => {
-                        localNovelsList = list || [];
-                        const countEl = document.getElementById('novel-local-count');
-                        if (countEl) countEl.textContent = `(${localNovelsList.length} 部 · EPUB / TXT)`;
-                        if (activePrimarySection === 'media' && activeMediaTab === 'novels') {
-                            document.getElementById('total-badge').textContent = localNovelsList.length + ' 本小说';
-                            const subStats = document.getElementById('media-sub-stats');
-                            if (subStats) subStats.textContent = '共 ' + localNovelsList.length + ' 本已收录小说';
-                            renderNovelCategoryBar();
-                            const searchVal = (document.getElementById('novel-search-input') ? document.getElementById('novel-search-input').value : '').trim();
-                            renderNovelsShelf(filterLocalNovels(searchVal));
-                        }
-                    })
-                    .catch(() => {});
-            }
+    // 离开 10 分钟没回来（app/shell.js）：书架只留第一批卡片；再往下滚照常续上
+    trim() {
+        const grid = document.getElementById('novels-shelf-grid');
+        if (!grid) return;
+        while (grid.children.length > NOVEL_SHELF_PAGE_SIZE) grid.lastElementChild.remove();
+        novelShelfRenderIndex = grid.children.length;
     },
 });

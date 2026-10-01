@@ -189,6 +189,8 @@ def main(argv=None):
         sys.exit(1)
     process.on_shutdown(server.stop)
     boot(f"HTTP server bound 0.0.0.0:{args.port}")
+    from omni.core import memwatch
+    memwatch.start()                 # 系统内存紧张时暂停后台补元数据、释放缓存、通知网页提前清理
     # 游戏库不在启动时预扫：133 个游戏找主程序要走十几万个文件，冷启动能卡十几秒。
     # 打开游戏分区时 /api/games 自己会扫（目录没变就秒回），按 id 查游戏时也会按需补扫。
 

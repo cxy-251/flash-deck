@@ -200,7 +200,6 @@ function submitNsfwUnlock() {
             } catch(e) {}
             loadGames();
             if (typeof activePrimarySection !== 'undefined' && activePrimarySection === 'media') {
-                prewarmMediaLibraries();
                 Omni.call(activeMediaTab, 'onUnlock');
             }
             if (typeof showMegaToast === 'function') {

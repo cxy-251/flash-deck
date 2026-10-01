@@ -47,9 +47,8 @@ function libraryPost(op, body) {
 
 // 库清单变了：游戏列表与各媒体分区的本地缓存都要重新拉
 function libraryChanged() {
-    Omni.each('onLibraryChanged');
+    Omni.each('onLibraryChanged');   // 各分区清掉本地缓存，下次点进去时重新读
     loadGames();
-    prewarmMediaLibraries();
 }
 
 function loadLibraryOverview() {

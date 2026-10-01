@@ -1414,32 +1414,15 @@ Omni.register('manga', {
     },
     onUnlock() { loadMangaLibrary(); },
     onLibraryChanged() { localMangaList = []; },
+    // 离开 10 分钟没回来（app/shell.js）：书架只留第一批卡片，滚动加载出来的连同封面图一起清掉；再往下滚照常续上
+    trim() {
+        const grid = document.getElementById('manga-shelf-grid');
+        if (!grid) return;
+        while (grid.children.length > MANGA_SHELF_PAGE_SIZE) grid.lastElementChild.remove();
+        mangaShelfRenderIndex = grid.children.length;
+    },
     onMediaEnter() {
         loadPersistentMangaQueue();
         pollMangaTasks();
-    },
-    prewarm() {
-        if (!localMangaList || localMangaList.length === 0) {
-                fetch('/api/manga/library?dir=manga&t=' + Date.now())
-                    .then(r => r.json())
-                    .then(list => {
-                        localMangaList = list || [];
-                        const mangaCountBadge = document.getElementById('manga-local-count');
-                        if (mangaCountBadge) mangaCountBadge.textContent = `(${localMangaList.length} 部)`;
-                        if (activePrimarySection === 'media' && activeMediaTab === 'manga') {
-                            document.getElementById('total-badge').textContent = localMangaList.length + ' 部漫画';
-                            const subStats = document.getElementById('media-sub-stats');
-                            if (subStats) subStats.textContent = '共 ' + localMangaList.length + ' 部漫画';
-                            renderMangaTagBar();
-                            updateMangaIncompleteBanner();
-                            if (activeMangaSubTab === 'shelf') {
-                                const searchVal = (document.getElementById('manga-search-input') ? document.getElementById('manga-search-input').value : '').trim();
-                                const baseList = searchVal ? filterLocalManga(searchVal) : localMangaList;
-                                renderMangaShelf(baseList);
-                            }
-                        }
-                    })
-                    .catch(() => {});
-            }
     },
 });
