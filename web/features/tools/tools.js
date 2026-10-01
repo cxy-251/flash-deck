@@ -5,7 +5,6 @@
 // 页面刷新后浏览器不保留选过的文件——重新选同一个文件，服务器按 名字+大小+修改时间 认出来，返回断点。
 
 const TX = {
-    tab: 'files',
     files: [],
     selected: new Set(),
     tasks: [],          // {id, file, name, size, offset, state: queued|uploading|retrying|done|failed|canceled, error, speed, upId}
@@ -60,8 +59,8 @@ function txRenameDevice() {
 }
 
 // 复制：localhost / https 才有 navigator.clipboard；局域网 http 页面走 textarea + execCommand 兜底
-function txCopy(text) {
-    const done = () => showMegaToast('已复制');
+function txCopy(text, onDone) {
+    const done = onDone || (() => showMegaToast('已复制'));
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(text).then(done).catch(() => txCopyFallback(text, done));
     } else {
@@ -82,15 +81,6 @@ function txCopyFallback(text, done) {
     ta.remove();
     if (ok) done();
     else prompt('浏览器不让自动复制，长按下面的内容手动复制：', text);
-}
-
-function txSwitchTab(tab) {
-    TX.tab = tab;
-    document.querySelectorAll('.tx-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    document.getElementById('tx-pane-files').style.display = tab === 'files' ? '' : 'none';
-    document.getElementById('tx-pane-texts').style.display = tab === 'texts' ? '' : 'none';
-    try { localStorage.setItem('omni_tx_tab', tab); } catch (e) {}
-    if (tab === 'texts') txLoadTexts(); else txLoadFiles();
 }
 
 function txLocked(res) {
@@ -455,25 +445,30 @@ function txLinkify(text) {
 function txRenderTexts(items) {
     TX.texts = items;
     const box = document.getElementById('tx-texts');
+    document.getElementById('tx-text-count').textContent = items.length ? `（${items.length}）` : '';
     if (!items.length) {
-        box.innerHTML = '<div class="tx-empty">还没有消息。在上面粘贴文字或链接发送，其他设备马上能看到、一键复制。</div>';
+        box.innerHTML = '<div class="tx-empty">暂无分享内容。发出去的文字 / 链接所有设备实时可见，一键复制；记录会一直保留。</div>';
         return;
     }
-    box.innerHTML = items.map(t => `<div class="tx-card tx-msg">
-        <div class="tx-msg-text">${txLinkify(t.text)}</div>
-        <div class="tx-head">
+    box.innerHTML = items.map(t => `<div class="tx-row tx-msg">
+        <div class="tx-row-main">
+            <div class="tx-msg-text">${txLinkify(t.text)}</div>
             <div class="tx-dim">${escapeHtml(t.from || '')}${t.from ? ' · ' : ''}${txFmtTime(t.time)}</div>
-            <div class="tx-head-actions">
-                <button class="tx-btn tx-primary" onclick="txCopyText('${t.id}')">复制</button>
-                <button class="tx-icon-btn" title="删除" onclick="txDeleteText('${t.id}')">🗑</button>
-            </div>
         </div>
+        <button class="tx-btn" id="tx-copy-${t.id}" onclick="txCopyText('${t.id}')">复制</button>
+        <button class="tx-btn tx-text-del" onclick="txDeleteText('${t.id}')">删除</button>
     </div>`).join('');
 }
 
 function txCopyText(id) {
     const t = (TX.texts || []).find(x => x.id === id);
-    if (t) txCopy(t.text);
+    if (!t) return;
+    txCopy(t.text, () => {
+        const b = document.getElementById('tx-copy-' + id);
+        if (!b) return;
+        b.textContent = '已复制';
+        setTimeout(() => { b.textContent = '复制'; }, 1500);
+    });
 }
 
 function txSendText(text) {
@@ -482,7 +477,7 @@ function txSendText(text) {
     if (!value) return;
     txApi('POST', '/api/tools/texts', { text: value, from: txDeviceName(), client: TX.client })
         .then(() => {
-            if (text === undefined) input.value = '';
+            if (text === undefined) { input.value = ''; input.style.height = 'auto'; }
             txLoadTexts();
         })
         .catch(e => showMegaToast('发送失败：' + e.message, true));
@@ -505,22 +500,21 @@ Omni.register('tools', {
     activate() {
         txInitDrop();
         document.getElementById('tx-device-name').textContent = txDeviceName();
-        let tab = 'files';
-        try { tab = localStorage.getItem('omni_tx_tab') || 'files'; } catch (e) {}
         TX.loaded = true;
-        txSwitchTab(tab === 'texts' ? 'texts' : 'files');
-        txUpdateBadge();
+        txLoadFiles();
+        txLoadTexts();
     },
     // 别的设备传了文件 / 发了消息：停在这页就刷新；不管停在哪都给个提示（自己发的不提示）
     onEvent(event) {
         if (event.type !== 'transfer') return;
         const here = activePrimarySection === 'media' && activeMediaTab === 'tools';
         if (event.what === 'files' || event.what === 'uploads') {
-            if (here && TX.tab === 'files') txLoadFiles();
+            if (here) txLoadFiles();
             if (event.added && event.client !== TX.client) showMegaToast('📥 收到文件：' + event.added);
         } else if (event.what === 'texts') {
-            if (here && TX.tab === 'texts') txLoadTexts();
-            if (event.added && event.client !== TX.client) showMegaToast('💬 收到一条新消息（局域网小工具 · 消息板）');
+            if (here) txLoadTexts();
+            // 停在这页就不弹了，列表里直接看得到
+            if (event.added && event.client !== TX.client && !here) showMegaToast('💬 收到新的文字 / 链接（局域网小工具）');
         }
     },
 });

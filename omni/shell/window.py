@@ -391,6 +391,8 @@ class MainWindow(QMainWindow):
                 'AllowRunningInsecureContent',
                 'WebGLEnabled',
                 'Accelerated2dCanvasEnabled',
+                'JavascriptCanAccessClipboard',   # 局域网小工具：本机「复制」「发送剪贴板」
+                'JavascriptCanPaste',
             ]:
                 if hasattr(Attr, attr_name):
                     p_settings.setAttribute(getattr(Attr, attr_name), True)
@@ -452,6 +454,8 @@ class MainWindow(QMainWindow):
                 'AllowRunningInsecureContent',
                 'WebGLEnabled',
                 'Accelerated2dCanvasEnabled',
+                'JavascriptCanAccessClipboard',   # 局域网小工具：本机「复制」「发送剪贴板」
+                'JavascriptCanPaste',
             ]:
                 if hasattr(Attr, attr_name):
                     settings.setAttribute(getattr(Attr, attr_name), True)

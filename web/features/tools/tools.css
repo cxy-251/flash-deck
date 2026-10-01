@@ -1,9 +1,7 @@
 /* 局域网小工具：文件传输 + 消息板 */
-#media-tools-view { max-width: 980px; }
-.tx-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
-.tx-tab { background: #161b22; border: 1px solid #30363d; color: #c9d1d9; border-radius: 18px;
-          padding: 7px 16px; font-size: 14px; cursor: pointer; }
-.tx-tab.active { background: rgba(88,166,255,0.15); border-color: #58a6ff; color: #58a6ff; font-weight: 600; }
+#media-tools-view { max-width: 1400px; }
+.tx-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px; align-items: start; }
+@media (max-width: 900px) { .tx-layout { grid-template-columns: minmax(0, 1fr); } }
 
 .tx-card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
 .tx-card-title { font-size: 14px; font-weight: 700; color: #c9d1d9; }
@@ -52,12 +50,17 @@ a.tx-name:hover { color: #58a6ff; }
 .tx-state-retrying .tx-bar-fill { background: #d29922; }
 .tx-clear-done { text-align: right; }
 
-.tx-textarea { width: 100%; box-sizing: border-box; background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
-               border-radius: 8px; padding: 10px; font-size: 14px; resize: vertical; font-family: inherit; margin-bottom: 8px; }
+.tx-send-row { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0 6px; }
+.tx-textarea { flex: 1; min-width: 0; box-sizing: border-box; background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
+               border-radius: 8px; padding: 7px 10px; font-size: 14px; resize: none; font-family: inherit; line-height: 1.5; }
 .tx-textarea:focus { outline: none; border-color: #58a6ff; }
-.tx-msg { margin-bottom: 10px; }
-.tx-msg-text { white-space: pre-wrap; word-break: break-word; color: #e6edf3; font-size: 14px; line-height: 1.6;
-               max-height: 240px; overflow-y: auto; margin-bottom: 6px; }
+.tx-send-row .tx-btn { padding: 7px 16px; }
+.tx-msg { align-items: flex-start; }
+.tx-msg .tx-btn { padding: 4px 10px; font-size: 12px; }
+.tx-text-del { background: transparent; border-color: transparent; color: #8b949e; }
+.tx-text-del:hover { color: #f85149 !important; background: transparent !important; }
+.tx-msg-text { white-space: pre-wrap; word-break: break-all; color: #e6edf3; font-size: 14px; line-height: 1.5;
+               max-height: 160px; overflow-y: auto; }
 .tx-msg-text a { color: #58a6ff; }
 
 @media (max-width: 600px) {
