@@ -35,8 +35,11 @@ def thumb(req):
 
 @api.get("/api/shortvideo/gallery_image", deny=LOCKED)
 def gallery_image(req):
-    """图集（抖音多图作品）里第 idx 张原图。"""
-    p, ctype = sv.get_gallery_image(_platform(req), req.arg("path"), req.int_arg("idx", 0))
+    """图集（抖音多图作品）里第 idx 张原图；thumb=1 给卡片封面用的小图（第一张缩到 360 宽）。"""
+    if req.flag("thumb"):
+        p, ctype = sv.get_gallery_thumb(_platform(req), req.arg("path")), "image/webp"
+    else:
+        p, ctype = sv.get_gallery_image(_platform(req), req.arg("path"), req.int_arg("idx", 0))
     if not p or not os.path.exists(p):
         return req.not_found()
     return req.file(p, ctype or "application/octet-stream", headers={"Cache-Control": "public, max-age=86400"})

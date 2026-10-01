@@ -522,7 +522,7 @@ def public_item(it: Dict[str, Any], liked: bool = False, local_cached: Optional[
         'filename': rel_p.rsplit('/', 1)[-1],
         'size_mb': round(it['size'] / (1024 * 1024), 2),
         'mtime_str': time.strftime('%Y-%m-%d', time.localtime(it['mtime'])),
-        'thumb_url': (f"/api/shortvideo/gallery_image?platform={platform}&path={q}&idx=0" if images
+        'thumb_url': (f"/api/shortvideo/gallery_image?platform={platform}&path={q}&idx=0&thumb=1" if images
                       else f"/api/shortvideo/thumb?platform={platform}&path={q}"),
         'stream_url': None if images else f"/api/shortvideo/stream?platform={platform}&path={q}",
         'liked': liked,
@@ -785,6 +785,19 @@ def gallery_image_count(platform: str, rel_path: str) -> int:
         return sum(1 for f in os.listdir(full_dir) if not f.startswith('.') and os.path.splitext(f)[1].lower() in IMAGE_EXTS)
     except OSError:
         return 0
+
+
+def get_gallery_thumb(platform: str, rel_path: str) -> Optional[str]:
+    """图集卡片封面：第一张图缩成 360 宽的 webp（跟视频缩略图同一套缓存）。
+    以前卡片直接用原图——抖音图集多是 1400×2500 上下，一张解码后十几 MB，网页滚几页就涨好几百 MB。"""
+    p, _ = get_gallery_image(platform, rel_path, 0)
+    if not p:
+        return None
+
+    def read():
+        with open(p, 'rb') as f:
+            return f.read()
+    return media_index.get_or_make_thumb(p, read, max_w=360, tag='gthumb')
 
 
 def get_video_thumb(platform: str, rel_path: str) -> Optional[str]:
