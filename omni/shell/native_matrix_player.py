@@ -383,7 +383,7 @@ class MatrixSlotWidget(QFrame):
             self.video_widget.setToolTip("这个频道没有视频")
             self.changed.emit(self.index)
             return
-        self.video_widget.setToolTip(f"{it.get('folder') or ''}\n{it.get('title') or ''}")
+        self.video_widget.setToolTip(f"{it.get('folder') or ''}\n{sv.item_title(it)}")
         path = mx.resolve_file(it)
         if not path:
             self._skip_broken()
@@ -834,7 +834,7 @@ class NativeMatrixPlayerWidget(QWidget):
         s = self.cur()
         video, track = s.current_video(), s.current_track()
         if s.sound == "audio" and track:
-            what = self._ask(f"把焦点屏正在放的哪一个移到回收站？\n\n视频：{(video or {}).get('title') or '（无）'}"
+            what = self._ask(f"把焦点屏正在放的哪一个移到回收站？\n\n视频：{sv.item_title(video) if video else '（无）'}"
                              f"\n音声：{track.get('title')}",
                              ([("视频", "video")] if video else []) + [("音声", "audio")])
             if what == "audio":        # 这个框本身就是确认，不再二次确认
@@ -842,7 +842,7 @@ class NativeMatrixPlayerWidget(QWidget):
             elif what == "video":
                 s.delete_current_video()
             return
-        if video and self._ask(f"确定把视频《{video.get('title')}》移到回收站吗？\n（{video.get('folder') or ''}）",
+        if video and self._ask(f"确定把视频《{sv.item_title(video)}》移到回收站吗？\n（{video.get('folder') or ''}）",
                                [("移到回收站", True)]):
             s.delete_current_video()
 

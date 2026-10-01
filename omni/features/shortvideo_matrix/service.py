@@ -24,9 +24,9 @@ def is_landscape(it: Dict[str, Any]) -> bool:
 
 
 def _videos(platform: str) -> List[Dict[str, Any]]:
-    """某平台可在多联里播放的视频（带上 platform 字段的浅拷贝）。
-    图集没有视频流、横屏视频在竖长的分屏里只剩一条缝，都不要。"""
-    return [dict(it, platform=platform) for it in sv.scan_shortvideo_library(platform)
+    """某平台可在多联里播放的视频（直接用扫描缓存里的条目，本身就带 platform，不再逐条拷贝——
+    「全部平台」频道有六七万条，每屏拷一份就是几十 MB）。图集没有视频流、横屏视频在竖长的分屏里只剩一条缝，都不要。"""
+    return [it for it in sv.scan_shortvideo_library(platform)
             if it.get("kind") != "images" and not is_landscape(it)]
 
 
@@ -82,9 +82,9 @@ def get_channel_videos(channel_id: str, seed: Optional[int] = None) -> List[Dict
 
 def public_item(it: Dict[str, Any]) -> Dict[str, Any]:
     """下发给网页的字段（不含本机绝对路径）。"""
-    return {k: it.get(k) for k in ("platform", "rel_path", "title", "folder", "duration", "width", "stream_url", "thumb_url")} | {
-        "liked": sv.is_shortvideo_liked(it["platform"], it["rel_path"]),
-    }
+    full = sv.public_item(it, sv.is_shortvideo_liked(it["platform"], it["rel_path"]))
+    return {k: full.get(k) for k in ("platform", "rel_path", "title", "folder", "duration", "width", "stream_url",
+                                     "thumb_url", "liked")}
 
 
 def resolve_file(it: Dict[str, Any]) -> Optional[str]:

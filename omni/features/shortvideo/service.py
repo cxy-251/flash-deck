@@ -23,6 +23,7 @@ Omni Deck 短视频画廊服务
 
 import os
 import re
+import sys
 import time
 import json
 import subprocess
@@ -440,12 +441,60 @@ def _load_list_cache(platform: str) -> Optional[List[Dict[str, Any]]]:
     try:
         with open(_list_cache_path(platform), 'r', encoding='utf-8') as f:
             items = json.load(f)
-        return items if isinstance(items, list) else None
+        return [_slim(platform, it) for it in items] if isinstance(items, list) else None   # 旧格式快照也转成精简条目
     except Exception:
         return None
 
 
 _DATE_PREFIX_RE = re.compile(r'^(\d{4}-\d{2}-\d{2})')
+
+# ---------------- 列表条目：内存 / 快照里只存这几个字段，其余下发时现算 ----------------
+#
+# 抖音一个平台六万多条。以前每条带 13 个字段，其中 thumb_url / stream_url 是两条把中文路径百分号编码过的
+# 长 URL，标题、文件名、大小 MB、日期字符串也都能从别的字段推出来——光抖音就占 140MB 内存、快照 70MB。
+# 现在只存 platform / rel_path / folder / mtime / size / kind / duration / width / height（图集多 image_count），
+# folder 字符串 intern 掉（一个作者几百上千条共用一份）；给网页的完整字段由 public_item() 现算。
+SLIM_KEYS = ('platform', 'rel_path', 'folder', 'mtime', 'size', 'kind', 'duration', 'width', 'height', 'image_count')
+
+
+def _slim(platform: str, it: Dict[str, Any]) -> Dict[str, Any]:
+    """任意来源的条目（新扫描 / 旧格式快照）→ 精简条目。"""
+    size = it.get('size')
+    if size is None:   # 旧快照只有 size_mb
+        size = int(round((it.get('size_mb') or 0) * 1024 * 1024))
+    out = {'platform': platform, 'rel_path': it['rel_path'], 'folder': sys.intern(it.get('folder') or '未分类'),
+           'mtime': it.get('mtime') or 0, 'size': size, 'kind': it.get('kind') or 'video',
+           'duration': it.get('duration') or 0, 'width': it.get('width') or 0, 'height': it.get('height') or 0}
+    if out['kind'] == 'images':
+        out['image_count'] = it.get('image_count') or 0
+    return out
+
+
+def item_title(it: Dict[str, Any]) -> str:
+    """显示用标题：视频 = 文件名去扩展名；图集 = 文件夹名。"""
+    base = it['rel_path'].rsplit('/', 1)[-1]
+    return base if it.get('kind') == 'images' else os.path.splitext(base)[0]
+
+
+def public_item(it: Dict[str, Any], liked: bool = False, local_cached: Optional[bool] = None) -> Dict[str, Any]:
+    """精简条目 → 给网页的完整字段（新字典，不改缓存里的条目）。"""
+    platform, rel_p = it['platform'], it['rel_path']
+    q = urllib.parse.quote(rel_p)
+    images = it.get('kind') == 'images'
+    out = dict(it)
+    out.update({
+        'title': item_title(it),
+        'filename': rel_p.rsplit('/', 1)[-1],
+        'size_mb': round(it['size'] / (1024 * 1024), 2),
+        'mtime_str': time.strftime('%Y-%m-%d', time.localtime(it['mtime'])),
+        'thumb_url': (f"/api/shortvideo/gallery_image?platform={platform}&path={q}&idx=0" if images
+                      else f"/api/shortvideo/thumb?platform={platform}&path={q}"),
+        'stream_url': None if images else f"/api/shortvideo/stream?platform={platform}&path={q}",
+        'liked': liked,
+    })
+    if local_cached is not None:
+        out['local_cached'] = local_cached
+    return out
 
 
 def _chrono_sort_key(item: Dict[str, Any]):
@@ -455,7 +504,7 @@ def _chrono_sort_key(item: Dict[str, Any]):
     （见两个插件 background.js 的 expand()），日期前缀才是真正可信的发布时间。有就用它
     排序（数值取负实现降序，同时保留"有日期的分组"这个优先级不受降序影响），没有（老
     文件、非标准命名）才退回 mtime，统一垫底，不会因为个别没匹配上的文件直接报错断档。"""
-    m = _DATE_PREFIX_RE.match(item.get('title') or '')
+    m = _DATE_PREFIX_RE.match(item_title(item))
     if m:
         date_num = int(m.group(1).replace('-', ''))
         return (0, -date_num, -item['mtime'])
@@ -478,41 +527,14 @@ def _do_scan(platform: str) -> List[Dict[str, Any]]:
     items = []
     for full_p, (rel_p, folder, mtime, size) in fs_info.items():
         meta = metas.get(full_p) or {}
-        items.append({
-            'rel_path': rel_p,
-            'folder': folder,
-            'filename': os.path.basename(full_p),
-            'title': os.path.splitext(os.path.basename(full_p))[0],
-            'size_mb': round(size / (1024 * 1024), 2),
-            'mtime': mtime,
-            'mtime_str': time.strftime('%Y-%m-%d', time.localtime(mtime)),
-            'kind': 'video',
-            'duration': meta.get('duration', 0),
-            'width': meta.get('width', 0),
-            'height': meta.get('height', 0),
-            'thumb_url': f"/api/shortvideo/thumb?platform={platform}&path={urllib.parse.quote(rel_p)}",
-            'stream_url': f"/api/shortvideo/stream?platform={platform}&path={urllib.parse.quote(rel_p)}",
-        })
+        items.append(_slim(platform, {'rel_path': rel_p, 'folder': folder, 'mtime': mtime, 'size': size, 'kind': 'video',
+                                      'duration': meta.get('duration', 0), 'width': meta.get('width', 0),
+                                      'height': meta.get('height', 0)}))
 
     # 图集（抖音多图作品）：不用 ffprobe/转码，直接拿文件夹里的图当"帧"
     for rel_p, folder, imgs, mtime, size in _iter_galleries(platform):
-        title = os.path.basename(rel_p)
-        items.append({
-            'rel_path': rel_p,
-            'folder': folder,
-            'filename': title,
-            'title': title,
-            'size_mb': round(size / (1024 * 1024), 2),
-            'mtime': mtime,
-            'mtime_str': time.strftime('%Y-%m-%d', time.localtime(mtime)),
-            'kind': 'images',
-            'image_count': len(imgs),
-            'duration': 0,
-            'width': 0,
-            'height': 0,
-            'thumb_url': f"/api/shortvideo/gallery_image?platform={platform}&path={urllib.parse.quote(rel_p)}&idx=0",
-            'stream_url': None,
-        })
+        items.append(_slim(platform, {'rel_path': rel_p, 'folder': folder, 'mtime': mtime, 'size': size,
+                                      'kind': 'images', 'image_count': len(imgs)}))
 
     items.sort(key=_chrono_sort_key)   # 正序：按作品真实发布日期从早到晚
     return items
@@ -619,13 +641,10 @@ def query_shortvideo_library(platform: str = DEFAULT_PLATFORM, q: str = "", fold
     all_items = scan_shortvideo_library(platform)
     ensure_background_transcode(platform)
 
+    # 别往缓存里的条目写字段（以前写 liked / local_cached，下一轮扫描拿新结果一比，次次都「变了」，
+    # 于是又广播、网页又来拉、又触发重扫——短视频页开着就每分钟重写一遍快照）
     liked_set = load_likes().get(platform, set())
-    liked_count = 0
-    for it in all_items:
-        it_liked = it['rel_path'] in liked_set
-        it['liked'] = it_liked
-        if it_liked:
-            liked_count += 1
+    liked_count = sum(1 for it in all_items if it['rel_path'] in liked_set)
 
     folder_counts: Dict[str, int] = {}
     for it in all_items:
@@ -639,28 +658,28 @@ def query_shortvideo_library(platform: str = DEFAULT_PLATFORM, q: str = "", fold
 
     matched = all_items
     if folder == 'liked' or folder == '❤️ 我的点赞':
-        matched = [it for it in matched if it.get('liked')]
+        matched = [it for it in matched if it['rel_path'] in liked_set]
     elif folder and folder != 'all':
         matched = [it for it in matched if it['folder'] == folder]
 
     q = (q or '').strip().lower()
     if q:
-        matched = [it for it in matched if q in it['title'].lower() or q in it['folder'].lower()]
+        matched = [it for it in matched if q in item_title(it).lower() or q in it['folder'].lower()]
 
     total = len(matched)
     start = max(0, (page - 1) * page_size)
     end = start + page_size
-    page_items = matched[start:end]
-
     # 告诉前端这条本机是不是已经转码缓存过了——只有本机 QtWebEngine 需要转码，前端据此
     # 决定要不要显示"正在转码"提示，别对着已经缓存好的视频也无脑弹一下
     # 图集是图片，浏览器原生能显示 webp，不存在"转码"这回事，直接当已就绪处理
-    for it in page_items:
+    page_items = []
+    for it in matched[start:end]:
         if it.get('kind') == 'images':
-            it['local_cached'] = True
-            continue
-        full_p = find_shortvideo_file(platform, it['rel_path'])
-        it['local_cached'] = bool(full_p and _is_transcode_fresh(full_p, _transcode_cache_path(full_p)))
+            cached = True
+        else:
+            full_p = find_shortvideo_file(platform, it['rel_path'])
+            cached = bool(full_p and _is_transcode_fresh(full_p, _transcode_cache_path(full_p)))
+        page_items.append(public_item(it, it['rel_path'] in liked_set, cached))
 
     return {
         'items': page_items,
