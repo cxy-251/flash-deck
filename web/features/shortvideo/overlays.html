@@ -36,7 +36,8 @@
 
 <!-- 图集查看器（抖音多图作品，原图直接显示，不用转码）——跟视频播放器是独立弹窗 -->
 <div class="manga-modal-backdrop" id="shortvideo-gallery-modal" onclick="if(event.target===this) closeShortVideoGallery()">
-    <div style="background:#000;border:1px solid #30363d;border-radius:12px;overflow:hidden;max-width:420px;width:100%;height:88vh;max-height:88vh;position:relative;box-shadow:0 16px 36px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
+    <!-- 宽度按图片比例算（fitGalleryBox）：横图、方图不再挤在 420px 的竖条里 -->
+    <div id="shortvideo-gallery-box" style="background:#000;border:1px solid #30363d;border-radius:12px;overflow:hidden;width:420px;max-width:92vw;height:88vh;max-height:88vh;position:relative;box-shadow:0 16px 36px rgba(0,0,0,0.6);" onclick="event.stopPropagation()">
         <button onclick="closeShortVideoGallery()" title="关闭" class="ico-btn sv-close-btn" data-icon="close"></button>
 
         <img id="shortvideo-gallery-img" style="width:100%;height:100%;background:#000;display:block;object-fit:contain;">

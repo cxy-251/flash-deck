@@ -3,16 +3,18 @@ icons.py - 本机原生控件的图标（Material Symbols Rounded，跟网页 we
 
 SVG 在 web/vendor/icons/；渲染前把颜色填进 <svg fill="…">，按 (名字, 颜色, 尺寸) 缓存成 QIcon。
 按钮统一用 set_icon()：去掉文字、设图标与图标尺寸。
-install_tips()：悬停 0.25 秒就在按钮正下方弹出说明气泡（文字取按钮的 toolTip），
-比 Qt 默认的 0.7 秒快，位置也固定，不跟着鼠标跑。气泡样式见 TIP_QSS。
+install_tips()：悬停 0.25 秒就在按钮正下方（下面放不下就正上方）弹出说明气泡（文字取按钮的 toolTip），
+比 Qt 默认的 0.7 秒快，位置也固定，不跟着鼠标跑；气泡对鼠标透明，不会引起闪烁（见 _Bubble）。
+TIP_QSS 是其余地方仍用 QToolTip 时的样式。
 """
 import os
 from functools import lru_cache
 
+from PyQt6 import sip
 from PyQt6.QtCore import QByteArray, QEvent, QObject, QPoint, QSize, Qt, QTimer
 from PyQt6.QtGui import QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtWidgets import QAbstractButton, QToolTip, QWidget
+from PyQt6.QtWidgets import QAbstractButton, QLabel, QWidget
 
 from omni.core import paths
 
@@ -57,12 +59,53 @@ TIP_QSS = """
 """
 
 
+class _Bubble(QLabel):
+    """说明气泡（代替 QToolTip）：对鼠标完全透明，永远不会挡在指针下面。
+
+    以前用 QToolTip.showText(pos)：Qt 会先给 pos 加一个光标高度（约 24px）再摆，底栏按钮把气泡往上弹时
+    气泡就压在按钮上半截——指针正好在那儿时，气泡出现在指针下 → 按钮收到 Leave → 气泡收起 → 又 Enter →
+    又弹出，来回闪。这个气泡带 WindowTransparentForInput，指针直接穿过去；尺寸自己量，摆在按钮正下方，
+    下面放不下就整个放到按钮上方，不跟按钮重叠。父控件取按钮本身（跟 QToolTip 一样），Wayland 上
+    弹出层要有父窗口才摆得对。"""
+
+    FLAGS = (Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint |
+             Qt.WindowType.WindowTransparentForInput | Qt.WindowType.WindowDoesNotAcceptFocus)
+
+    def __init__(self):
+        super().__init__(None, self.FLAGS)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setStyleSheet("QLabel { color:#e6edf3; background:#1f242c; border:1px solid #3a414b; "
+                           "border-radius:6px; padding:4px 8px; font-size:12px; }")
+
+    def show_for(self, w: QWidget) -> None:
+        if self.parentWidget() is not w:
+            self.setParent(w, self.FLAGS)
+        self.setText(w.toolTip())
+        self.adjustSize()
+        top_left = w.mapToGlobal(QPoint(0, 0))
+        screen = w.screen()
+        area = screen.availableGeometry() if screen else None
+        x = top_left.x() + (w.width() - self.width()) // 2
+        below = top_left.y() + w.height() + 6
+        above = top_left.y() - self.height() - 6
+        y = below
+        if area is not None:
+            if below + self.height() > area.bottom():
+                y = above
+            x = max(area.left() + 4, min(x, area.right() - self.width() - 4))
+        self.move(x, y)
+        self.show()
+        self.raise_()
+
+
 class _TipFilter(QObject):
-    """装在按钮上：Enter 后 250ms 在按钮下方显示 toolTip；Leave / 点击就收；吞掉 Qt 自己那个慢半拍的气泡。"""
+    """装在按钮上：Enter 后 250ms 在按钮旁显示 toolTip；Leave / 点击 / 隐藏就收；吞掉 Qt 自己那个慢半拍的气泡。"""
 
     def __init__(self):
         super().__init__()
         self._target = None
+        self._bubble = None
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(250)
@@ -76,15 +119,25 @@ class _TipFilter(QObject):
         elif t in (QEvent.Type.Leave, QEvent.Type.MouseButtonPress, QEvent.Type.Hide):
             self._timer.stop()
             if obj is self._target:
-                QToolTip.hideText()
+                self.hide()
         elif t == QEvent.Type.ToolTip:
             return True
         return False
 
+    def _alive(self) -> bool:
+        # 气泡挂在按钮下面：按钮被删掉时气泡跟着没了，Python 这边的引用就失效了
+        return self._bubble is not None and not sip.isdeleted(self._bubble)
+
+    def hide(self):
+        if self._alive():
+            self._bubble.hide()
+
     def _show(self):
         w = self._target
-        if w is not None and w.isVisible() and w.toolTip():
-            QToolTip.showText(w.mapToGlobal(QPoint(0, w.height() + 6)), w.toolTip(), w)
+        if w is not None and not sip.isdeleted(w) and w.isVisible() and w.toolTip():
+            if not self._alive():
+                self._bubble = _Bubble()
+            self._bubble.show_for(w)
 
 
 _TIPS = None

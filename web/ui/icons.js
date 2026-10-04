@@ -56,6 +56,11 @@ document.addEventListener('mouseover', (e) => {
     clearTimeout(omniTipTimer);
     omniTipTimer = setTimeout(() => showOmniTip(btn, btn.dataset.tip), 250);
 });
-document.addEventListener('mouseout', (e) => { if (e.target.closest && e.target.closest('button, summary, [data-icon]')) hideOmniTip(); });
+document.addEventListener('mouseout', (e) => {
+    const btn = e.target.closest && e.target.closest('button, summary, [data-icon]');
+    if (!btn) return;
+    if (e.relatedTarget && btn.contains(e.relatedTarget)) return;
+    hideOmniTip();
+});
 document.addEventListener('mousedown', hideOmniTip, true);
 window.addEventListener('scroll', hideOmniTip, true);

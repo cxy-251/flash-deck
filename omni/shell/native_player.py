@@ -82,6 +82,7 @@ class NativePlayerWidget(QWidget):
     deleteRequested = pyqtSignal()
     likeToggled = pyqtSignal(bool)
     audioModeChanged = pyqtSignal(str)   # 音频播放模式（list/single/random）变了，网页据此挑下一首
+    loopModeChanged = pyqtSignal(str)    # 短视频播放模式（list/single/shuffle）变了，通知网页同步
 
     def __init__(self, parent=None):
         """构造播放器悬浮控件并组装好视频区/控制条/所有信号连接，初始处于隐藏状态。
@@ -224,16 +225,34 @@ class NativePlayerWidget(QWidget):
             self._last_mode = self.audio_session.mode
             self.audioModeChanged.emit(self._last_mode)
 
-    def _toggle_loop(self):
-        """在"列表循环"和"单片循环"之间切换，同步按钮图标与提示文案。"""
-        if self.loop_mode == "list":
-            self.loop_mode = "single"
+    def set_loop_mode(self, mode: str, notify: bool = True):
+        """设置循环模式：list（列表循环）| single（单片循环）| shuffle（随机播放）。"""
+        if mode not in ("list", "single", "shuffle"):
+            mode = "list"
+        self.loop_mode = mode
+        if mode == "single":
             set_icon(self.btn_loop, "repeat_one", "#58a6ff")
-            self.btn_loop.setToolTip("循环模式：单片循环（点击切换为列表循环）")
+            self.btn_loop.setToolTip("循环模式：单视频循环（点击切换为随机播放）")
+            self.player.setLoops(QMediaPlayer.Loops.Infinite)
+        elif mode == "shuffle":
+            set_icon(self.btn_loop, "shuffle", "#58a6ff")
+            self.btn_loop.setToolTip("播放模式：随机播放（点击切换为列表循环）")
+            self.player.setLoops(1)
         else:
-            self.loop_mode = "list"
             set_icon(self.btn_loop, "repeat")
-            self.btn_loop.setToolTip("循环模式：列表循环（点击切换为单片循环）")
+            self.btn_loop.setToolTip("循环模式：列表循环（点击切换为单视频循环）")
+            self.player.setLoops(1)
+        if notify:
+            self.loopModeChanged.emit(self.loop_mode)
+
+    def _toggle_loop(self):
+        """在"列表循环"、"单视频循环"与"随机播放"三档之间切换。"""
+        if self.loop_mode == "list":
+            self.set_loop_mode("single")
+        elif self.loop_mode == "single":
+            self.set_loop_mode("shuffle")
+        else:
+            self.set_loop_mode("list")
 
     def _toggle_like(self):
         """点击点赞按钮：本地状态取反、刷新按钮图标，并把结果通过 likeToggled 信号通知网页那边。"""
@@ -385,6 +404,7 @@ class NativePlayerWidget(QWidget):
                 self.audio_session.clear()   # 从音频切到视频：先把有声书的进度存掉
             self.player.setSource(QUrl.fromLocalFile(full_path))
             self.player.setPlaybackRate(1.0)   # 视频不调速（同一个播放器，音频模式可能调过）
+            self.player.setLoops(QMediaPlayer.Loops.Infinite if self.loop_mode == "single" else 1)
         self.player.play()
 
     # ---- 播放/暂停/进度 ----
@@ -539,11 +559,11 @@ class PlayerBridge(QObject):
     @pyqtSlot()
     def openMatrixPlayer(self):
         """网页 JS 调用：开启多联并列放映室（原生硬件解码）。"""
-        if hasattr(self.win, "show_native_matrix_player"):
-            self.win.show_native_matrix_player()
+        if hasattr(self.win, "web_open_matrix"):
+            self.win.web_open_matrix()
 
     @pyqtSlot()
     def closeMatrixPlayer(self):
         """网页 JS 调用：关闭多联并列放映室。"""
-        if hasattr(self.win, "hide_native_matrix_player"):
-            self.win.hide_native_matrix_player()
+        if hasattr(self.win, "web_close_matrix"):
+            self.win.web_close_matrix()

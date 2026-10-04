@@ -484,6 +484,7 @@ def _load_list_cache(platform: str) -> Optional[List[Dict[str, Any]]]:
 
 
 _DATE_PREFIX_RE = re.compile(r'^(\d{4}-\d{2}-\d{2})')
+_AWEME_ID_RE = re.compile(r'_(\d{15,20})$')   # 抖音：文件名 / 图集文件夹名结尾的作品 ID
 
 # ---------------- 列表条目：内存 / 快照里只存这几个字段，其余下发时现算 ----------------
 #
@@ -541,11 +542,15 @@ def _chrono_sort_key(item: Dict[str, Any]):
     （见两个插件 background.js 的 expand()），日期前缀才是真正可信的发布时间。有就用它
     排序（数值取负实现降序，同时保留"有日期的分组"这个优先级不受降序影响），没有（老
     文件、非标准命名）才退回 mtime，统一垫底，不会因为个别没匹配上的文件直接报错断档。"""
-    m = _DATE_PREFIX_RE.match(item_title(item))
+    title = item_title(item)
+    m = _DATE_PREFIX_RE.match(title)
     if m:
         date_num = int(m.group(1).replace('-', ''))
-        return (0, -date_num, -item['mtime'])
-    return (1, 0, -item['mtime'])
+        # 同一天里再按作品 ID 排：抖音文件名结尾的作品 ID 是按发布时间递增的雪花 ID（快手的 ID 不是，
+        # 只能退回 mtime——而 mtime 是下载时间，同一天里的先后基本是乱的）
+        aid = _AWEME_ID_RE.search(title)
+        return (0, -date_num, -int(aid.group(1)) if aid else 0, -item['mtime'])
+    return (1, 0, 0, -item['mtime'])
 
 
 def _do_scan(platform: str) -> List[Dict[str, Any]]:

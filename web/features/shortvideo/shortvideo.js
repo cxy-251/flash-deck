@@ -34,18 +34,30 @@ function updateShortVideoLoopBtnUI() {
     if (shortVideoLoopMode === 'single') {
         setIcon(btn, 'repeat_one');
         btn.classList.add('active');
-        btn.title = '循环模式：单视频循环（点击切换为列表循环）';
+        btn.title = '循环模式：单视频循环（点击切换为随机播放）';
+    } else if (shortVideoLoopMode === 'shuffle') {
+        setIcon(btn, 'shuffle');
+        btn.classList.add('active');
+        btn.title = '播放模式：随机播放（点击切换为列表循环）';
     } else {
         setIcon(btn, 'repeat');
         btn.classList.remove('active');
-        btn.title = '循环模式：列表循环（点击切换为单片循环）';
+        btn.title = '循环模式：列表循环（点击切换为单视频循环）';
     }
 }
 
-function toggleShortVideoLoopMode() {
-    shortVideoLoopMode = shortVideoLoopMode === 'list' ? 'single' : 'list';
+function setShortVideoLoopMode(mode) {
+    if (!['list', 'single', 'shuffle'].includes(mode)) mode = 'list';
+    shortVideoLoopMode = mode;
     try { localStorage.setItem('omni_shortvideo_loop_mode', shortVideoLoopMode); } catch (e) {}
+    const videoEl = document.getElementById('shortvideo-player-el');
+    if (videoEl) videoEl.loop = (mode === 'single');
     updateShortVideoLoopBtnUI();
+}
+
+function toggleShortVideoLoopMode() {
+    const nextMode = shortVideoLoopMode === 'list' ? 'single' : (shortVideoLoopMode === 'single' ? 'shuffle' : 'list');
+    setShortVideoLoopMode(nextMode);
 }
 
 function toggleShortVideoLike(platform, relPath, event) {
@@ -70,7 +82,8 @@ function toggleShortVideoLike(platform, relPath, event) {
 
             // 同步播放器按钮
             const likeBtn = document.getElementById('shortvideo-like-btn');
-            if (likeBtn && svPlayerPlatform === platform && st && st.curIndex >= 0 && st.list[st.curIndex] && st.list[st.curIndex].rel_path === relPath) {
+            if (likeBtn && svPlayerPlatform === platform && st && st.curItem && st.curItem.rel_path === relPath) {
+                st.curItem.liked = actualLiked;
                 svSetLikeBtn(likeBtn, actualLiked);
             }
             const galleryLikeBtn = document.getElementById('shortvideo-gallery-like-btn');
@@ -89,9 +102,7 @@ function toggleShortVideoLike(platform, relPath, event) {
 
 function toggleShortVideoLikeFromPlayer() {
     const st = SV[svPlayerPlatform];
-    if (!st || st.curIndex < 0 || st.curIndex >= st.list.length) return;
-    const item = st.list[st.curIndex];
-    toggleShortVideoLike(svPlayerPlatform, item.rel_path);
+    if (st && st.curItem) toggleShortVideoLike(svPlayerPlatform, st.curItem.rel_path);
 }
 
 function toggleShortVideoLikeFromGallery() {
@@ -430,12 +441,15 @@ function renderShortVideoGrid(platform, reset = true) {
 // 的手机/电脑浏览器打开的是同一份东西，不开新窗口。/api/shortvideo/stream 后端会按
 // 请求是不是本机决定给转码过的 webm 还是原始文件，前端完全不用关心。两个平台共用一个
 // 弹窗，svPlayerPlatform 记住当前播的是哪个平台，上一条/下一条/删除都照这个来。
-function openShortVideoPlayer(platform, index) {
+// index 是这一条在「当前播放列表」（当前作者 / 筛选 / 搜索的全部结果，st.total 条）里的位置，不一定已经加载进网格；
+// 没加载的由调用方用 svItemAt 取来、作为 item 传进来
+function openShortVideoPlayer(platform, index, item) {
     const st = SV[platform];
-    if (index < 0 || index >= st.list.length) return;
+    item = item || st.list[index];
+    if (!item) return;
     svPlayerPlatform = platform;
     st.curIndex = index;
-    const item = st.list[index];
+    st.curItem = item;
 
     // 本机：有 omniBridge 就走原生解码播放（QtWebEngine 解不了 H.264，这条路绕开它，
     // 见 native_player.py）——原生播放器是盖在整个窗口上的浮层，网页这个 HTML 弹窗
@@ -461,6 +475,7 @@ function openShortVideoPlayer(platform, index) {
     videoEl.src = item.stream_url;
     if (titleEl) titleEl.textContent = item.title;
     if (metaEl) metaEl.textContent = `${item.folder} · ${item.mtime_str} · ${item.size_mb} MB`;
+    videoEl.loop = (shortVideoLoopMode === 'single');
     updateShortVideoLoopBtnUI();
     videoEl.muted = shortVideoMuted;
     updateShortVideoMuteBtnUI();
@@ -497,13 +512,74 @@ function closeShortVideoPlayer() {
     if (modal) modal.style.display = 'none';
 }
 
+// ---- 上一条 / 下一条：在整个播放列表里走，不只在已经加载进网格的那几页里 ----
+//
+// 以前只在 st.list（网格里已经加载的一两页）里挑：顺序播到加载的末尾就绕回第一条，随机就是在几十条里反复转，
+// 看着像「顺序播一个很短的乱序列表」。现在位置按整个列表（st.total）算，没加载到的那条单独向服务器要一条；
+// 随机用「洗牌袋」：整个列表打乱一次挨个放，放完一轮才重洗，一轮内不重复；上一条按真正看过的顺序往回退。
+
+function svPlaylistQuery(platform) {
+    const st = SV[platform];
+    const searchEl = svEl(platform, 'search-input');
+    const q = (searchEl ? searchEl.value : '').trim();
+    return `platform=${platform}&folder=${encodeURIComponent(st.folder)}&q=${encodeURIComponent(q)}`;
+}
+
+// 播放列表第 i 条（0 起）：网格里有就直接用，没有就单独取一条
+function svItemAt(platform, i) {
+    const st = SV[platform];
+    if (i < st.list.length) return Promise.resolve(st.list[i]);
+    return fetch(`/api/shortvideo/library?${svPlaylistQuery(platform)}&page=${i + 1}&page_size=1&t=${Date.now()}`)
+        .then(r => r.json()).then(res => (res && res.items && res.items[0]) || null);
+}
+
+function svShuffleNext(platform) {
+    const st = SV[platform];
+    const key = `${svPlaylistQuery(platform)}|${st.total}`;
+    if (st.shuffleKey !== key || !st.shuffleBag || st.shufflePos >= st.shuffleBag.length) {
+        if (st.shuffleKey !== key) st.shuffleHist = [];   // 换了列表：之前看过的那些不能再「上一条」回去
+        const n = st.total, bag = new Int32Array(n);
+        for (let i = 0; i < n; i++) bag[i] = i;
+        for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+        if (n > 1 && bag[0] === st.curIndex) [bag[0], bag[n - 1]] = [bag[n - 1], bag[0]];   // 新一轮别从刚放完的那条开始
+        Object.assign(st, { shuffleBag: bag, shufflePos: 0, shuffleKey: key });
+    }
+    return st.shuffleBag[st.shufflePos++];
+}
+
+// 从 index 开始找一条能用视频播放器放的（图集跳过，沿 dir 方向，最多找 30 条）
+// 连点「下一条」时前一次还在取：每次带个序号，只有最新那次能打开（不然慢的那个回来会把新的盖掉）
+function svPlayFrom(platform, index, dir, tries = 0, seq, remember = false) {
+    const st = SV[platform];
+    if (!st.total || tries > 30) return;
+    if (seq === undefined) seq = st.playSeq = (st.playSeq || 0) + 1;
+    const i = ((index % st.total) + st.total) % st.total;
+    svItemAt(platform, i).then(item => {
+        if (seq !== st.playSeq) return;
+        if (item && item.kind !== 'images') {
+            // 随机往后：真正换到新的一条时才把刚才那条记进「上一条」历史（连点时不会记重复）
+            if (remember) (st.shuffleHist = st.shuffleHist || []).push(st.curIndex);
+            openShortVideoPlayer(platform, i, item);
+        }
+        else if (shortVideoLoopMode === 'shuffle' && dir > 0) svPlayFrom(platform, svShuffleNext(platform), 1, tries + 1, seq, remember);
+        else svPlayFrom(platform, i + dir, dir, tries + 1, seq, remember);
+    }).catch(() => {});
+}
+
 function playShortVideoDelta(delta) {
-    const st = SV[svPlayerPlatform];
-    if (!st.list.length) return;
-    let next = st.curIndex + delta;
-    if (next < 0) next = st.list.length - 1;
-    if (next >= st.list.length) next = 0;
-    openShortVideoPlayer(svPlayerPlatform, next);
+    const platform = svPlayerPlatform;
+    const st = SV[platform];
+    if (!st.total) return;
+    if (shortVideoLoopMode === 'shuffle') {
+        st.shuffleHist = st.shuffleHist || [];
+        if (delta > 0) {
+            svPlayFrom(platform, svShuffleNext(platform), 1, 0, undefined, true);
+        } else if (st.shuffleHist.length) {
+            svPlayFrom(platform, st.shuffleHist.pop(), -1);
+        }
+        return;
+    }
+    svPlayFrom(platform, st.curIndex + delta, delta < 0 ? -1 : 1);
 }
 
 function toggleShortVideoPlay() {
@@ -515,8 +591,8 @@ function toggleShortVideoPlay() {
 function deleteShortVideoFromPlayer() {
     const platform = svPlayerPlatform;
     const st = SV[platform];
-    if (st.curIndex < 0 || st.curIndex >= st.list.length) return;
-    const item = st.list[st.curIndex];
+    const item = st.curItem;
+    if (!item) return;
     if (!confirm('移至回收站？可以从系统回收站找回。')) return;
     fetch('/api/shortvideo/trash', {
         method: 'POST',
@@ -524,14 +600,17 @@ function deleteShortVideoFromPlayer() {
         body: JSON.stringify({ platform, path: item.rel_path })
     }).then((r) => r.json()).then((res) => {
         if (res.status !== 'ok') { alert('删除失败'); return; }
-        st.list.splice(st.curIndex, 1);
+        const at = st.list.findIndex(x => x.rel_path === item.rel_path);
+        if (at >= 0) st.list.splice(at, 1);
         st.total = Math.max(0, st.total - 1);
+        st.shuffleKey = null;   // 列表变了，洗牌袋重洗
         const badge = svEl(platform, 'total-count-badge');
         if (badge) badge.textContent = `共 ${st.total} 条`;
         renderShortVideoGrid(platform, true);
-        if (st.list.length === 0) { closeShortVideoPlayer(); return; }
-        if (st.curIndex >= st.list.length) st.curIndex = 0;
-        openShortVideoPlayer(platform, st.curIndex);
+        if (!st.total) { closeShortVideoPlayer(); return; }
+        // 删掉的位置现在是下一条：顺序就放它；随机接着从袋子里抽
+        if (shortVideoLoopMode === 'shuffle') playShortVideoDelta(1);
+        else svPlayFrom(platform, st.curIndex, 1);
     }).catch(() => alert('删除失败'));
 }
 
@@ -602,6 +681,16 @@ function openShortVideoGallery(platform, index) {
     renderGalleryImage();
 }
 
+// 图集查看框按当前这张图的宽高比定宽：高度固定 88vh，宽度 = 高 × 宽高比，不超过 92vw（竖图跟以前差不多宽，
+// 横图 / 方图不再挤成中间一条）；最窄 320px，按钮和标题放得下
+function fitGalleryBox(img) {
+    const box = document.getElementById('shortvideo-gallery-box');
+    if (!box || !img.naturalWidth || !img.naturalHeight) return;
+    const h = window.innerHeight * 0.88;
+    const w = Math.max(320, Math.min(window.innerWidth * 0.92, h * img.naturalWidth / img.naturalHeight));
+    box.style.width = Math.round(w) + 'px';
+}
+
 function renderGalleryImage() {
     const st = SV[svGalleryPlatform];
     const item = st.list[st.curIndex];
@@ -617,7 +706,10 @@ function renderGalleryImage() {
     if (galleryLikeBtn) {
         svSetLikeBtn(galleryLikeBtn, item.liked);
     }
-    if (imgEl) imgEl.src = `/api/shortvideo/gallery_image?platform=${svGalleryPlatform}&path=${encodeURIComponent(item.rel_path)}&idx=${svGalleryImgIdx}`;
+    if (imgEl) {
+        imgEl.onload = () => fitGalleryBox(imgEl);
+        imgEl.src = `/api/shortvideo/gallery_image?platform=${svGalleryPlatform}&path=${encodeURIComponent(item.rel_path)}&idx=${svGalleryImgIdx}`;
+    }
     if (titleEl) titleEl.textContent = item.title;
     if (metaEl) metaEl.textContent = `${item.folder} · ${item.mtime_str} · ${item.size_mb} MB`;
     if (pageEl) pageEl.textContent = `${svGalleryImgIdx + 1} / ${total}`;

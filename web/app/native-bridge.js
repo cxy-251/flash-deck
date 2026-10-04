@@ -37,7 +37,12 @@ function nativeAudioModeChanged(mode) {
     if (typeof setAudioPlayMode === 'function') setAudioPlayMode(mode);
 }
 
+function nativeShortVideoLoopModeChanged(mode) {
+    if (typeof setShortVideoLoopMode === 'function') setShortVideoLoopMode(mode);
+}
+
 window.nativeAudioModeChanged = nativeAudioModeChanged;
+window.nativeShortVideoLoopModeChanged = nativeShortVideoLoopModeChanged;
 
 window.nativePlayerNext = nativePlayerNext;
 
