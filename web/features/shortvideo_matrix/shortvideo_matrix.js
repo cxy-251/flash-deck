@@ -185,7 +185,14 @@ function startWebMatrix() {
     document.getElementById('matrix-bar-select').innerHTML = matrixChannelOptions(null);
     webSlots.forEach((slot, i) => {
         const v = matrixEl('video', i);
-        v.onended = () => stepWebSlot(i, 1);
+        v.onended = () => {
+            if (slot.singleLoop) {
+                v.currentTime = 0;
+                v.play().catch(() => {});
+            } else {
+                stepWebSlot(i, 1);
+            }
+        };
         v.onplay = v.onpause = () => { if (i === matrixActiveSlot) refreshWebBar(); };
         v.onplaying = () => { slot.skips = 0; if (matrixConfig.slots[i].sound === 'audio') applyWebMatrixAudio(); };
         v.ontimeupdate = () => { if (v.duration) matrixEl('progress', i).style.width = `${v.currentTime / v.duration * 100}%`; };
@@ -246,8 +253,27 @@ function refreshWebBar() {
     $('matrix-bar-tag').textContent = `屏${i + 1}`;
     const sel = $('matrix-bar-select');
     if (sel.value !== cfg.channel_id) sel.innerHTML = matrixChannelOptions(cfg.channel_id, $('matrix-bar-search').value);
-    setIcon($('matrix-bar-play'), matrixEl('video', i).paused ? 'play_arrow-fill' : 'pause-fill');
-    $('matrix-bar-shuffle').classList.toggle('active', cfg.shuffle);
+    const v = matrixEl('video', i);
+    const playing = Boolean(v && !v.paused);
+    const playBtn = $('matrix-bar-play');
+    if (playBtn) {
+        setIcon(playBtn, playing ? 'pause-fill' : 'play_arrow-fill');
+        playBtn.title = playing ? '暂停播放（空格）' : '继续播放（空格）';
+    }
+    const sBtn = $('matrix-bar-shuffle');
+    if (slot.singleLoop) {
+        setIcon(sBtn, 'repeat_one');
+        sBtn.classList.add('active');
+        sBtn.title = '视频播放：重复播放（点击切为顺序播放）';
+    } else if (cfg.shuffle) {
+        setIcon(sBtn, 'shuffle');
+        sBtn.classList.add('active');
+        sBtn.title = '视频播放：随机播放（点击切为重复播放）';
+    } else {
+        setIcon(sBtn, 'repeat');
+        sBtn.classList.remove('active');
+        sBtn.title = '视频播放：顺序播放（点击切为随机播放）';
+    }
     const it = currentWebVideo(i);
     const liked = !!(it && it.liked);
     setIcon($('matrix-bar-like'), liked ? 'favorite-fill' : 'favorite');
@@ -358,11 +384,21 @@ function setWebSlotPaused(i, paused) {
     applyWebMatrixAudio();
 }
 
-// 切随机/顺序：当前这条接着放，之后按新顺序从头走（换了 seed，已取的那页作废）
+// 切播放模式：顺序 -> 随机 -> 重复播放（单片循环）
 function barToggleShuffle() {
-    const i = barSlot(), cfg = matrixConfig.slots[i];
-    cfg.shuffle = !cfg.shuffle;
-    Object.assign(webSlots[i], { seed: matrixNewSeed(), cur: -1, base: 0, page: [], session: `${cfg.channel_id}|${cfg.shuffle}` });
+    const i = barSlot(), cfg = matrixConfig.slots[i], slot = webSlots[i];
+    if (!cfg.shuffle && !slot.singleLoop) {
+        cfg.shuffle = true;
+        slot.singleLoop = false;
+        Object.assign(slot, { seed: matrixNewSeed(), cur: -1, base: 0, page: [], session: `${cfg.channel_id}|true` });
+    } else if (cfg.shuffle) {
+        cfg.shuffle = false;
+        slot.singleLoop = true;
+    } else {
+        cfg.shuffle = false;
+        slot.singleLoop = false;
+        Object.assign(slot, { seed: 0, cur: -1, base: 0, page: [], session: `${cfg.channel_id}|false` });
+    }
     saveMatrixConfig();
     refreshWebBar();
 }

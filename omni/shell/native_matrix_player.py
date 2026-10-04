@@ -134,6 +134,7 @@ class MatrixSlotWidget(QFrame):
         self.pos = 0                     # 当前在 order 里的位置
         self.channel_id = "all"
         self.shuffle = False
+        self.single_loop = False
         self._skips = 0
         self._check_orientation = False
         self.user_muted = False          # 这一屏的静音
@@ -163,10 +164,8 @@ class MatrixSlotWidget(QFrame):
         self.asession.prevRequested.connect(lambda: self.astep(-1))
         self.asession.changed.connect(lambda: self.changed.emit(self.index))
 
-        self.video_widget = QVideoWidget(self)
-        self.video_widget.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.video_widget = self._make_video_widget()
         self.player.setVideoOutput(self.video_widget)
-        self.video_widget.installEventFilter(self)   # 点视频画面也算选中这一屏
         self.progress = QProgressBar(self)
         self.progress.setRange(0, 1000)
         self.progress.setTextVisible(False)
@@ -185,10 +184,31 @@ class MatrixSlotWidget(QFrame):
         p.mediaStatusChanged.connect(self._on_status)
         p.playbackStateChanged.connect(lambda _st: self.changed.emit(self.index))
         p.errorOccurred.connect(self._on_error)
-        # videoSizeChanged 可能从解码线程发出来，排队回到界面线程再处理（在别的线程里切片源会崩）
-        self.video_widget.videoSink().videoSizeChanged.connect(self._on_video_size, Qt.ConnectionType.QueuedConnection)
         self.aplayer.mediaStatusChanged.connect(self._on_astatus)
         self.aplayer.errorOccurred.connect(self._on_aerror)
+
+    def _make_video_widget(self) -> QVideoWidget:
+        vw = QVideoWidget(self)
+        vw.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        vw.installEventFilter(self)   # 点视频画面也算选中这一屏
+        # videoSizeChanged 可能从解码线程发出来，排队回到界面线程再处理（在别的线程里切片源会崩）
+        vw.videoSink().videoSizeChanged.connect(self._on_video_size, Qt.ConnectionType.QueuedConnection)
+        return vw
+
+    def rebuild_video_output(self):
+        """整个多联搬到另一个顶层窗口（主窗口 ↔ 独立窗口）之后调用：换一个新建的 QVideoWidget。
+
+        QVideoWidget 里是原生子窗口（Wayland 上是挂在顶层窗口上的 subsurface）。跟着父控件搬到别的顶层窗口后，
+        画面不再出来——黑屏，进度条照走；再搬回来、旧窗口一销毁，还会报 wl_subsurface「no parent」把整个程序
+        带崩。在新窗口下新建一个，旧的排队删掉（排在旧窗口之前删，不会留下没有父面的 subsurface）。"""
+        old = self.video_widget
+        new = self._make_video_widget()
+        new.setToolTip(old.toolTip())
+        self.layout().replaceWidget(old, new)
+        self.video_widget = new
+        self.player.setVideoOutput(new)
+        old.hide()
+        old.deleteLater()
 
     # ---- 焦点：只认点击（悬停切换容易误触） ----
     def mousePressEvent(self, event):
@@ -342,9 +362,36 @@ class MatrixSlotWidget(QFrame):
             self._askip_broken()
 
     # ---- 频道与视频 ----
+    def cycle_shuffle(self, user: bool = False):
+        """切播放模式：顺序 -> 随机 -> 重复播放"""
+        if not self.shuffle and not self.single_loop:
+            # 顺序 -> 随机
+            self.shuffle = True
+            self.single_loop = False
+            if self.videos:
+                current = self.order[self.pos]
+                self._make_order()
+                self.pos = self.order.index(current)
+        elif self.shuffle:
+            # 随机 -> 重复播放
+            self.shuffle = False
+            self.single_loop = True
+            if self.videos:
+                current = self.order[self.pos]
+                self._make_order()
+                self.pos = self.order.index(current)
+        else:
+            # 重复播放 -> 顺序
+            self.shuffle = False
+            self.single_loop = False
+        self.changed.emit(self.index)
+        if user:
+            self.settingsChanged.emit()
+
     def set_shuffle(self, on: bool, user: bool = False):
         """切随机/顺序：当前这条接着放，只重排后面的顺序。"""
         self.shuffle = on
+        self.single_loop = False
         if self.videos:
             current = self.order[self.pos]
             self._make_order()
@@ -481,7 +528,11 @@ class MatrixSlotWidget(QFrame):
             if self.sound == "audio" and self.aplayer.source().isEmpty():
                 self._apply_audio()  # 第一条视频刚放起来，音声也跟着起
         elif status == QMediaPlayer.MediaStatus.EndOfMedia:
-            self.step(1, manual=False)
+            if self.single_loop:
+                self.player.setPosition(0)
+                self.player.play()
+            else:
+                self.step(1, manual=False)
 
     def _on_video_size(self):
         """扫描时没拿到宽高的那条，解出第一帧尺寸后判横竖：横屏跳过（不算坏片）。"""
@@ -575,6 +626,7 @@ class NativeMatrixPlayerWidget(QWidget):
     """多联放映全屏容器：顶栏（全局 + 焦点屏控制台）+ 2/3 个等宽并排、没有控件的 MatrixSlotWidget。"""
 
     closed = pyqtSignal(str)             # 退出原因：collapse（收起）| settings（去设置页）
+    detachRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -586,6 +638,7 @@ class NativeMatrixPlayerWidget(QWidget):
         self.focus_audio = True
         self.bar_pinned = False
         self.bar_float = True                  # 顶栏悬浮在视频上（独立弹出层窗口）；False = 留位
+        self._float_pref = None                # 换窗口途中顶栏临时变成留位时，记下原来的摆法（见 begin_window_move）
         self._bar_hide = QTimer(self)          # 离开顶栏后多久收起
         self._bar_hide.setSingleShot(True)
         self._bar_hide.timeout.connect(self._hide_bar_if_idle)
@@ -658,14 +711,21 @@ class NativeMatrixPlayerWidget(QWidget):
         _no_width_hint(self.btn_channel)
         top.addWidget(self.btn_channel, 1)
         self.btn_prev = button("skip_previous-fill", lambda: self.cur().step(-1), "上一条（←）")
-        self.btn_play = button("pause-fill", lambda: self.cur().set_paused(self.cur().is_playing()), "暂停 / 继续（空格）")
+        self.btn_play = button("play_arrow-fill", lambda: self.cur().set_paused(self.cur().is_playing()), "暂停 / 继续（空格）")
         self.btn_next = button("skip_next-fill", lambda: self.cur().step(1), "下一条（→）")
-        self.btn_shuffle = button("shuffle", lambda: self.cur().set_shuffle(not self.cur().shuffle, user=True), "视频随机顺序")
+        self.btn_shuffle = button("shuffle", lambda: self.cur().cycle_shuffle(user=True), "视频播放模式")
         self.btn_like = button("favorite", lambda: self.cur().toggle_like(), "点赞")
         self.btn_delete = button("delete", self._delete, "移到回收站：焦点屏正在放的视频 / 音声（会先确认）")
         self.btn_mute = button("volume_up-fill", lambda: self.cur().set_muted(not self.cur().user_muted, user=True), "静音（M）")
         self.btn_sound = button("movie-fill", lambda: self.cur().set_sound("video" if self.cur().sound == "audio" else "audio", user=True),
                                 "声音：视频原声（点击换成音声）")
+        self.btn_detach = QPushButton()
+        set_icon(self.btn_detach, "open_in_new")
+        self.btn_detach.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_detach.setToolTip("独立窗口 / 恢复主窗口")
+        self.btn_detach.clicked.connect(self.detachRequested.emit)
+        self.btn_detach.setFixedSize(34, 34)
+        top.addWidget(self.btn_detach)
 
         top.addStretch(0)
         sep()
@@ -734,8 +794,21 @@ class NativeMatrixPlayerWidget(QWidget):
         label = self._channel_labels.get(s.channel_id, s.channel_id)
         set_icon(self.btn_channel, "search", "#8b949e", 18,
                  " " + self.btn_channel.fontMetrics().elidedText(label, Qt.TextElideMode.ElideRight, 200))
-        set_icon(self.btn_play, "pause-fill" if s.is_playing() else "play_arrow-fill", size=26)
-        _toggle_icon(self.btn_shuffle, s.shuffle, "shuffle")
+        playing = s.is_playing()
+        set_icon(self.btn_play, "pause-fill" if playing else "play_arrow-fill")
+        self.btn_play.setToolTip("暂停（空格）" if playing else "继续播放（空格）")
+        if s.single_loop:
+            set_icon(self.btn_shuffle, "repeat_one", ACCENT)
+            _set_active_prop(self.btn_shuffle, True)
+            self.btn_shuffle.setToolTip("视频播放：重复播放（点击切为顺序播放）")
+        elif s.shuffle:
+            set_icon(self.btn_shuffle, "shuffle", ACCENT)
+            _set_active_prop(self.btn_shuffle, True)
+            self.btn_shuffle.setToolTip("视频播放：随机播放（点击切为重复播放）")
+        else:
+            set_icon(self.btn_shuffle, "repeat", FG)
+            _set_active_prop(self.btn_shuffle, False)
+            self.btn_shuffle.setToolTip("视频播放：顺序播放（点击切为随机播放）")
         liked = s.is_liked()
         set_icon(self.btn_like, "favorite-fill" if liked else "favorite", LIKE if liked else FG)
         if s.user_muted:
@@ -909,21 +982,57 @@ class NativeMatrixPlayerWidget(QWidget):
         self.bar_float = on
         visible = self.top_bar.isVisible()
         if on:
-            # 以播放器为父的无边框弹出层：样式表照样继承，合成器把它叠在整个主窗口（含视频）上面
-            self.top_bar.setParent(self, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
-            # Wayland 的弹出层默认「碰到屏幕边就滑回屏幕里」：主窗口拖出屏幕一截时顶栏会贴在屏幕边上、
-            # 不跟窗口走。0 = 不做任何调整，跟着主窗口一起出屏（Qt 6.8+ 认这个属性，要在显示前设）
-            self.top_bar.winId()
-            handle = self.top_bar.windowHandle()
-            if handle is not None:
-                handle.setProperty("_q_waylandPopupConstraintAdjustment", 0)
+            self._make_float_bar()
         else:
+            # 变回普通子控件前去掉「原生窗口」标记：带着它当子控件，会把同一窗口里的视频区也拖成原生窗口 → 黑屏
+            self.top_bar.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, False)
+            # 悬浮时每次摆位都 setFixedWidth(播放器宽)；变回布局里的一条要放开，不然窗口缩不窄（拖窄了又弹回去）
+            self.top_bar.setMinimumWidth(0)
+            self.top_bar.setMaximumWidth(16777215)
             self.top_bar.setParent(self.bar_slot, Qt.WindowType.Widget)
             self._slot_lay.insertWidget(0, self.top_bar)
         self._reserved = None
         self._update_reserve()
         if visible:
             self._raise_bar()
+
+    def _make_float_bar(self):
+        """把顶栏做成以播放器为父的无边框弹出层：样式表照样继承，合成器把它叠在整个窗口（含视频）上面。
+        不调 winId()：那会给顶栏打上「原生窗口」标记，以后变回子控件（留位 / 独立窗口）时视频会黑屏。"""
+        self.top_bar.setParent(self, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+
+    def begin_window_move(self):
+        """整个多联要搬到另一个顶层窗口（主窗口 ↔ 独立窗口）之前调用。
+
+        悬浮顶栏是一个弹出层窗口，Qt 里它的父控件是播放器：带着还活着的弹出层去搬播放器，Qt 会顺带搬 / 重建它，
+        Wayland 上就会报 wl_subsurface「no parent」把整个程序带崩。所以先把它临时变回布局里的一条（弹出层在
+        原窗口还在的时候销毁），搬完再由 end_window_move 按新窗口重新做成悬浮的。不改存下来的设置。"""
+        if self._float_pref is None:
+            self._float_pref = self.bar_float
+        self._bar_hide.stop()
+        if self.bar_float:
+            self.top_bar.hide()
+            self.set_bar_float(False)
+
+    def end_window_move(self, show_bar: bool = True):
+        """搬到新窗口、显示出来之后调用：恢复原来的顶栏摆法（悬浮的弹出层这时才建，挂在新窗口上，跟着它走）。"""
+        self._watch_window()
+        pref, self._float_pref = self._float_pref, None
+        if pref and not self.bar_float:
+            self.set_bar_float(True)
+        if show_bar:
+            self.show_bar(linger_ms=3000)
+        else:
+            self.top_bar.hide()
+
+    def _watch_window(self):
+        old = getattr(self, "_watched", None)
+        new = self.window()
+        if old is not None and old is not new:
+            old.removeEventFilter(self)
+        if new is not old:
+            new.installEventFilter(self)
+        self._watched = new
 
     def _place_float(self):
         """悬浮顶栏贴在播放器顶上、同宽，高度按内容（一行 / 两行）。"""
@@ -951,8 +1060,7 @@ class NativeMatrixPlayerWidget(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        self.window().removeEventFilter(self)
-        self.window().installEventFilter(self)
+        self._watch_window()
 
     def _update_reserve(self):
         """留位模式下顶栏留多高：只要有一屏用音声就按两行留，否则一行——焦点换来换去、顶栏出没都不变。
@@ -981,6 +1089,11 @@ class NativeMatrixPlayerWidget(QWidget):
             self.top_bar.show()     # 先显示再量高度：藏着时 adjustSize 量不准（会漏掉音声那一行）
             self._place_float()
             self.top_bar.raise_()
+            # Wayland 的弹出层默认「碰到屏幕边就滑回屏幕里」：窗口拖出屏幕一截时顶栏会贴在屏幕边上。
+            # 0 = 不调整，跟着窗口一起出屏（Qt 6.8+；弹出层每次显示时读，所以从下一次显示起生效）
+            handle = self.top_bar.windowHandle()
+            if handle is not None:
+                handle.setProperty("_q_waylandPopupConstraintAdjustment", 0)
         else:
             self.top_bar.show()
 
@@ -1075,7 +1188,7 @@ class NativeMatrixPlayerWidget(QWidget):
 
     def save_config(self):
         try:
-            mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio, "bar_pinned": self.bar_pinned, "bar_float": self.bar_float,
+            mx.save_config({"layout": self.layout_mode, "focus_audio": self.focus_audio, "bar_pinned": self.bar_pinned, "bar_float": self.bar_float if self._float_pref is None else self._float_pref,   # 换窗口途中临时的留位不存
                             "slots": [{"channel_id": s.channel_id, "shuffle": s.shuffle, "muted": s.user_muted,
                                        "sound": s.sound, "audio_scope": s.audio_scope,
                                        "audio_mode": s.asession.mode, "audio_rate": s.asession.rate}
@@ -1122,3 +1235,4 @@ class NativeMatrixPlayerWidget(QWidget):
             cur.set_muted(not cur.user_muted, user=True)
         else:
             super().keyPressEvent(event)
+

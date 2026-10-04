@@ -534,6 +534,7 @@ class MainWindow(QMainWindow):
         self.native_matrix_player = NativeMatrixPlayerWidget(self)
         self.native_matrix_player.hide()
         self.native_matrix_player.closed.connect(self._on_native_matrix_closed)
+        self.native_matrix_player.detachRequested.connect(self.toggle_matrix_detach)
         # 上一条/下一条/删除：原生播放器自己不维护列表，转发回网页，网页算出下一条该放
         # 哪个文件之后，会再通过 bridge 重新喊一次 Python 播放（见 hub.js 里的
         # nativePlayerPrev/Next/Delete）。
@@ -547,6 +548,8 @@ class MainWindow(QMainWindow):
             lambda mode: self.webview.page().runJavaScript(f"window.nativeAudioModeChanged && window.nativeAudioModeChanged({json.dumps(mode)})"))
         self.native_player.likeToggled.connect(
             lambda liked: self.webview.page().runJavaScript(f"window.nativePlayerToggleLike && window.nativePlayerToggleLike({json.dumps(liked)})"))
+        self.native_player.loopModeChanged.connect(
+            lambda mode: self.webview.page().runJavaScript(f"window.nativeShortVideoLoopModeChanged && window.nativeShortVideoLoopModeChanged({json.dumps(mode)})"))
 
         self.player_bridge = PlayerBridge(self)
         self.web_channel = QWebChannel(self.webview.page())
@@ -630,6 +633,23 @@ class MainWindow(QMainWindow):
         self.native_player.stop_and_hide()
         self.native_player.hide()
 
+    # 网页切进 / 切出多联分区时喊的（omniBridge.openMatrixPlayer / closeMatrixPlayer）。多联放进独立窗口以后，
+    # 它就跟主窗口里在看什么无关了：主窗口切去游戏区之类不该把独立窗口关掉、拽回来盖在页面上——
+    # 切走不管它；切回多联分区只把独立窗口提到前面。播放器自己的收起 / 设置 / 恢复主窗口按钮照旧。
+    def web_open_matrix(self):
+        if getattr(self, "_matrix_detached", False):
+            win = self._matrix_detached_win
+            win.show()
+            win.raise_()
+            win.activateWindow()
+            return
+        self.show_native_matrix_player()
+
+    def web_close_matrix(self):
+        if getattr(self, "_matrix_detached", False):
+            return
+        self.hide_native_matrix_player()
+
     def show_native_matrix_player(self):
         """开启多联并列放映室（原生硬件解码多屏）。"""
         if hasattr(self, 'native_player') and self.native_player.isVisible():
@@ -645,16 +665,82 @@ class MainWindow(QMainWindow):
             self.native_matrix_player.setGeometry(0, 0, self.width(), self.height())
 
     def hide_native_matrix_player(self):
-        """停止播放并隐藏多联并列放映室。"""
+        """停止播放并隐藏多联并列放映室。在独立窗口里退出（收起 / 回设置页 / Esc）：先搬回主窗口、藏起独立窗口，
+        别留一个空窗口在桌面上；下次打开多联还是在主窗口里。"""
         if hasattr(self, 'native_matrix_player'):
-            self.native_matrix_player.stop_and_hide()
-            self.native_matrix_player.hide()
+            mp = self.native_matrix_player
+            mp.stop_and_hide()
+            if getattr(self, "_matrix_detached", False):
+                mp.begin_window_move()
+                self._matrix_detached = False
+                mp.setParent(self)
+                self._layout_native_matrix_player()
+                self._rehome_matrix(show_bar=False)   # 马上就要藏起来了，别弹顶栏
+                self._matrix_detached_win.hide()
+            mp.hide()
 
     def _on_native_matrix_closed(self, reason: str):
         """原生多联放映退出：reason = collapse（收起，网页回到进多联之前的页面）| settings（回设置页）。"""
         self.hide_native_matrix_player()
         self.webview.page().runJavaScript(
             f"if (typeof onNativeMatrixClosed === 'function') onNativeMatrixClosed({json.dumps(reason)});")
+
+    def toggle_matrix_detach(self):
+        """多联放映在「主窗口里」和「独立窗口」之间切换。切换前停掉各屏（记下位置），切过去后错峰接着放。
+
+        独立窗口只建一次，切回主窗口时只是藏起来、下次再用，不销毁。Wayland 上视频是挂在顶层窗口上的 subsurface、
+        悬浮顶栏是挂在窗口上的弹出层：搬之前先拆掉顶栏的弹出层（begin_window_move），搬过去以后视频输出和顶栏
+        都按新窗口重建（_rehome_matrix）——带着它们直接搬会黑屏，或者报 wl_subsurface「no parent」整个程序崩掉。"""
+        mp = self.native_matrix_player
+        detached = bool(getattr(self, "_matrix_detached", False))
+        for s in mp.slots:
+            s.stop()
+        mp.begin_window_move()
+
+        if detached:
+            self._matrix_detached = False
+            mp.setParent(self)
+            self._layout_native_matrix_player()
+            mp.show()
+            mp.raise_()
+            self._rehome_matrix()
+            self._matrix_detached_win.hide()
+        else:
+            win = getattr(self, "_matrix_detached_win", None)
+            if win is None:
+                # 不挂在主窗口下面（parent=None）：挂着的话 Wayland 上它是主窗口的附属窗口，主窗口一最小化
+                # （手动的也算）它就跟着最小化，也总压在主窗口上面。主窗口关闭走 process.shutdown 硬退出，不会留它在后台
+                win = QWidget(None, Qt.WindowType.Window if QT6 else Qt.Window)
+                win.setWindowTitle("多联放映 - Omni Deck")
+                win.resize(1280, 720)
+                QVBoxLayout(win).setContentsMargins(0, 0, 0, 0)
+
+                def on_close(event):
+                    # 点独立窗口的关闭按钮 = 回到主窗口（窗口本身留着下次用）
+                    event.ignore()
+                    if getattr(self, "_matrix_detached", False):
+                        self.toggle_matrix_detach()
+                win.closeEvent = on_close
+                self._matrix_detached_win = win
+            self._matrix_detached = True
+            mp.setParent(win)
+            win.layout().addWidget(mp)
+            win.show()
+            mp.show()
+            self._rehome_matrix()
+
+        for i, s in enumerate(mp.visible_slots()):
+            QTimer.singleShot(i * 200, s.resume_or_load)
+        mp.activate_slot(mp.active)
+        mp.setFocus()
+
+    def _rehome_matrix(self, show_bar: bool = True):
+        """多联换了所在的顶层窗口之后：视频输出按新窗口重建（原生子窗口挂在创建时的那个窗口上，搬过去会黑屏），
+        悬浮顶栏也在新窗口下重建（搬之前已经由 begin_window_move 拆掉）。"""
+        mp = self.native_matrix_player
+        for s in mp.slots:
+            s.rebuild_video_output()
+        mp.end_window_move(show_bar)
 
     def on_load_finished(self, ok):
         """网页加载完毕后，若处于游戏状态则自动计算并显示右上角控制胶囊。
@@ -885,8 +971,7 @@ class MainWindow(QMainWindow):
                 self.is_external_game = True
                 self.overlay.hide()
                 self.btn_pure.hide()
-                # flash_runner 全屏起；大厅这边收起来，给合成器一个干净的前台切换
-                self.showMinimized()
+                # 不再把大厅最小化：用户不需要，而且会连带最小化多联的独立窗口
                 game_data_json = json.dumps(game_data)
                 flash_python = paths.FLASH_VENV_PYTHON
                 if not os.path.exists(flash_python):
@@ -957,8 +1042,7 @@ class MainWindow(QMainWindow):
         self.overlay.raise_()
 
     def launch_standalone_game(self, game_id: str, title: str):
-        """调用全局独立进程拉起器运行大型 PC 游戏，退出时自动回调激活大厅"""
-        self.showMinimized()
+        """调用全局独立进程拉起器运行大型 PC 游戏，退出时自动回调激活大厅（启动时不再把大厅最小化）"""
         launcher.launch(game_id, title, on_exit=lambda: self.renpy_finished.emit())
 
     def launch_renpy_game(self, game_id: str, title: str):
@@ -967,9 +1051,9 @@ class MainWindow(QMainWindow):
 
     def on_renpy_exit(self):
         """独立游戏 / 外部进程退出回调：重新激活并置顶 Omni Deck 窗口，保持大厅当前视口"""
+        # 只去掉「最小化」这一位（用户自己最小化过的话）。不调 showNormal()：那会把最大化 / 全屏的大厅缩回普通窗口
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized if QT6
                             else self.windowState() & ~Qt.WindowMinimized)
-        self.showNormal()
         self.show()
         self.raise_()
         self.activateWindow()
