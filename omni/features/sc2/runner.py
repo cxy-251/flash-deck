@@ -127,6 +127,67 @@ def _force_kill_lingering_sc2() -> None:
         print(f"[sc2] 兜底清理进程时出错（不影响结果）: {e}")
 
 
+WINDOW_LOST_GRACE = 15   # 秒：窗口连续这么久"既不可见也不是最小化"才算没了
+
+
+def _sc2_window_states() -> list[str] | None:
+    """返回 SC2_x64.exe 名下所有 X 窗口的 WM_STATE（"Normal"/"Iconic"/"Withdrawn"）。
+
+    SC2 通过 Proton 跑在 Xwayland 上，窗口的 _NET_WM_PID 就是 SC2_x64.exe 的 pid。
+    最小化 = Iconic；窗口被撤掉（2026-10-08 实测：D3D9 设备反复丢失后窗口变成 Withdrawn，
+    游戏进程和对局还在跑、照常给 burnysc2 发数据，但人已经看不到也切不回去）= Withdrawn/没有 WM_STATE。
+
+    Returns:
+        list[str] | None: 各窗口状态；SC2 进程不在或查询工具出错时返回 None（不做判断）。
+    """
+    import subprocess
+    try:
+        pids = subprocess.run(["pgrep", "-f", "SC2_x64.exe"], capture_output=True, text=True, timeout=5).stdout.split()
+        if not pids:
+            return None
+        states = []
+        for pid in pids:
+            wins = subprocess.run(["xdotool", "search", "--pid", pid], capture_output=True, text=True, timeout=5).stdout.split()
+            for w in wins:
+                out = subprocess.run(["xprop", "-id", w, "WM_STATE"], capture_output=True, text=True, timeout=5).stdout
+                states.append("Normal" if "Normal" in out else "Iconic" if "Iconic" in out else "Withdrawn")
+        return states
+    except Exception:
+        return None
+
+
+def _watch_sc2_window(stop, lost: dict) -> None:
+    """对局期间盯着 SC2 窗口：窗口出现过之后，连续 WINDOW_LOST_GRACE 秒找不到可见/最小化的窗口，
+    就当游戏"闪退"处理——SIGKILL 掉 SC2，让 run_game 结束，上层能及时知道对局没了。
+
+    burnysc2 只认 websocket：窗口没了但进程还在发数据时它会一直等下去，omni-deck 也就一直
+    显示"对局进行中"、不让再开新局。
+
+    Args:
+        stop: threading.Event，对局结束时置位，线程退出。
+        lost: 共享字典，判定窗口丢失时写入 lost["reason"]。
+    """
+    seen = False
+    missing_since = None
+    while not stop.wait(3):
+        states = _sc2_window_states()
+        if states is None:
+            missing_since = None
+            continue
+        if any(s in ("Normal", "Iconic") for s in states):
+            seen = True
+            missing_since = None
+            continue
+        if not seen:
+            continue   # 还在启动，窗口没出来
+        missing_since = missing_since or time.monotonic()
+        if time.monotonic() - missing_since >= WINDOW_LOST_GRACE:
+            lost["reason"] = f"SC2 窗口消失（{WINDOW_LOST_GRACE} 秒内既不可见也没最小化，疑似闪退），已结束对局"
+            print(f"[sc2] {lost['reason']}", flush=True)
+            _force_kill_lingering_sc2()
+            return
+
+
 def play_one(sel: dict) -> Result | list | None:
     """按前端选好的地图/种族/对手/mod 组一局并通过 burnysc2 拉起游戏。
 
@@ -153,9 +214,21 @@ def play_one(sel: dict) -> Result | list | None:
     desc = ", ".join(f'{o["race"]}/{o["difficulty"]}' for o in opponents)
     print(f"[sc2] 开一局：{sel['map']}  你={sel['race']}  电脑({len(opponents)}) = {desc}")
     started = time.time()
+    import threading
+    stop, lost = threading.Event(), {}
+    threading.Thread(target=_watch_sc2_window, args=(stop, lost), daemon=True).start()
     try:
-        return run_game(game_map, players, realtime=True)
+        res = run_game(game_map, players, realtime=True)
+    except Exception:
+        if lost:
+            raise RuntimeError(lost["reason"]) from None
+        raise
+    else:
+        if lost:   # SC2 被杀后 burnysc2 也可能不抛异常、直接返回 None/空结果
+            raise RuntimeError(lost["reason"])
+        return res
     finally:
+        stop.set()
         _force_kill_lingering_sc2()
         _kill_prefix_leftovers(started)
 
